@@ -39,7 +39,7 @@ sha <-
 proc.time() - ptm01
 
 
-ptm01 <- proc.time() # Times how long this query takes (~32 secs)
+ptm01 <- proc.time() # Times how long this query takes (~34 secs)
 kcha_long <-
   sqlQuery(db.apde51,
            "SELECT * FROM dbo.kcha_reshaped",
@@ -74,11 +74,12 @@ pha <- bind_rows(kcha_long, sha)
 
 
 # Keep just the variables used to make the longitudinal record and reorder them
-pha <- select(pha, agency, agency_new, subsidy_id, hhold_id, incasset_id, cert_id, mbr_num, mbr_id, relcode, prog_type, 
-              act_date, act_type, admit_date, reexam_date, correction, correction_date,
-              lname, lnamesuf, fname, mname, dob, gender, disability, race, r_white:r_hisp, ssn, 
-              property_id, unit_id, unit_add:unit_zip, hhold_size, hh_id, hh_lname, hh_lnamesuf, hh_fname, hh_mname, hh_ssn, hh_dob,
-              subs_type, portability, cost_pha, proj_type, proj_name, purpose)
+# NB. Currently keep all variables until it is clear which are needed
+# pha <- select(pha, agency, agency_new, subsidy_id, hhold_id, incasset_id, cert_id, mbr_num, mbr_id, relcode, prog_type, 
+#               act_date, act_type, admit_date, reexam_date, correction, correction_date,
+#               lname, lnamesuf, fname, mname, dob, gender, disability, race, r_white:r_hisp, ssn, inc_code, income1:income6,
+#               property_id, unit_id, unit_add:unit_zip, hhold_size, hh_id, hh_lname, hh_lnamesuf, hh_fname, hh_mname, hh_ssn, hh_dob,
+#               hhold_inc_fixed, hhold_inc_vary, subs_type, portability, cost_pha, proj_type, proj_name, purpose)
 
 
 # Remove any duplicates
@@ -86,7 +87,7 @@ pha <- pha %>% distinct()
 
 
 ##### Clean up data #####
-## Fix relative code
+### Fix relative code
 pha <- pha %>%
   mutate(relcode = str_trim(relcode),
          relcode = ifelse(relcode == "NULL" | is.na(relcode) | relcode == "", "", relcode))
@@ -1211,12 +1212,33 @@ pha_clean <- pha_clean %>%
   ungroup()
 
 
+### Save point
+#saveRDS(pha_clean, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_combined.Rda")
+#pha_clean <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_combined.Rda")
 
 # Trim extraneous variables
 pha_clean <- pha_clean %>%
-  select(ssn_new:lnamesuf_new, dob, gender_new, disability, relcode, ssn_id_m6:dob_m6, hh_id, hh_ssn_c, hh_ssn, hh_ssn_new, hh_lname:hh_mname, hh_dob, 
-         hh_ssn_new_m6, hh_ssn_c_m6, hh_ssn_id_m6, hh_lname_m6:hh_dob_m6, agency, agency_new, cost_pha, proj_name, proj_type, purpose,
-         hhold_id_new, subsidy_id:correction_date, race:r_hisp, property_id:unit_zip)
+  select(
+    # Person demographics
+    ssn_new:lnamesuf_new, dob, gender_new, citizen, disability, relcode, ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_id, mbr_num, mbr_num_old,
+    # Head of household demographics
+    hh_id, hh_ssn_c, hh_ssn, hh_ssn_new, hh_lname:hh_mname, hh_dob, hh_ssn_new_m6:hh_dob_m6, fhh_ssn,
+    # Household details
+    hhold_inc_fixed:hhold_size, hh_hhold_num, hhold_id, hhold_id_new,
+    # Action details
+    act_type:admit_date, reexam_date, rent_date, renew_date,
+    # Program details
+    agency, agency_new, portability, cost_pha, prog_type, prog_subtype, proj_name, proj_zip, proj_replace, proj_type, cert_id, subsidy_id, incasset_id, 
+    spec_vouch, purpose, mtw_cat, increment, partner,
+    # Unit details
+    property_id, dev_name, unit_id, unit_add:unit_zip, unit_year:bed_cnt, access_unit:access_rec, num_0_bdrm:num_5_bdrm,
+    # Assets
+    asset_type:antic_inc, asset_tot, antic_inc_tot:asset_final,
+    # Income details
+    inc_mbr_num, income1:income6, inc_code:inc_fin,  inc_year_tot, inc_fin_tot, inc_tot, inc_deduct, inc_adj,
+    # Rent details
+    rent_tenant:bdrm_voucher, vouch_alloc, tax_credit, min_rent, cost_month, rent_owner:tb_rent_ceiling
+    )
 
 
 # Remove data frames and values made along the way
@@ -1236,9 +1258,7 @@ pha_clean <- pha_clean %>% filter(!(lname_new_m6 == "DUFUS" & fname_new_m6 == "I
 pha_clean <- pha_clean %>% distinct()
 
 
-### Save point
-#saveRDS(pha_clean, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_combined.Rda")
-#pha_clean <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_combined.Rda")
+
 
 ##### END MATCHING/DEDUPLICATION SECTION #####
 
@@ -1392,8 +1412,11 @@ pha_cleanadd <- pha_cleanadd %>%
                              str_sub(unit_apt_new, 1, str_length(unit_apt_new)),
                            str_sub(unit_add_new, 1, str_length(unit_add_new) - str_length(unit_apt_new)),
                            unit_add_new),
-    # Remove duplicates that are a little more complicated
-    unit_add_new = if_else(str_sub(unit_apt_new, str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1, str_length(unit_apt_new)) ==
+    # Remove duplicates that are a little more complicated (where the secondary designator isn't repeated but the secondary number is)
+    unit_add_new = if_else(!is.na(unit_apt_new) & unit_apt_new != "" &
+                             str_sub(unit_apt_new, 
+                                   str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1, 
+                                   str_length(unit_apt_new)) ==
                              str_sub(unit_add_new, str_length(unit_add_new) - (str_length(unit_apt_new) - 
                                                                                  (str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1)),
                                      str_length(unit_add_new)) &
@@ -1527,16 +1550,16 @@ pha_cleanadd <- pha_cleanadd %>%
   mutate(unit_concat = paste(unit_add_new, unit_apt_new, unit_city_new, unit_state_new, unit_zip, sep = ","))
 
 
+#### Parse addresses (will be useful for geocoding) ####
+# NOT CURRENTLY DOING THIS
+
 ### Set up distinct addresses for parsing (remove confidential addresses and those associate with portable)
 # adds <- pha_cleanadd %>%
 #   filter(unit_add_new != "0 PORTABLE" & str_detect(unit_add_new, "CONF") == FALSE) %>%
 #   distinct(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new, unit_zip, unit_concat) %>%
 #   arrange(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new, unit_zip, unit_concat)
 
-
-#### Parse addresses (will be useful for geocoding) ####
-# NOT CURRENTLY DOING THIS
-# Make empty list to add data to
+### Make empty list to add data to
 # addlist = list()
 # # Loop over addresses
 # for (i in 1:nrow(adds)) {
@@ -1546,8 +1569,7 @@ pha_cleanadd <- pha_cleanadd %>%
 
 
 
-#### Consolidate address rows ####
-#### Consolidate agency rows ####
+#### Consolidate rows by agency, program, and address ####
 ### Order by date, agency, then program type
 # Note: need to sort differently depending on SSN (assumes that most junk SSNs represent multiple people
 # whereas a normal SSN represents one person regardless of name differences)
@@ -1587,7 +1609,7 @@ rm(pha_cleanadd_normssn)
 
 ### Save point
 #saveRDS(pha_cleanadd_sort, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort.Rda")
-#pha_cleanadd_sort <- readRDS(file = //phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort.Rda")
+#pha_cleanadd_sort <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort.Rda")
 
 
 ### Look at dropping all rows where address data is missing (maybe if act_type == 10 or 16)
@@ -1645,20 +1667,22 @@ repeat {
 
 
 
+
 ### Fix up program and project type
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  # First get all into caps to get rid of differences
+  mutate_at(vars(prog_type, prog_subtype, proj_type, proj_name, proj_type), funs(toupper(.))) %>%
   mutate(
-    # Tidy up project name spellings
-    proj_type_new = toupper(proj_type),
-    proj_type_new = ifelse(str_detect(proj_type_new, "PROJECT"), "PB", ifelse(
-      str_detect(proj_type_new, "TENANT[-]*[:space:]*BASED"), "TB", ifelse(
-        str_detect(proj_type_new, "PORT"), "PORT", ifelse(
-          str_detect(proj_type_new, "PAYMENT BUI"), "PREPAY BLDG", ifelse(
-            str_detect(proj_type_new, "SPECIAL"), "SPEC", ifelse(
-              str_detect(proj_type_new, "REGULAR"), "REGULAR",
-              proj_type_new)))))),
+    # Tidy up project name spellings (SHA)
+    proj_type_new = ifelse(str_detect(proj_type, "PROJECT"), "PB", ifelse(
+      str_detect(proj_type, "TENANT[-]*[:space:]*BASED"), "TB", ifelse(
+        str_detect(proj_type, "PORT"), "PORT", ifelse(
+          str_detect(proj_type, "PAYMENT BUI"), "PREPAY BLDG", ifelse(
+            str_detect(proj_type, "SPECIAL"), "SPEC", ifelse(
+              str_detect(proj_type, "REGULAR"), "REGULAR",
+              proj_type)))))),
     
-    # Clean up KCHA programs
+    # Clean up KCHA and SHA programs
     prog_type_new = ifelse(prog_type == "P", "PH",
                                 ifelse(prog_type == "PR", "PBS8",
                                        ifelse(prog_type == "T", "TBS8",
@@ -1675,26 +1699,64 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 ### Remove annual reexaminations/intermediate visits if address is the same
 # Want to avoid capturing the first or last row for a person at a given address
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, agency_new, prog_type_new, proj_type_new, act_date) %>%
+  arrange(pid, agency_new, prog_type_new, prog_subtype, proj_type_new, act_date) %>%
   mutate(drop = if_else(
     pid == lag(pid, 1) & pid == lead(pid, 1) & !is.na(lag(pid, 1)) & !is.na(lead(pid, 1)) &
-      # Checking for prog_type and agency_new matches
+      unit_concat == lag(unit_concat, 1) & unit_concat == lead(unit_concat, 1) &
+      # Checking for prog_type and agency_new matches (no missing prog_type or agency_new)
       prog_type_new == lag(prog_type_new, 1) & prog_type_new == lead(prog_type_new, 1) &
-         (proj_type_new == lag(proj_type_new, 1) & proj_type_new == lead(proj_type_new, 1) |
-            is.na(proj_type_new) & is.na(lag(proj_type_new, 1)) & is.na(lead(proj_type_new, 1))) &
-      agency_new == lag(agency_new, 1) & agency_new == lead(agency_new, 1) &
-      unit_concat == lag(unit_concat, 1) & unit_concat == lead(unit_concat, 1),
+      ((prog_subtype == lag(prog_subtype, 1) & prog_subtype == lead(prog_subtype, 1)) |
+         is.na(prog_subtype) & is.na(lag(prog_subtype, 1)) & is.na(lead(prog_subtype, 1))) &
+      ((proj_type_new == lag(proj_type_new, 1) & proj_type_new == lead(proj_type_new, 1)) |
+         is.na(proj_type_new) & is.na(lag(prog_type_new, 1)) & is.na(lead(prog_type_new, 1))) &
+      agency_new == lag(agency_new, 1) & agency_new == lead(agency_new, 1),
     1, 0)) %>%
   filter(drop == 0 | is.na(drop))
 
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  mutate(age = round(interval(start = dob_m6, end = act_date), 1),
-         age2 = age / years(1))
+
+
 
 ### Set up the number of years between reexaminations
-# 3-year gaps if head of household, co-head, or spouse are senior (62+ yrs) or disabled
-# Otherwise 1-year gaps for SHA and 2-year gaps for KCHA
-# Apply largest gap to entire household
+# Logic is somewhat complicated
+# Note that a person is considered an adult only at the action date/start date
+# (i.e., if they turn 18 between examinations, the new age is not considered until the next exam date)
+#
+# SHA low-income public housing (LIPH)
+#   Annual review only (1-year gap) if ANY of the following are true:
+#     - date < 2016
+#     - any ADULT (18+ years) household member not elderly or disabled (excluding live-in attendants)
+#     - homeworks properties with combo LIPH/tax credit funding (IDs: 10-12, 14, 16, 20 22, 24-30, 32-36, 40, 46)
+#   3-year gap if ALL of the following are true:
+#     - 100% adult household members are elderly and/or disabled
+#     - date >= 2016
+# SHA voucher holders (HCV)
+#   Annual review (1-year gap) if ANY of the following are true:
+#     - date < 2010
+#     - household has a mod rehab voucher (increment starts with 'M')
+#     - date > 2010 and < 2013 AND < 100% household income from a fixed source (pension, Social Security, SSI, veteran’s benefits)
+#     - date > 2013 AND any ADULT (18+ years) household member not elderly or disabled (excluding live-in attendants)
+#   3-year gap if ANY of the following are true:
+#     - date >= 2010 AND 100% household income from a fixed source (pension, Social Security, SSI, veteran’s benefits) AND
+#           not a mod rehab voucher
+#     - date >= 2010 and >= 2013 AND 100% adult (18+ years) household members are elderly and/or disabled (excluding live-in attendants) 
+#           AND not a mod rehab voucher
+#
+# KCHA LIPH
+#   Annual review only (1-year gap) if ANY of the following are true:
+#     - date < 2008-06-01
+#   EASY status (3-year gap) if ALL of the following is true (NB: the reality is more complicated, this is a simplified approach):
+#     - date >= 2008-06-01
+# KCHA HCV
+#   Annual review only (1-year gap) if ANY of the following are true:
+#     - date < 2008-06-01  
+#   WIN status (2-year-gap) if ALL of the following are true:
+#     - date >= 2008-06-01
+#     - < 100% adult household members are elderly and/or disabled (excluding live-in attendants) OR < 90% household income from a fixed source
+#   EASY (3-year-gap) status if ALL of the following are true:
+#     - date >= 2008-06-01
+#     - 100% adult household members are elderly and/or disabled (excluding live-in attendants)
+#     - no source of income OR at least 90% of household income from a fixed source
+
 
 # Due to missing ages/action dates, need to make separate data frame and merge back
 age_temp <- pha_cleanadd_sort %>%
@@ -1711,6 +1773,7 @@ age_temp <- pha_cleanadd_sort %>%
                                  ifelse(age >= 117 & age < 1000 | (age >= 1000 & format(dob_m6, "%y") > 17),  format(dob_m6, "19%y-%m-%d"),
                                         format(dob_m6))), origin = "1970-01-01"),
          age = round(interval(start = dob_m6, end = act_date) / years(1), 1),
+         adult = ifelse(age >= 18, 1, 0),
          senior = ifelse(age >= 62, 1, 0)
   )
 
@@ -1718,15 +1781,64 @@ age_temp <- pha_cleanadd_sort %>%
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   left_join(., age_temp, by = c("pid", "act_date", "mbr_num")) %>%
   # Keep new DOBs if changed
-  mutate(dob_m6 = ifelse(is.na(dob_m6.y), dob_m6.x, dob_m6.y),
-         add_yr_temp = ifelse(((disability == 1 & !is.na(disability)) | (senior == 1 & !is.na(senior))) &
-                                relcode %in% c("H", "K", "S"), 3,
-                              ifelse(agency_new == "KCHA", 2,
-                                     ifelse(agency_new == "SHA", 1, NA)))
-         ) %>%
-  # Now apply to entire household
+  mutate(dob_m6 = ifelse(is.na(dob_m6.y), dob_m6.x, dob_m6.y))
+
+# Set up Homeworks property identifier and income codes (SHA only)
+pha_cleanadd_sort <- mutate(pha_cleanadd_sort, 
+                            homeworks = ifelse(as.numeric(property_id) %in% c(10:12, 14, 16, 20, 22, 24:30, 32:36, 40, 46), 1, 0))
+
+# Set up income
+pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  mutate(
+    # SHA
+    inc_fixed = ifelse(agency_new == "SHA" & inc_code %in% c("P", "PE", "Pension", "S", "SS", "SSI", "Social Security"), 1, 0),
+    #KCHA
+    inc_fixed = ifelse(agency_new == "KCHA" & hhold_inc_fixed > 0 & hhold_inc_vary > 0 &
+                         hhold_inc_fixed / (hhold_inc_fixed + hhold_inc_vary) >= 0.9, 1, inc_fixed)
+    )
+
+
+# Look at number of years for each individual (NB. slow, look for ways to optimize)
+pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  mutate(
+    # SHA public housing
+    add_yr_temp = ifelse(agency_new == "SHA" & prog_type_new == "PH" & adult == 1 & relcode != "L" & act_date >= "2016-01-01" &
+                           (senior == 1 | disability == 1) & homeworks == 0 & !is.na(homeworks),
+                         3, NA),
+    add_yr_temp = ifelse(agency_new == "SHA" & prog_type_new == "PH" & adult == 1 & relcode != "L" &
+                           (act_date < "2016-01-01" | (senior == 0 & disability == 0) | homeworks == 1),
+                         1, add_yr_temp),
+    # SHA HCV
+    add_yr_temp = ifelse(agency_new == "SHA" & prog_type_new != "PH" & prog_type_new != "MOD REHAB" & adult == 1 & relcode != "L" &
+                           ((act_date >= "2010-01-01" & inc_fixed == 1) |
+                              (act_date >= "2013-01-01" & (senior == 1 | disability == 1))),
+                         3, add_yr_temp),
+    add_yr_temp = ifelse(agency_new == "SHA" & prog_type_new != "PH" & adult == 1 & relcode != "L" &
+                           (act_date < "2010-01-01" | prog_type_new == "MOD REHAB" |
+                              (act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 0) |
+                              (act_date >= "2013-01-01" & senior == 0 & disability == 0)),
+                         1, add_yr_temp),
+    
+    # KCHA public housing
+    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type_new == "PH" & adult == 1 & relcode != "L" & act_date >= "2008-06-01",
+                         3, add_yr_temp),
+    # KCHA HCV
+    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type_new != "PH" & adult == 1 & relcode != "L" & act_date >= "2008-06-01" &
+                           (senior == 1 | disability == 1) & (inc_fixed == 1 | (hhold_inc_fixed == 0 & hhold_inc_vary == 0)),
+                         3, add_yr_temp),
+    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type_new != "PH" & adult == 1 & relcode != "L" & act_date >= "2008-06-01" &
+                           ((senior == 0 & disability == 0) | (inc_fixed == 0 & (hhold_inc_fixed > 0 | hhold_inc_vary > 0))),
+                         2, add_yr_temp),
+    # KCHA all
+    add_yr_temp = ifelse(agency_new == "KCHA" & adult == 1 & relcode != "L" & act_date < "2008-06-01",
+                         1, add_yr_temp)
+  ) %>%
+  # Now apply to entire household (only NAs in add_yr_temp should be children or live-in attendants)
   group_by(hhold_id_new) %>%
-  mutate(add_yr = max(add_yr_temp)) %>%
+  mutate(add_yr = min(add_yr_temp, na.rm = TRUE),
+         # A few cleanup errors lead to some households with no add_yr so set to 1 for now
+         add_yr = ifelse(add_yr > 3, 1, add_yr)
+         ) %>%
   ungroup() %>%
   select(-(add_yr_temp), -(dob_m6.x), -(dob_m6.y))
 
@@ -1801,6 +1913,8 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
   mutate(enddate = as.Date(ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & enddate >= lead(startdate, 1), 
                                   lead(startdate, 1) - 1, enddate), origin = "1970-01-01"))
 
+
+#### END ROW CONSOLIDATION ####
 
 ### Save point
 #saveRDS(pha_cleanadd_sort, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_longitudinal.Rda")

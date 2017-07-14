@@ -48,6 +48,8 @@ sha4 <- read.csv(file = paste0(path, "/SuffixCorrected/4_HCV 2004 to 2006 - (MLS
 sha_vouch_type <- read.xlsx(paste0(path, "/Original/HCV Voucher Type_2017-05-15.xlsx"))
 sha_vouch_increment <- read.xlsx(paste0(path, "/Original/Voucher Increments_2017-05-15.xlsx"))
 
+# Bring in program/portfolio codes
+sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-07-13.xlsx"))
 
 
 ##### Join data sets together #####
@@ -56,7 +58,7 @@ sha_vouch_increment <- read.xlsx(paste0(path, "/Original/Voucher Increments_2017
 # Make list of data frames to deduplicate
 dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
             sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4 = sha4, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_vouch_type = sha_vouch_type, sha_vouch_increment = sha_vouch_increment)
+            sha_vouch_type = sha_vouch_type, sha_vouch_increment = sha_vouch_increment, sha_prog_codes = sha_prog_codes)
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -120,6 +122,8 @@ sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA
 sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), fields$SHA_new_hcv)])
 sha_vouch_increment <- setnames(sha_vouch_increment, fields$PHSKC[match(names(sha_vouch_increment), fields$SHA_new_hcv)])
 sha_vouch_type <- setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
+sha_prog_codes <- setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_new_hcv)])
+
 
 # Clean up mismatching variables
 sha4 <- sha4 %>%
@@ -160,13 +164,14 @@ sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
 sha5 <- left_join(sha5a_new, sha5b_new, by = c("cert_id", "mbr_id"))
 sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
 sha5 <- left_join(sha5, sha_vouch_increment, by = c("increment"))
+sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
 # Append data
 sha_hcv <- bind_rows(sha4, sha5)
 
 
 # Add program type
-sha_hcv <- mutate(sha_hcv, prog_type = "HCV")
+sha_hcv <- mutate(sha_hcv, prog_type = ifelse(is.na(prog_type), "HCV", prog_type))
 
 
 ### Join PH and HCV combined files
@@ -206,6 +211,7 @@ rm(list = ls(pattern = "sha2"))
 rm(list = ls(pattern = "sha3"))
 rm(list = ls(pattern = "sha4"))
 rm(list = ls(pattern = "sha5"))
+rm(list = ls(pattern = "sha_"))
 rm(dfs)
 rm(df_dedups)
 gc()

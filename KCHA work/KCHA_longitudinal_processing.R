@@ -41,15 +41,71 @@ kcha_bk <- kcha
 kcha <- kcha %>%
   select(h1a, h2a, h2b, h2c, h2d, h2h, starts_with("h3"), starts_with("h5"),
          h19a1b, h19a2b, h19a3b, h19a4b, h19a5b, h19a6b,h19a7b, h19a8b, h19a9b, h1910b, h1911b, h1912b, h1913b,
-         h1914b, h1915b, h1916b, h19b01, h19b02, h19b03, h19b04, h19b05, h19b06, h19b07, h19b08, h19b09, h19b10,
-         h19b11, h19b12, h19b13, h19b14, h19b15, h19b16, starts_with("h20"), starts_with("h21"),
-         program_type, householdid:developmentname, spec_vouch, subsidy_id) %>%
+         h1914b, h1915b, h1916b, starts_with("h19b"), starts_with("h19d"), starts_with("h19f"), h19g, h19h, 
+         starts_with("h20"), starts_with("h21"), program_type, householdid:developmentname, spec_vouch, subsidy_id) %>%
   # Fix up some inconsistent naming
   rename(h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b, h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
 
 
 # Need to strip duplicates again now that some variables have been removed
 kcha <- kcha %>% distinct()
+
+### Look at household income sources before reshaping
+# Much easier to do when the entire household is on a single row
+
+# First clean up white space around income codes
+kcha <- mutate_at(kcha, vars(starts_with("h19b")), funs(str_trim(.)))
+
+# Next take most complete income data 
+# (sometimes h19h is missing when h19g is not, unclear if this is always true for h19d and h19f, which add up to h19g and h19h, respectively)
+kcha <- kcha %>%
+  mutate(
+    h19f01 = ifelse(is.na(h19f01) & !is.na(h19d01), h19d01, h19f01),
+    h19f02 = ifelse(is.na(h19f02) & !is.na(h19d02), h19d02, h19f02),
+    h19f03 = ifelse(is.na(h19f03) & !is.na(h19d03), h19d03, h19f03),
+    h19f04 = ifelse(is.na(h19f04) & !is.na(h19d04), h19d04, h19f04),
+    h19f05 = ifelse(is.na(h19f05) & !is.na(h19d05), h19d05, h19f05),
+    h19f06 = ifelse(is.na(h19f06) & !is.na(h19d06), h19d06, h19f06),
+    h19f07 = ifelse(is.na(h19f07) & !is.na(h19d07), h19d07, h19f07),
+    h19f08 = ifelse(is.na(h19f08) & !is.na(h19d08), h19d08, h19f08),
+    h19f09 = ifelse(is.na(h19f09) & !is.na(h19d09), h19d09, h19f09),
+    h19f10 = ifelse(is.na(h19f10) & !is.na(h19d10), h19d10, h19f10),
+    h19f11 = ifelse(is.na(h19f11) & !is.na(h19d11), h19d11, h19f11),
+    h19f12 = ifelse(is.na(h19f12) & !is.na(h19d12), h19d12, h19f12),
+    h19f13 = ifelse(is.na(h19f13) & !is.na(h19d13), h19d13, h19f13),
+    h19f14 = ifelse(is.na(h19f14) & !is.na(h19d14), h19d14, h19f14),
+    h19f15 = ifelse(is.na(h19f15) & !is.na(h19d15), h19d15, h19f15),
+    h19f16 = ifelse(is.na(h19f16) & !is.na(h19d16), h19d16, h19f16)
+  )
+
+# Make matrices of income codes and dollar amounts
+inc_fixed <- kcha %>% select(h19b01:h19b16) %>%
+  mutate_all(funs(ifelse(. %in% c("G", "P", "S", "SS"), 1, 0)))
+inc_fixed <- as.matrix(inc_fixed)
+
+inc_vary <- kcha %>% select(h19b01:h19b16) %>%
+  mutate_all(funs(ifelse(. %in% c("G", "P", "S", "SS"), 0, 1)))
+inc_vary <- as.matrix(inc_vary)
+
+inc_amount <- kcha %>% select(h19f01:h19f16)
+inc_amount <- as.matrix(inc_amount)
+
+# Calculate totals of fixed and varying incomes
+inc_fixed_amt <- as.data.frame(inc_fixed * inc_amount)
+inc_fixed_amt <- inc_fixed_amt %>%
+  mutate(hhold_inc_fixed = rowSums(., na.rm = TRUE)) %>%
+  select(hhold_inc_fixed)
+
+inc_vary_amt <- as.data.frame(inc_vary * inc_amount)
+inc_vary_amt <- inc_vary_amt %>%
+  mutate(hhold_inc_vary = rowSums(., na.rm = TRUE)) %>%
+  select(hhold_inc_vary)
+
+# Join back to main data
+kcha <- bind_cols(kcha, inc_fixed_amt, inc_vary_amt)
+
+# Remove temporary data
+rm(list = ls(pattern = "inc_"))
 
 
 ##### Reshape data #####
@@ -89,7 +145,7 @@ colnames(kcha) <- names[,1]
 
 # Using an apply process over reshape due to memory issues
 # Make function to save space
-reshape_func <- function(x) {
+reshape_f <- function(x) {
   print(x)
   sublong[[x]] <- kcha %>%
     select_('h1a:h2h',
@@ -119,7 +175,7 @@ reshape_func <- function(x) {
 # Make empty list and run reshaping function
 sublong <- list()
 members <- c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
-kcha_long <- lapply(members, reshape_func)
+kcha_long <- lapply(members, reshape_f)
 kcha_long <- bind_rows(kcha_long)
 
 # Get rid of white space (focus on variables used to filter first to save memory)
@@ -149,20 +205,20 @@ kcha_long <- mutate_at(kcha_long, vars(h2b, h2h, h3e, hh_dob),
 # Need to restrict the income source codes to only those that apply to that individual
 # Code could be made more efficient but currently works
 
-temp <- kcha_long %>%
+inc_temp <- kcha_long %>%
   select(hhold_id_temp, mbr_num, h19a01:h19b16)
 
 # Reshape limited dataset
-temp <- temp %>%
+inc_temp <- inc_temp %>%
   gather(key, value, -hhold_id_temp, -mbr_num, -h19b01, -h19b02, -h19b03, -h19b04, -h19b05, -h19b06,
          -h19b07, -h19b08, -h19b09, -h19b10, -h19b11, -h19b12, -h19b13, -h19b14, -h19b15, -h19b16) %>%
   filter(!is.na(value))
 
-temp <- temp %>%
+inc_temp <- inc_temp %>%
   # Filter out NA rows and rows that don't match the member number
   filter(!is.na(value) & mbr_num == value)
 
-temp <- temp %>%
+inc_temp <- inc_temp %>%
   arrange(hhold_id_temp, mbr_num) %>%
   # Keep record of overall row number for merging back later
   mutate(rownum = row_number()) %>%
@@ -176,49 +232,47 @@ temp <- temp %>%
 
 ### Make a data frame to accommodate the new columns
 # Establish parameters for size of new data
-maxnum <- max(temp$grprownum)
-rowcount <- nrow(temp)
+maxnum <- max(inc_temp$grprownum)
+rowcount <- nrow(inc_temp)
 
 # Make data frame and name columns appropriately
-incomedf <- data.frame(matrix(ncol = maxnum, nrow = rowcount))
-colnames(incomedf) <- paste0(rep("income", ncol(incomedf)), c(1:ncol(incomedf)))
+inc_df <- data.frame(matrix(ncol = maxnum, nrow = rowcount))
+colnames(inc_df) <- paste0(rep("income", ncol(inc_df)), c(1:ncol(inc_df)))
 
 # Join df back to main
-temp2 <- cbind(temp, incomedf)
+inc_temp2 <- cbind(inc_temp, inc_df)
 
 ### Make a new variable that pulls the appropriate income code
 # Set up column index
-colnum <- data.frame(colnums = ifelse(temp2$incomenum < 10, match(paste0("h19b0", temp2$incomenum), colnames(temp2)),
-                            ifelse(temp2$incomenum >= 10, match(paste0("h19b", temp2$incomenum), colnames(temp2)),
+colnum <- data.frame(colnums = ifelse(inc_temp2$incomenum < 10, match(paste0("h19b0", inc_temp2$incomenum), colnames(inc_temp2)),
+                            ifelse(inc_temp2$incomenum >= 10, match(paste0("h19b", inc_temp2$incomenum), colnames(inc_temp2)),
                                    NA)))
-temp2 <- cbind(temp2, colnum)
+inc_temp2 <- cbind(inc_temp2, colnum)
 
 
 ### Extract out correct income code for that row
 # Separate out rows by the column that should be looked up
-incomecode_f <- function(x) {
-  incgroup[[x]] <- temp2 %>%
+inc_recode_f <- function(x) {
+  inc_group[[x]] <- inc_temp2 %>%
     filter(colnums == x) %>%
     select(hhold_id_temp, mbr_num, grprownum, x) %>%
     mutate(income00 = .[[4]])
 }
 
-incgroup <- list()
-incmembers <- seq(from = 3, to = 14)
-inccheck <- lapply(incmembers, incomecode_f)
+inc_group <- list()
+inc_members <- seq(from = 3, to = 14)
+inc_check <- lapply(inc_members, inc_recode_f)
 
 # Bring back into a single data frame
-inccheck <- bind_rows(inccheck)
+inc_check <- bind_rows(inc_check)
 
 # Clean out superfluous columns and trim white space
-inccheck <- inccheck %>%
-  select(hhold_id_temp, mbr_num, grprownum, income00) %>%
-  mutate(income00 = trimws(income00))
+inc_check <- select(inc_check, hhold_id_temp, mbr_num, grprownum, income00)
 
 ### Merge back with main data
-temp2 <- left_join(temp2, inccheck, by = c("hhold_id_temp", "mbr_num", "grprownum"))
+inc_temp2 <- left_join(inc_temp2, inc_check, by = c("hhold_id_temp", "mbr_num", "grprownum"))
 # Set income up and restrict columns
-temp2 <- temp2 %>%
+inc_temp2 <- inc_temp2 %>%
   mutate(
     income1 = ifelse(grprownum == 1, income00, NA),
     income2 = ifelse(grprownum == 2, income00, NA),
@@ -242,12 +296,12 @@ temp2 <- temp2 %>%
   ungroup()
 
 ### Merge back with longitudinal file
-kcha_long <- left_join(kcha_long, temp2, by = c("hhold_id_temp", "mbr_num"))
+kcha_long <- left_join(kcha_long, inc_temp2, by = c("hhold_id_temp", "mbr_num"))
 
 ### Remove extraneous columns
 kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificationid, subsidy_id,
                     h1a:h2h, mbr_num, h3a:h3n, h5a1a:h5a5, developmentname, h5e:h5d, income1:income6, 
-                    h20b:h21q, hh_lname:hh_dob, hhold_size)
+                    h20b:h21q, hh_lname:hh_dob, hhold_inc_fixed, hhold_inc_vary, hhold_size)
 
 
 ##### END INCOME REORGANIZATION #####
@@ -277,9 +331,7 @@ sqlSave(
  )
 
 
-
-
 ##### Remove temporary files #####
-rm(list = c('temp', 'temp2', 'incmembers', 'members', 'maxnum', 'rowcount', 'sublong', 
-            'incgroup', 'names', 'inccheck', 'incomedf', 'colnum'))
+rm(list = ls(pattern = "inc_"))
+rm(list = c('members', 'maxnum', 'rowcount', 'sublong', 'names', 'colnum', 'reshape_f'))
 gc()
