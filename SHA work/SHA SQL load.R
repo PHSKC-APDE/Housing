@@ -8,6 +8,7 @@
 ##### Set up global parameter and call in libraries #####
 library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
+library(stringr) # Used to manipulate string data
 library(car) # used to recode variables
 library(dplyr) # Used to manipulate data
 library(data.table) # more data manipulation
@@ -22,15 +23,14 @@ db.apde51 <- odbcConnect("PH_APDEStore51")
 
 ##### Bring in data #####
 # Compare YT files
-sha3a_old <- read.csv(file = paste0(path, "/SuffixCorrected/3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
-sha3b_old <- read.csv(file = paste0(path, "/SuffixCorrected/3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
+# sha3a_old <- read.csv(file = paste0(path, "/SuffixCorrected/3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
+# sha3b_old <- read.csv(file = paste0(path, "/SuffixCorrected/3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
+# sha5a_old <- read.csv(file = paste0(path, "/SuffixCorrected/5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2016-06-08.csv"), stringsAsFactors = FALSE)
+# sha5b_old <- read.csv(file = paste0(path, "/SuffixCorrected/5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2016-06-08.csv"), stringsAsFactors = FALSE)
+
 
 sha3a_new <- read.csv(file = paste0(path, "/Original/3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
 sha3b_new <- read.csv(file = paste0(path, "/Original/3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-
-sha5a_old <- read.csv(file = paste0(path, "/SuffixCorrected/5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2016-06-08.csv"), stringsAsFactors = FALSE)
-sha5b_old <- read.csv(file = paste0(path, "/SuffixCorrected/5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2016-06-08.csv"), stringsAsFactors = FALSE)
-
 sha5a_new <- read.csv(file = paste0(path, "/Original/5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
 sha5b_new <- read.csv(file = paste0(path, "/Original/5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
 
@@ -42,14 +42,16 @@ sha1c <- read.csv(file = paste0(path, "/SuffixCorrected/1.c_Assets PublicHousing
 sha2a <- read.csv(file = paste0(path, "/SuffixCorrected/2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
 sha2b <- read.csv(file = paste0(path, "/SuffixCorrected/2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
 sha2c <- read.csv(file = paste0(path, "/SuffixCorrected/2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha4 <- read.csv(file = paste0(path, "/SuffixCorrected/4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), stringsAsFactors = FALSE)
+sha4a <- read.csv(file = paste0(path, "/SuffixCorrected/4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), stringsAsFactors = FALSE)
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(paste0(path, "/Original/HCV Voucher Type_2017-05-15.xlsx"))
-sha_vouch_increment <- read.xlsx(paste0(path, "/Original/Voucher Increments_2017-05-15.xlsx"))
+# This import now deprecated in favor of the simpler program codes file
+#sha_vouch_increment <- read.xlsx(paste0(path, "/Original/Voucher Increments_2017-05-15.xlsx"))
+sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-01.xlsx"), 2)
 
 # Bring in program/portfolio codes
-sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-07-13.xlsx"))
+sha_portfolio_codes  <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-01.xlsx"), 1)
 
 
 ##### Join data sets together #####
@@ -57,8 +59,8 @@ sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios
 ### First deduplicate data to avoid extra rows being made when joined
 # Make list of data frames to deduplicate
 dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
-            sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4 = sha4, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_vouch_type = sha_vouch_type, sha_vouch_increment = sha_vouch_increment, sha_prog_codes = sha_prog_codes)
+            sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4a = sha4a, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
+            sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, sha_prog_codes = sha_prog_codes)
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -83,6 +85,7 @@ sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
 sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
 sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
 sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
+sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_new_ph)])
 
 
 # Clean up mismatching variables
@@ -106,28 +109,43 @@ sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
 sha3 <- left_join(sha3a_new, sha3b_new, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 
 
-
 # Append data
 sha_ph <- bind_rows(sha1, sha2, sha3)
 
+# Fix more formats
+sha_ph <- sha_ph %>%
+  mutate(property_id = ifelse(as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)), paste0("00", property_id),
+                              ifelse(as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & !is.na(as.numeric(property_id)), 
+                                     paste0("0", property_id),
+                              property_id)))
+
+# Join with portfolio data
+sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
+
 # Add program type
-sha_ph <- mutate(sha_ph, prog_type = "PH")
+sha_ph <- mutate(sha_ph, major_prog = "PH", prog_type = "PH", prog_subtype = "PH")
 
 
 #### Join HCV files
 
 # Fix up names
-sha4 <- setnames(sha4, fields$PHSKC[match(names(sha4), fields$SHA_old)])
+sha4a <- setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
 sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA_new_hcv)])
 sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), fields$SHA_new_hcv)])
-sha_vouch_increment <- setnames(sha_vouch_increment, fields$PHSKC[match(names(sha_vouch_increment), fields$SHA_new_hcv)])
 sha_vouch_type <- setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
+# This line deprecated
+#sha_vouch_increment <- setnames(sha_vouch_increment, fields$PHSKC[match(names(sha_vouch_increment), fields$SHA_new_hcv)])
 sha_prog_codes <- setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_new_hcv)])
 
 
 # Clean up mismatching variables
-sha4 <- sha4 %>%
-  mutate(mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)))
+sha4a <- sha4a %>%
+  mutate(mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
+         # Truncate increment numbers so they match the reference list when joined
+         increment_old = increment,
+         increment = str_sub(increment, 1, 5)
+         )
+
 
 sha5a_new <- sha5a_new %>%
   mutate(
@@ -146,32 +164,34 @@ sha5b_new <- sha5b_new %>%
 
 
 sha_vouch_type <- sha_vouch_type %>%
-  mutate(
-    act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
+  mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
                                        'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
                                        'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
                                        'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
                                        'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA"))
-  )
+                                       else = NA")))
 
-sha_vouch_increment <- select(sha_vouch_increment, -(drop_row_num_drop))
+# This line deprecated
+#sha_vouch_increment <- select(sha_vouch_increment, -(drop_row_num_drop))
+
 
 # Join with income and asset files
-sha4 <- left_join(sha4, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha4 <- left_join(sha4a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
+sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
 sha5 <- left_join(sha5a_new, sha5b_new, by = c("cert_id", "mbr_id"))
 sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
-sha5 <- left_join(sha5, sha_vouch_increment, by = c("increment"))
+# This line deprecated
+#sha5 <- left_join(sha5, sha_vouch_increment, by = c("increment"))
 sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
 # Append data
 sha_hcv <- bind_rows(sha4, sha5)
 
 
-# Add program type
-sha_hcv <- mutate(sha_hcv, prog_type = ifelse(is.na(prog_type), "HCV", prog_type))
+# Add program type if missing
+sha_hcv <- mutate(sha_hcv, major_prog = ifelse(is.na(major_prog), "HCV", major_prog))
 
 
 ### Join PH and HCV combined files
@@ -192,6 +212,10 @@ sha <- sha %>%
             funs(as.Date(., format = "%m/%d/%Y"))) %>%
   mutate_at(vars(bdrm_voucher, rent_subs),
             funs(as.numeric(car::recode(., "'Y' = 1; 'N' = 0; 'N/A' = NA; 'SRO' = NA; 'NULL' = NA"))))
+
+# Set up mbr_num head of households (will be important later when cleaning up names)
+sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname_new == hh_lname & fname_new == hh_fname,
+                        1, mbr_num))
 
 
 ##### Load to SQL server #####

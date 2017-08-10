@@ -19,6 +19,7 @@ library(dplyr) # Used to manipulate data
 library(data.table) # more data manipulation
 library(tidyr) # used to reorganize and reshape data
 
+path <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA"
 
 ##### Connect to the servers #####
 db.apde51 <- odbcConnect("PH_APDEStore51")
@@ -312,9 +313,54 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 ##### Rename variables #####
 # Bring in variable name mapping table
 fields <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Field name mapping.xlsx")
-
+# Change names
 kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
 
+
+##### Clean up some data and make variables for merging #####
+kcha_long <- kcha_long %>%
+  mutate(
+    prog_type = ifelse(prog_type == "P", "PH",
+                       ifelse(prog_type == "PR", "PBS8",
+                              ifelse(prog_type == "T", "TBS8",
+                                     prog_type))),
+    major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
+    property_id = as.numeric(ifelse(str_detect(subsidy_id, "^[0-9]-") == T, str_sub(subsidy_id, 3, 5), NA))
+  )
+
+
+##### Join with property lists #####
+### Public housing
+# Bring in data and rename variables
+kcha_portfolio_codes <- read.xlsx(paste0(path, "/Original data/Property list with project code_received_2017-07-26.xlsx"))
+kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
+
+# Join and clean up duplicate variables
+kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
+kcha_long <- kcha_long %>% 
+  # There shouldn't be any rows with values in both property_name columns (checked and seems to be the case)
+  mutate(property_name = ifelse(is.na(property_name.y) & !is.na(property_name.x) & property_name.x != "", property_name.x,
+                                ifelse(!is.na(property_name.y), property_name.y, NA))) %>%
+  select(-property_name.x, -property_name.y)
+
+
+### HCV (currently being done after join with SHA and address cleanup)
+# Bring in data and rename variables
+# kcha_dev_adds <- read.csv(file = paste0(path, "/Original data/Development Addresses_received_2017-07-21.csv"), stringsAsFactors = FALSE)
+# kcha_dev_adds <- setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
+# 
+# # Drop spare rows and deduplicate
+# # Note that only three rows (plus rows used for merging) are being kept for now.
+# # If all rows are used later, deduplication is still required.
+# kcha_dev_adds <- kcha_dev_adds %>% select(dev_add_apt, dev_city, property_name, portfolio, property_type)
+# kcha_dev_adds <- kcha_dev_adds %>% distinct()
+# 
+# kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
+
+
+# TEMP SAVE POINT
+saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
+kcha_long <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
 
 ##### WRITE RESHAPED DATA TO SQL #####
 sqlDrop(db.apde51, "dbo.kcha_reshaped")
@@ -334,4 +380,6 @@ sqlSave(
 ##### Remove temporary files #####
 rm(list = ls(pattern = "inc_"))
 rm(list = c('members', 'maxnum', 'rowcount', 'sublong', 'names', 'colnum', 'reshape_f'))
+rm(kcha_portfolio_codes)
+rm(kcha)
 gc()
