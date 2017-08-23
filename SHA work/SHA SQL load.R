@@ -48,10 +48,10 @@ sha4a <- read.csv(file = paste0(path, "/SuffixCorrected/4_HCV 2004 to 2006 - (ML
 sha_vouch_type <- read.xlsx(paste0(path, "/Original/HCV Voucher Type_2017-05-15.xlsx"))
 # This import now deprecated in favor of the simpler program codes file
 #sha_vouch_increment <- read.xlsx(paste0(path, "/Original/Voucher Increments_2017-05-15.xlsx"))
-sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-01.xlsx"), 2)
+sha_prog_codes <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-11.xlsx"), 2)
 
 # Bring in program/portfolio codes
-sha_portfolio_codes  <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-01.xlsx"), 1)
+sha_portfolio_codes  <- read.xlsx(paste0(path, "/Original/Program codes and portfolios_2017-08-11.xlsx"), 1)
 
 
 ##### Join data sets together #####
@@ -108,6 +108,11 @@ sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
 
 sha3 <- left_join(sha3a_new, sha3b_new, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 
+
+# Add source field to track where each row came from
+sha1 <- sha1 %>% mutate(sha_source = "sha1")
+sha2 <- sha2 %>% mutate(sha_source = "sha2")
+sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 # Append data
 sha_ph <- bind_rows(sha1, sha2, sha3)
@@ -186,6 +191,10 @@ sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "ac
 #sha5 <- left_join(sha5, sha_vouch_increment, by = c("increment"))
 sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
+# Add source field to track where each row came from
+sha4 <- sha4 %>% mutate(sha_source = "sha4")
+sha5 <- sha5 %>% mutate(sha_source = "sha5")
+
 # Append data
 sha_hcv <- bind_rows(sha4, sha5)
 
@@ -200,7 +209,6 @@ sha_hcv <- sha_hcv %>%
   mutate_at(vars(rent_tenant, rent_mixfam, ph_util_allow, ph_rent_ceiling, mbr_num, r_hisp),
             funs(as.numeric(ifelse(. == "NULL" | . == "N/A", NA, .)))) %>%
   mutate(tb_rent_ceiling = car::recode(ph_rent_ceiling, c("'Yes' = 1; 'No' = 0; else = NA")))
-    
 
 # Append data
 sha <- bind_rows(sha_ph, sha_hcv)
@@ -214,7 +222,7 @@ sha <- sha %>%
             funs(as.numeric(car::recode(., "'Y' = 1; 'N' = 0; 'N/A' = NA; 'SRO' = NA; 'NULL' = NA"))))
 
 # Set up mbr_num head of households (will be important later when cleaning up names)
-sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname_new == hh_lname & fname_new == hh_fname,
+sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname == hh_lname & fname == hh_fname,
                         1, mbr_num))
 
 
