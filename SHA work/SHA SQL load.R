@@ -226,6 +226,26 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname ==
                         1, mbr_num))
 
 
+### Tidy up income fields and consolidate
+sha <- sha %>%
+  mutate(inc_code = car::recode(inc_code, "'Annual imputed welfare income' = 'IW'; 'Child Support' = 'C';
+                                'Federal Wage' = 'F'; 'General Assistance' = 'G'; 'Indian Trust/Per Capita' = 'I';
+                                'Medical reimbursement' = 'E'; 'Military Pay' = 'M'; 'MTW Income' = 'X';
+                                'NULL' = NA; 'Other NonWage Sources' = 'N'; 'Other Wage' = 'W'; 'Own Business' = 'B'; 'Pension' = 'P';
+                                'PHA Wage' = 'HA'; 'Social Security' = 'SS'; 'SSI' = 'S'; 'TANF (formerly AFDC)' = 'T';
+                                'Unemployment Benefits' = 'U'; '' = NA"),
+         inc_fixed_temp = ifelse(inc_code %in% c("P", "PE", "Pension", "S", "SS", "SSI", "Social Security"), 1, 0))
+
+# We are only interested in whether or not all income comes from a fixed source so taking the minimum tells us this
+sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
+  mutate(inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
+  ungroup() %>%
+  select(-inc_fixed_temp)
+  
+# Restrict to relevant fields (can drop specific income fields)
+sha <- sha %>% select(-inc_code, -inc_year, -inc_excl, -inc_fin) %>% distinct()
+
+
 ##### Load to SQL server #####
 # May need to delete table first
 sqlDrop(db.apde51, "dbo.sha_combined_raw")

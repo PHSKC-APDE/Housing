@@ -64,7 +64,7 @@ proc.time() - ptm01
 
 
 ### Additional demographics for eligibility table (take most recent row per Medicaid ID/SSN combo)
-# Short version that only pulls what will be used (takes ~115 secs)
+# Short version that only pulls what will be used (takes ~320 secs)
 ptm01 <- proc.time()
 elig_demog <-
   sqlQuery(db.claims51,
@@ -81,22 +81,22 @@ elig_demog <-
 proc.time() - ptm01
 
 # More detailed pull with more vars for future comparisons (takes ~240 secs)
-ptm01 <- proc.time()
-elig_demog <-
-  sqlQuery(db.claims51,
-           "SELECT x.MEDICAID_RECIPIENT_ID, x.SOCIAL_SECURITY_NMBR, FIRST_NAME, LAST_NAME, MIDDLE_NAME,
-              GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, BIRTH_DATE, DUAL_ELIG,
-              RSDNTL_ADRS_LINE_1, RSDNTL_ADRS_LINE_2, RSDNTL_CITY_NAME, RSDNTL_COUNTY_NAME, RSDNTL_POSTAL_CODE,
-              RSDNTL_STATE_CODE, COVERAGE_TYPE_IND
-            FROM PHClaims.dbo.NewEligibility AS x
-            INNER JOIN (SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, MAX(CLNDR_YEAR_MNTH) AS maxdate
-              FROM PHClaims.dbo.NewEligibility
-              GROUP BY MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR) AS y
-            ON x.MEDICAID_RECIPIENT_ID = y.MEDICAID_RECIPIENT_ID AND
-            x.SOCIAL_SECURITY_NMBR = y.SOCIAL_SECURITY_NMBR AND
-            x.CLNDR_YEAR_MNTH = y.maxdate",
-           stringsAsFactors = FALSE)
-proc.time() - ptm01
+# ptm01 <- proc.time()
+# elig_demog <-
+#   sqlQuery(db.claims51,
+#            "SELECT x.MEDICAID_RECIPIENT_ID, x.SOCIAL_SECURITY_NMBR, FIRST_NAME, LAST_NAME, MIDDLE_NAME,
+#               GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, BIRTH_DATE, DUAL_ELIG,
+#               RSDNTL_ADRS_LINE_1, RSDNTL_ADRS_LINE_2, RSDNTL_CITY_NAME, RSDNTL_COUNTY_NAME, RSDNTL_POSTAL_CODE,
+#               RSDNTL_STATE_CODE, COVERAGE_TYPE_IND
+#             FROM PHClaims.dbo.NewEligibility AS x
+#             INNER JOIN (SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, MAX(CLNDR_YEAR_MNTH) AS maxdate
+#               FROM PHClaims.dbo.NewEligibility
+#               GROUP BY MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR) AS y
+#             ON x.MEDICAID_RECIPIENT_ID = y.MEDICAID_RECIPIENT_ID AND
+#             x.SOCIAL_SECURITY_NMBR = y.SOCIAL_SECURITY_NMBR AND
+#             x.CLNDR_YEAR_MNTH = y.maxdate",
+#            stringsAsFactors = FALSE)
+# proc.time() - ptm01
 
 # Get rid of duplicate rows (these arise because of people having multiple rows on the latest month due to multiple RACs)
 elig_demog <- elig_demog %>% distinct()
@@ -110,6 +110,11 @@ elig_join <- left_join(elig, elig_demog, by = c("MEDICAID_RECIPIENT_ID", "SOCIAL
     GENDER = as.numeric(car::recode(GENDER, "'Female' = 1; 'Male' = 2; 'Unknown' = NA; else = NA")),
     BIRTH_DATE = as.Date(str_sub(BIRTH_DATE, 1, 10), format("%Y-%m-%d"))
     )
+
+#### Save point ####
+#saveRDS(elig_join, file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Alastair/elig_housing.Rda")
+#elig_join <- readRDS(file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Alastair/elig_housing.Rda")
+
 
 # Remove rows with only a Medicaid ID and no other details
 # Actually, keep everyone otherwise the counts of Medicaid enrollees are off
@@ -186,7 +191,7 @@ pairs2_full <- pairs2 %>%
 ##### End of matching #####
 
 
-### Join matched pairs together and deduplicate
+#### Join matched pairs together and deduplicate ####
 pairs_final <- bind_rows(pairs1_full, pairs2_full)
 pairs_final <- pairs_final %>% distinct()
 
@@ -221,7 +226,7 @@ gc()
 
 
 # Make new unique ID to anonymize data
-pha_elig_merge$pid <- group_indices(pha_elig_merge, mid.2, ssn_new_m, ssn_new.1, lname_new.1, fname_new.1, dob.1)
+pha_elig_merge$pid2 <- group_indices(pha_elig_merge, mid.2, ssn_new_m, ssn_new.1, lname_new.1, fname_new.1, dob.1)
 
 
 ### Save point
@@ -264,8 +269,8 @@ temp <- pha_elig_merge %>%
     enddate_o = as.Date(ifelse(overlap_type %in% c(1:5), pmin(enddate_m, enddate_h), NA), origin = "1970-01-01"),
     # Need to duplicate rows to separate out non-overlapping housing and Medicaid periods
     repnum = ifelse(overlap_type %in% c(2:5), 3, ifelse(overlap_type %in% c(6:7), 2, 1))) %>%
-  select(pid, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, repnum) %>%
-  arrange(pid, startdate_h, startdate_m, startdate_o, enddate_h, enddate_m, enddate_o)
+  select(pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, repnum) %>%
+  arrange(pid2, startdate_h, startdate_m, startdate_o, enddate_h, enddate_m, enddate_o)
 
 
 # Expand out rows to separate out overlaps
@@ -273,10 +278,10 @@ temp_ext <- temp[rep(seq(nrow(temp)), temp$repnum), 1:(ncol(temp) - 1)]
 
 
 temp_ext <- temp_ext %>% 
-  group_by(pid, startdate_h, enddate_h, startdate_m, enddate_m) %>% 
+  group_by(pid2, startdate_h, enddate_h, startdate_m, enddate_m) %>% 
   mutate(rownum_temp = row_number()) %>%
   ungroup() %>%
-  arrange(pid, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, rownum_temp) %>%
+  arrange(pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, rownum_temp) %>%
   mutate(
     # Remove non-overlapping dates
     startdate_h = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | (overlap_type == 7 & rownum_temp == 1), 
@@ -287,7 +292,7 @@ temp_ext <- temp_ext %>%
                                  NA, startdate_m), origin = "1970-01-01"), 
     enddate_m = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | (overlap_type == 7 & rownum_temp == 2), 
                                NA, enddate_m), origin = "1970-01-01")) %>%
-  distinct(pid, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, rownum_temp, .keep_all = TRUE) %>%
+  distinct(pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, enddate_o, overlap_type, rownum_temp, .keep_all = TRUE) %>%
   # Remove first row if start dates are the same or housing is only one day
   filter(!(overlap_type %in% c(2:5) & rownum_temp == 1 & (startdate_h == startdate_m | startdate_h == enddate_h))) %>%
   # Remove third row if enddates are the same
@@ -316,12 +321,12 @@ temp_ext <- temp_ext %>%
                                              ifelse(overlap_type %in% c(3, 4) & rownum_temp == 3, enddate_h,
                                                     enddate_c)))), origin = "1970-01-01"),
     # Deal with the last line for each person if it's part of an overlap
-    startdate_c = as.Date(ifelse((pid != lead(pid, 1) | is.na(lead(pid, 1))) &
+    startdate_c = as.Date(ifelse((pid2 != lead(pid2, 1) | is.na(lead(pid2, 1))) &
                                   overlap_type %in% c(2:5) & enddate_h != enddate_m, lag(enddate_o, 1) + 1, startdate_c), origin = "1970-01-01"),
-    enddate_c = as.Date(ifelse((pid != lead(pid, 1) | is.na(lead(pid, 1))) &
+    enddate_c = as.Date(ifelse((pid2 != lead(pid2, 1) | is.na(lead(pid2, 1))) &
                                 overlap_type %in% c(2:5), pmax(enddate_h, enddate_m, na.rm = TRUE), enddate_c), origin = "1970-01-01")
     ) %>%
-  arrange(pid, startdate_c, enddate_c, startdate_h, startdate_m, enddate_h, enddate_m, overlap_type) %>%
+  arrange(pid2, startdate_c, enddate_c, startdate_h, startdate_m, enddate_h, enddate_m, overlap_type) %>%
   mutate(
     # Identify which type of enrollment this row represents
     enroll_type = ifelse((overlap_type == 2 & rownum_temp == 1) | (overlap_type == 3 & rownum_temp == 3) |
@@ -334,31 +339,31 @@ temp_ext <- temp_ext %>%
                                   (overlap_type == 0 & is.na(startdate_h)), "m",
                                 ifelse(overlap_type == 1 | (overlap_type %in% c(2:5) & rownum_temp == 2), "b", "x"))),
     # Drop rows from enroll_type == h/m when they are fully covered by an enroll_type == b
-    drop = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+    drop = ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
                     startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
                     enddate_c >= lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
                     # Fix up quirk from housing data where two rows present for the same day
                     !(lag(enroll_type, 1) != "m" & lag(enddate_h, 1) == lag(startdate_h, 1)) &
                     enroll_type != "b", 1, 0),
-    drop = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+    drop = ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
                     startdate_c == lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
                     enddate_c <= lead(enddate_c, 1) & !is.na(lead(enddate_c, 1)) & 
                     # Fix up quirk from housing data where two rows present for the same day
                     !(lead(enroll_type, 1) != "m" & lead(enddate_h, 1) == lead(startdate_h, 1)) &
                     enroll_type != "b" & lead(enroll_type, 1) == "b", 1, drop),
     # Fix up other oddities when the date range is only one day
-    drop = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+    drop = ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
                     startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
                     enddate_c <= lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
                     enroll_type == "m" & lag(enroll_type, 1) %in% c("b", "h"),
                   1, drop),
-    drop = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+    drop = ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
                     startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
                     enddate_c >= lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
                     startdate_h == lag(startdate_h, 1) & enddate_h == lag(enddate_h, 1) &
                     !is.na(startdate_h) & !is.na(lag(startdate_h, 1)),
                   1, drop),
-    drop = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+    drop = ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
                     startdate_c == lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
                     enddate_c >= lead(enddate_c, 1) & !is.na(lead(enddate_c, 1)) & 
                     enroll_type == "m" & lead(enroll_type, 1) %in% c("b", "h"),
@@ -368,20 +373,20 @@ temp_ext <- temp_ext %>%
   ) %>%
   filter(!drop == 1) %>%
   # Truncate remaining overlapping end dates
-  mutate(enddate_c = as.Date(ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+  mutate(enddate_c = as.Date(ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
                                     startdate_c < lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
                                     enddate_c >= lead(enddate_c, 1) & !is.na(lead(enddate_c, 1)),
                                   lead(startdate_c, 1) - 1, enddate_c), origin = "1970-01-01")) %>%
   select(-drop, -rownum_temp) %>%
   # With rows truncated, now additional rows with enroll_type == h/m that are fully covered by an enroll_type == b
   mutate(
-    drop = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+    drop = ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
                     startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
                     enddate_c == lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
                     # Fix up quirk from housing data where two rows present for the same day
                     #!(lag(enroll_type, 1) != "m" & lag(enddate_h, 1) == lag(startdate_h, 1)) &
                     enroll_type != "b", 1, 0),
-    drop = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+    drop = ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
                     startdate_c == lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
                     enddate_c == lead(enddate_c, 1) & !is.na(lead(enddate_c, 1)) & 
                     # Fix up quirk from housing data where two rows present for the same day
@@ -402,44 +407,57 @@ gc()
 # (the same problem applies to the Medicaid data), so use stripped down datasets in merge
 
 # Choose variables to keep in the final data
-keeplist <- c("pid", "mid.2", "ssn_new_m", "ssn_new.1", "lname_new.1", "fname_new.1", "dob.1", "dob.2", 
-              "gender_new_m6", "adult", "senior", "race2", "disability",
-              #"DUAL_ELIG", "COVERAGE_TYPE_IND",
-              "hhold_id_new", "hh_ssn_id_m6", "hh_dob_m6",
-              "agency_new", "major_prog", "prog_type", "prog_subtype", "spec_purp_type",
-              "portfolio", "property_type", "property_name", "portfolio_new", "prog_type_new",
-              "property_id", "unit_add_new", "unit_apt_new", "unit_apt2_new", "unit_city_new", "unit_state_new", "unit_zip_new")
+# Cutting out most of the geocoding and unit-specific variables as they are not currently being used
+keeplist <- c("pid2", "mid.2", "ssn_new_m", "ssn_new.1", "lname_new.1", "fname_new.1", "dob.1", "dob.2")
+houselist <- c("pid", "startdate_h", "enddate_h", "truncated", "row",
+               "mbr_num", "mbr_num_old", "junkssn", "gender_new_m6", "adult", "senior", "race2", "disability", "citizen", "relcode", "admit_date",
+               "hhold_id_new", "hh_ssn_id_m6", "hh_dob_m6",
+               "agency_new", "major_prog", "prog_type", "prog_subtype", "spec_purp_type", "agency_prog_concat", "prog_type_new", "prog_group", "prog_final",
+               "portability", "port_in", "port_out_kcha", "port_out_sha",
+               "portfolio", "portfolio_group", "portfolio_new", "portfolio_final", "property_type", "property_name", "property_name_new",
+               "property_id", "unit_id", "unit_add_new", "unit_apt_new", "unit_apt2_new", "unit_city_new", "unit_state_new", "unit_zip_new", "unit_concat",
+               "formatted_address", "X", "Y", "source")
+medlist <- c("startdate_m", "enddate_m", "DUAL_ELIG", "COVERAGE_TYPE_IND")
 
 
-# Just the PHA and merging variables
+# Just the PHA demographics and merging variables
 pha_elig_merge_part1 <- pha_elig_merge %>%
-  select(keeplist, startdate_h, enddate_h) %>%
+  select(keeplist, houselist) %>%
   distinct()
-temp_ext_h <- temp_ext %>% filter(!is.na(startdate_h))
-merge1 <- left_join(temp_ext_h, pha_elig_merge_part1, by = c("pid", "startdate_h", "enddate_h"))
+temp_ext_h <- temp_ext %>% filter(enroll_type == "h")
+merge1 <- left_join(temp_ext_h, pha_elig_merge_part1, by = c("pid2", "startdate_h", "enddate_h"))
 
 
-# Just the Mediciad demographics
+# Just the Mediciad demographics and merging variables
 pha_elig_merge_part2 <- pha_elig_merge %>%
-  #select(keeplist, startdate_m, enddate_m) %>%
-  select(pid, startdate_m, enddate_m, mid.2, ssn_new_m, DUAL_ELIG) %>% # Add COVERAGE_TYPE_IND back in when you rerun this with updated Medicaid data frame
+  select(keeplist, medlist) %>%
   distinct()
-temp_ext_m <- temp_ext %>% filter(is.na(startdate_h))
-merge2 <- left_join(temp_ext_m, pha_elig_merge_part2, by = c("pid", "startdate_m", "enddate_m"))
+temp_ext_m <- temp_ext %>% filter(enroll_type == "m")
+merge2 <- left_join(temp_ext_m, pha_elig_merge_part2, by = c("pid2", "startdate_m", "enddate_m"))
 
-pha_elig_final <- bind_rows(merge1, merge2) %>%
+
+# All variables
+pha_elig_merge_part3 <- pha_elig_merge %>%
+  select(keeplist, houselist, medlist) %>%
+  distinct()
+temp_ext_b <- temp_ext %>% filter(enroll_type == "b")
+merge3 <- left_join(temp_ext_b, pha_elig_merge_part3, by = c("pid2", "startdate_h", "enddate_h", "startdate_m", "enddate_m"))
+
+pha_elig_final <- bind_rows(merge1, merge2, merge3) %>%
   # Rename make to make it easier to join with claims
-  rename(MEDICAID_RECIPIENT_ID = mid.2, SOCIAL_SECURITY_NMBR = ssn_new_m, ssn_new_pha = ssn_new.1, dob_h = dob.1)
+  rename(MEDICAID_RECIPIENT_ID = mid.2, SOCIAL_SECURITY_NMBR = ssn_new_m, ssn_new_pha = ssn_new.1, dob_h = dob.1) %>%
+  arrange(pid, startdate_c, enddate_c)
 
 
-### NB. This produces leads to 4 more rows than in the original temp_ext file
+### NB. This produces leads to 10 more rows than in the original temp_ext file
 # This seems to be because of duplicate startdates and enddates in the pha_elig_merge_part1 files
 # Need to further investigate this issue
 
 
 rm(list = ls(pattern = "pha_elig_merge_part"))
 rm(list = ls(pattern = "merge[0-9]"))
-rm(list = ls(patter = "temp_ext"))
+rm(list = ls(pattern = "temp_ext"))
+rm(list = ls(pattern = "list$"))
 gc()
 
 
@@ -448,19 +466,22 @@ gc()
 ### Save point
 #saveRDS(pha_elig_final, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_final.Rda")
 #pha_elig_final <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_final.Rda")
+#rm(pha_elig_merge)
+#gc()
+
 
 # NB. Do not currently have permissions to do this, save as csv instead
-write.csv(pha_elig_final, "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_medicaidelig_combined.csv")
+# Strip to bare minimum columns for analysis
+pha_elig_final_temp <- pha_elig_final %>% select(pid, pid2, MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, startdate_c, enddate_c, enroll_type,
+                                                 dob_h, gender_new_m6, adult, senior, race2, DUAL_ELIG, COVERAGE_TYPE_IND, agency_new,
+                                                 major_prog, prog_type, prog_subtype, spec_purp_type,
+                                                 prog_group, portfolio_group, portfolio_new, property_name_new, unit_zip_new)
+write.csv(pha_elig_final_temp, "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_medicaidelig_combined.csv")
 
 
 # May need to delete table first
-sqlDrop(db.apde50 , "dbo.pha_medicaid_combined")
-sqlSave(db.apde50 , pha_elig_final, tablename = "dbo.pha_medicaid_combined",
-        varTypes = c(
-          startdate_h = "Date", enddate_h = "Date",
-          startdate_m = "Date", enddate_m = "Date",
-          startdate_o = "Date", enddate_o = "Date"
-        ))
+sqlDrop(db.apde51 , "dbo.pha_medicaid_combined")
+sqlSave(db.apde51 , pha_elig_final, tablename = "dbo.pha_medicaid_combined")
 
 
 
