@@ -18,13 +18,45 @@ library(foreign) # Used to read in dbf file from Arcmap output
 
 
 ##### Bring in data #####
+### Housing
+pha_longitudinal <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_longitudinal.Rda")
+# Fix date format
+pha_longitudinal <- pha_longitudinal %>%
+  mutate(dob_m6 = as.Date(dob_m6, origin = "1970-01-01"))
 
 # TBD, currently running cleaning code first. Eventually will refer to a SQL location
 
 
+
+#### Find when people were at YT or scattered sites ####
+yt_demogs <- pha_longitudinal %>%
+  mutate(
+    yt = ifelse((property_id %in% c("1", "591", "738", "743") & !is.na(property_id)) |
+                  ((str_detect(unit_add_new, "1105 E F") | str_detect(unit_add_new, "1305 E F") | 
+                  str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER")) & !is.na(unit_add_new)), 1, 0),
+    yt_old = ifelse(property_id %in% c("1") & !is.na(property_id), 1, 0),
+    yt_new = ifelse((property_id %in% c("591", "738", "743") & !is.na(property_id)) |
+                      (!is.na(unit_add_new) & (str_detect(unit_add_new, "1105 E F") | 
+                                                 str_detect(unit_add_new, "1305 E F") | 
+                                                 str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER"))),
+                    1, 0),
+    ss = ifelse(property_id %in% c("50", "51", "52", "53", "54", "55", "56", "57", "A42", "A43", 
+                                   "I43", "L42", "P42", "P43") & !is.na(property_id), 1, 0)
+  )
+
+
+# Find people who were ever at YT or SS
+yt_demogs <- yt_demogs %>%
+  group_by(pid) %>%
+  mutate_at(vars(yt, ss), funs(ever = sum(., na.rm = TRUE))) %>%
+  ungroup() %>%
+  mutate_at(vars(yt_ever, ss_ever), funs(replace(., which(. > 0), 1)))
+
+
+
 ##### Geocode addresses #####
 ### Find unique addresses and export to geocode in Arcmap
-adds <- yt_cleanadd %>% distinct(unit_add_new, unit_cty, unit_zip) %>%
+adds <- yt_demogs %>% distinct(unit_add_new, unit_cty, unit_zip) %>%
   # Strip out apartment numbers
   mutate(unit_add_strip = str_replace(unit_add_new, "apt|APT[:space:][:alnum:]*", ""),
          unit_add_strip = trimws(unit_add_strip, which = c("right")))
@@ -127,7 +159,7 @@ yt_cleanadd <- left_join(yt_cleanadd, adds, by = c("unit_add_new", "unit_cty", "
 #   N = YT address (new unit)
 #   S = non-YT SHA unit
 #   U = unknown (i.e., new into SHA system)
-#   V = voucher use address
+#   V = voucher use address (not currently using)
 #   Y = YT address (old unit)
 
 
@@ -138,20 +170,53 @@ yt_cleanadd <- left_join(yt_cleanadd, adds, by = c("unit_add_new", "unit_cty", "
 
 
 
-yt_cleanadd <- yt_cleanadd %>%
+yt_demogs <- yt_demogs %>%
+# temp <- yt_ss_joined %>%
+#   distinct(pid, startdate_h, enddate_h, agency_new, yt, yt_old, yt_new, yt_ever) %>%
+#   arrange(pid, startdate_h, enddate_h) %>%
+  arrange(pid, startdate, enddate) %>%
   mutate(
     start_type = NA,
     # Find when people first entered SHA system
-    start_type = ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt == 1, "UY",
-                        ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt == 0, "US", start_type)),
+    start_type = ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt_old == 1, "UY",
+                        ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt_new == 1, "UN",
+                               ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & 
+                                        yt == 0 & agency_new == "SHA", "US",
+                                      ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & 
+                                               yt == 0 & agency_new == "KCHA", "UK",
+                                             start_type)))),
     # Find when people moved within YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 1 & lag(yt, 1) == 1, "YY", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt_old, 1) == 1, "YY", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt_new, 1) == 1, "YN", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt_new, 1) == 1, "NN", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt_old, 1) == 1, "NY", start_type),
     # Find when people were previously at YT but are no longer
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 1, "YS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 0 & lag(yt_old, 1) == 1 &
+                          agency_new == "SHA", "YS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 0 & lag(yt_old, 1) == 1 &
+                          agency_new == "KCHA", "YK", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 0 & lag(yt_new, 1) == 1 &
+                          agency_new == "SHA", "NS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 0 & lag(yt_new, 1) == 1 &
+                          agency_new == "KCHA", "NK", start_type),
     # Find when people moved from non-YT into YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 1 & lag(yt, 1) == 0, "SY", start_type),
-    # Find when people moved from non-YT to another YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0, "SS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt, 1) == 0 &
+                          lag(agency_new, 1) == "SHA", "SY", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt, 1) == 0 &
+                          lag(agency_new, 1) == "KCHA", "KY", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt, 1) == 0 &
+                          lag(agency_new, 1) == "SHA", "SN", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt, 1) == 0 &
+                          lag(agency_new, 1) == "KCHA", "KN", start_type),
+    # Find when people moved from non-YT to another non-YT
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
+                          agency_new == "SHA" & lag(agency_new, 1) == "SHA", "SS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
+                          agency_new == "SHA" & lag(agency_new, 1) == "KCHA", "KS", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
+                          agency_new == "KCHA" & lag(agency_new, 1) == "SHA", "SK", start_type),
+    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
+                          agency_new == "KCHA" & lag(agency_new, 1) == "KCHA", "KK", start_type),
     
     end_type = NA,
     # Find when people exited SHA system

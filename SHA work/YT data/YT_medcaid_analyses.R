@@ -21,8 +21,10 @@ db.claims50 <- odbcConnect("PHClaims50")
 
 
 ##### BRING IN DATA #####
-### Bring in linked housing/Medicaid elig data
-yt_demogs <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_demogs.Rds")
+### Bring in linked housing/Medicaid elig data with YT already designated
+yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
+
+
 
 
 ### Bring in ED visit data
@@ -65,7 +67,7 @@ proc.time() - ptm01
 # This section is used to created a specific dataset of people who have lived in Yesler Terrace or a scattered site
 # Code for more general SHA linkage is beyong this section
 
-yt_ss <- yt_demogs %>%
+yt_ss <- yt_elig_final %>%
   filter(yt_ever == 1 | ss_ever == 1)
 
 # Make a list of unique Medicaid IDs in the data
@@ -77,7 +79,7 @@ yt_ss_ids <- paste(yt_ss_ids, collapse = "', '")
 yt_ss_ids <- paste0("'", yt_ss_ids, "'", collapse = NULL)
 
 # Pull in claims from YT/SS people
-ptm01 <- proc.time() # Times how long this query takes (~90 secs)
+ptm01 <- proc.time() # Times how long this query takes (~100 secs)
 yt_ss_claims <- 
   sqlQuery(db.claims50,
            paste0("SELECT DISTINCT MEDICAID_RECIPIENT_ID, TCN, ORGNL_TCN, FROM_SRVC_DATE, TO_SRVC_DATE, BLNG_PRVDR_TYPE_CODE, CLM_TYPE_CID,
@@ -100,21 +102,23 @@ yt_ss_claims <- yt_ss_claims %>%
 # Link back to the elig file
 yt_ss_joined <- left_join(yt_ss, yt_ss_claims, by = c("MEDICAID_RECIPIENT_ID")) %>%
   # Remove Medicaid claims that fall outside of the time the person was covered by Medicaid (i.e., extra rows from the join)
-  mutate(drop = ifelse(!is.na(FROM_SRVC_DATE) & (FROM_SRVC_DATE < startdate_m | FROM_SRVC_DATE > enddate_m), 1, 0)) %>%
+  mutate(drop = ifelse(!is.na(FROM_SRVC_DATE) & (FROM_SRVC_DATE < startdate_c | FROM_SRVC_DATE > enddate_c), 1, 0)) %>%
   filter(drop == 0)
 
-# Make anonymous ID and strip identifiers
-yt_ss_joined$pid <- group_indices(yt_ss_joined, MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, ssn_new_pha, lname_new.1, fname_new.1, dob_h)
-yt_ss_joined <- select(yt_ss_joined, pid, gender_new_m6, dob.2, race2, disability, startdate_h:enddate_o, yt:PATIENT_PAY_AMT_L)
+#Strip identifiers
+yt_ss_joined <- select(yt_ss_joined, pid, gender_new_m6:agency_new, DUAL_ELIG, COVERAGE_TYPE_IND,
+                       startdate_h:enddate_o, startdate_c:enroll_type, yt:PATIENT_PAY_AMT_L)
 
 
 ### Export data
-saveRDS(yt_ss_joined, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_ss_joined.Rda")
+saveRDS(yt_ss_joined, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_ss_joined_2017-08-17.Rda")
+yt_ss_joined <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_ss_joined_2017-08-17.Rda")
 
+#### END YT/SS SPECIFIC SECTION ####
 
 
 #### JOIN PHA/ELIG TABLE WITH CLAIMS ####
-yt_claims_ed <- left_join(yt_demogs, ed, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
+yt_claims_ed <- left_join(yt_elig_final, ed, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
   # Fix up dates
   mutate_at(vars(ed_from, ed_to), funs(as.Date(., origin = "1970-01-01")))
 
@@ -123,7 +127,7 @@ yt_claims_ed <- yt_claims_ed %>%
   mutate(ed_year = year(ed_from))
 
 
-yt_claims_asthma <- left_join(yt_demogs, asthma, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
+yt_claims_asthma <- left_join(yt_elig_final, asthma, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
   # Fix up dates
   mutate_at(vars(ast_from, ast_to), funs(as.Date(., origin = "1970-01-01")))
 
@@ -133,7 +137,7 @@ yt_claims_asthma <- yt_claims_asthma %>%
 
 
 
-yt_claims <- left_join(yt_demogs, ed, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
+yt_claims <- left_join(yt_elig_final, ed, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
   left_join(., asthma, by = c("MEDICAID_RECIPIENT_ID" = "id")) %>%
   # Fix up dates
   mutate_at(vars(ed_from, ed_to, ast_from, ast_to), funs(as.Date(., origin = "1970-01-01")))

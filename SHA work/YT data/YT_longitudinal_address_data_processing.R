@@ -8,7 +8,7 @@
 
 
 ##### Set up global parameter and call in libraries #####
-options(max.print = 700, scipen = 0)
+options(max.print = 100, scipen = 999)
 
 library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
@@ -36,7 +36,7 @@ yt <- select(yt, IncAsset_ID, Property.ID:Unit.Zip.Code...5a, Member.number...3a
 # Rename variables
 yt <- rename(yt, incasset_id = IncAsset_ID, property_id = Property.ID, unit_id = Unit.ID, 
              act_type = Action.Type...2a, act_date = Effective.Date.of.Action...2b, admit_date = Date.of.Admission...2h,
-             eexam_date = Projected.Effective.Date.of.Next.Re.Exam...2i, hofh_ssn = Head.of.House.SSN,
+             reexam_date = Projected.Effective.Date.of.Next.Re.Exam...2i, hofh_ssn = Head.of.House.SSN,
              hofh_lname = Last.Name...3b..Head., hofh_lnamesuf = Last.Name.Head.Suffix,
              hofh_fname = First.Name...3c..Head., hofh_mname = Middle.Initial...3d..Head.,
              hhold_num = Number.of.Household.Members...3t, unit_add = Unit.Address.Number.and.Street....5a,
@@ -379,13 +379,12 @@ yt_new <- yt_complete %>%
 
 ##### Match #02 - repeat match 01 with relaxed last name match to capture people with spelling variations #####
 # (i.e., block on SSN, and DOB year; match soundex lname, fname, mname, and other DOB elements) #
-match2 <- compare.dedup(yt_new, blockfld = c("ssnnew", "lname_trim_m1", "dob_y_m1"),
+match2 <- compare.dedup(yt_new, blockfld = c("ssnnew", "dob_y_m1"),
                         strcmp = c("mname_new_m1", "dob_mth_m1", "dob_d_m1", "gender_new_m1", "lnamesuf_new_m1"),
                         phonetic = c("lname_trim_m1", "fname_trim_m1"), phonfun = soundex,
                         exclude = c("lname_new_m1", "lname_phon_m1", "fname_new_m1", "fname_phon_m1", 
                                     "dob_m1", "lname_rec_m1", "fname_new_cnt_m1", "mname_new_cnt_m1", 
                                     "lnamesuf_new_cnt_m1", "dob_cnt_m1", "gender_new_cnt_m1"))
-
 
 # Using EpiLink approach
 match2_tmp2 <- epiWeights(match2)
@@ -741,7 +740,7 @@ yt_cleanadd <- yt_cleanadd %>%
                             origin = "1970-01-01"),
          # Last row for a person = today's date or act_date + 3 years
          # Other rows where that is the person's last row at that address = act_date at next address - 1 day
-         enddate = as.Date(ifelse(act_type == 6, act_date,
+         enddate = as.Date(ifelse(act_type == 5 | act_date == 6, act_date,
                                   ifelse(ssnnew_m3 != lead(ssnnew_m3, 1) | 
                                                              (((is.na(ssnnew_m3) & is.na(lead(ssnnew_m3, 1))) | ssnnew_m3 == lead(ssnnew_m3, 1)) & 
                                                              (lname_new_m3 != lead(lname_new_m3, 1) | fname_new_m3 != lead(fname_new_m3, 1))) | 
