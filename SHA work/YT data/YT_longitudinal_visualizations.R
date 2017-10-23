@@ -9,7 +9,6 @@
 ##### Set up global parameter and call in libraries #####
 options(max.print = 700, scipen = 0)
 
-
 library(ggplot2) # Used to make plots
 library(ggmap) # Used to incorporate Google maps data
 library(gganimate) # Used to make animations (use devtools::install_github("dgrtwo/gganimate"))
@@ -17,98 +16,33 @@ library(dplyr) # Used to manipulate data
 library(foreign) # Used to read in dbf file from Arcmap output
 
 
-##### Bring in data #####
-### Housing
-pha_longitudinal <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_longitudinal.Rda")
-# Fix date format
-pha_longitudinal <- pha_longitudinal %>%
-  mutate(dob_m6 = as.Date(dob_m6, origin = "1970-01-01"))
-
-# TBD, currently running cleaning code first. Eventually will refer to a SQL location
+#### Bring in combined PHA/Medicaid data with some demographics already run ####
+pha_elig_demogs <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_demogs.Rda")
 
 
-
-#### Find when people were at YT or scattered sites ####
-yt_demogs <- pha_longitudinal %>%
+#### Set up key variables ####
+# Yesler Terrace and scattered sites indicators
+yt_elig_final <- pha_elig_demogs %>%
   mutate(
-    yt = ifelse((property_id %in% c("1", "591", "738", "743") & !is.na(property_id)) |
+    yt = ifelse((property_id %in% c("001", "1", "591", "738", "743") & !is.na(property_id)) |
                   ((str_detect(unit_add_new, "1105 E F") | str_detect(unit_add_new, "1305 E F") | 
-                  str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER")) & !is.na(unit_add_new)), 1, 0),
-    yt_old = ifelse(property_id %in% c("1") & !is.na(property_id), 1, 0),
+                      str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER")) & !is.na(unit_add_new)), 1, 0),
+    yt_old = ifelse(property_id %in% c("1", "001") & !is.na(property_id), 1, 0),
     yt_new = ifelse((property_id %in% c("591", "738", "743") & !is.na(property_id)) |
                       (!is.na(unit_add_new) & (str_detect(unit_add_new, "1105 E F") | 
                                                  str_detect(unit_add_new, "1305 E F") | 
                                                  str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER"))),
                     1, 0),
-    ss = ifelse(property_id %in% c("50", "51", "52", "53", "54", "55", "56", "57", "A42", "A43", 
+    ss = ifelse(property_id %in% c("050", "051", "052", "053", "054", "055", "056", "057", "A42", "A43", 
                                    "I43", "L42", "P42", "P43") & !is.na(property_id), 1, 0)
   )
 
-
 # Find people who were ever at YT or SS
-yt_demogs <- yt_demogs %>%
-  group_by(pid) %>%
+yt_elig_final <- yt_elig_final %>%
+  group_by(pid2) %>%
   mutate_at(vars(yt, ss), funs(ever = sum(., na.rm = TRUE))) %>%
   ungroup() %>%
   mutate_at(vars(yt_ever, ss_ever), funs(replace(., which(. > 0), 1)))
-
-
-
-##### Geocode addresses #####
-### Find unique addresses and export to geocode in Arcmap
-adds <- yt_demogs %>% distinct(unit_add_new, unit_cty, unit_zip) %>%
-  # Strip out apartment numbers
-  mutate(unit_add_strip = str_replace(unit_add_new, "apt|APT[:space:][:alnum:]*", ""),
-         unit_add_strip = trimws(unit_add_strip, which = c("right")))
-
-# Export only non-APT addresses for faster geocoding in ArcMap
-adds_strip <- adds %>% distinct(unit_add_strip, unit_cty, unit_zip)
-write.csv(adds_strip, file = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Geocoding/unique_address.csv", row.names = FALSE)
-
-### Arcmap misses some addresses so need to finish off with Google
-# Bring in partially geocoded data
-adds_geo1 <- read.dbf(file = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Geocoding/Unique_addresses_geocoded_ArcGIS.dbf", as.is = TRUE) %>%
-  select(-(X), -(Y)) %>%
-  rename(X = X2, Y = Y2)
-
-# Filter out unmatched addresses
-adds_geo_u <- adds_geo1 %>%
-  filter(Status %in% c("U")) %>%
-  select(Status, unit_add_s:unit_zip) %>%
-  mutate(unit_state = "WA")
-
-# Geocode unmatched addresses
-# Used to write out to geocode via QGIS's Google interface due to R errors. seem to be resolved
-# write.csv(adds_geo_u, file = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Geocoding/unique_address_u.csv", row.names = FALSE)
-adds_geo_m <- geocode(paste(adds_geo_u$unit_add_s, adds_geo_u$unit_cty, adds_geo_u$unit_zip, sep = ","), output = "more")
-
-# Merge Google results with original list of unmatched addresses
-# Need to add row numbers to make merge work
-adds_geo_u$row <- seq(1:nrow(adds_geo_u)) 
-adds_geo_m$row <- seq(1:nrow(adds_geo_m))
-
-adds_geo2 <- left_join(adds_geo_u, adds_geo_m, by = c("row")) %>%
-  select(unit_add_s:unit_zip, lon, lat) %>%
-  rename(X = lon, Y = lat) %>%
-  mutate(source = "Google")
-
-
-### Merge two sets of geocodes
-adds_geo3 <- adds_geo1 %>%
-  filter(Status %in% c("M", "T")) %>%
-  select(unit_add_s:unit_zip, X, Y) %>%
-  mutate(source = "ArcMap") %>%
-  full_join(., adds_geo2, by = c("unit_add_s", "unit_cty", "unit_zip")) %>%
-  mutate(X = ifelse(is.na(X.x), X.y, X.x),
-         Y = ifelse(is.na(Y.x), Y.y, Y.x),
-         source = ifelse(is.na(source.x), source.y, source.x)) %>%
-  select(unit_add_s:unit_zip, X, Y, source) %>%
-  rename(unit_add_strip = unit_add_s)
-
-
-### Merge back with original distinct address data then original cleaned data
-adds <- left_join(adds, adds_geo3, by = c("unit_add_strip", "unit_cty", "unit_zip"))
-yt_cleanadd <- left_join(yt_cleanadd, adds, by = c("unit_add_new", "unit_cty", "unit_zip"))
 
 
 ##### Identify events #####
@@ -157,91 +91,70 @@ yt_cleanadd <- left_join(yt_cleanadd, adds, by = c("unit_add_new", "unit_cty", "
 
 #   K = KCHA
 #   N = YT address (new unit)
-#   S = non-YT SHA unit
-#   U = unknown (i.e., new into SHA system)
-#   V = voucher use address (not currently using)
+#   O = non-YT, non-scattered site SHA unit
+#   S = SHA scattered site
+#   U = unknown (i.e., new into SHA system, mostly people who only had Medicaid but not PHA coverage)
 #   Y = YT address (old unit)
 
 
-
-# Notes:
-# Currently we cannot differentiate between new and old YT units so all are assumed to be old units
-# We also do not have SHA voucher data or KCHA data merged yet (as of 2017-03-31)
-
-
-
-yt_demogs <- yt_demogs %>%
-# temp <- yt_ss_joined %>%
-#   distinct(pid, startdate_h, enddate_h, agency_new, yt, yt_old, yt_new, yt_ever) %>%
-#   arrange(pid, startdate_h, enddate_h) %>%
-  arrange(pid, startdate, enddate) %>%
+yt_elig_final <- yt_elig_final %>%
+  arrange(pid2, startdate_c, enddate_c) %>%
   mutate(
+    # First ID the place for that row
+    place = ifelse(is.na(agency_new), "U", 
+                   ifelse(agency_new == "KCHA" & !is.na(agency_new), "K",
+                          ifelse(agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 0, "O",
+                                 ifelse(agency_new == "SHA" & !is.na(agency_new) & yt_old == 1, "Y",
+                                        ifelse(agency_new == "SHA" & !is.na(agency_new) & yt_new == 1, "N",
+                                               ifelse(agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 1, "S", NA)))))),
     start_type = NA,
-    # Find when people first entered SHA system
-    start_type = ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt_old == 1, "UY",
-                        ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & yt_new == 1, "UN",
-                               ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & 
-                                        yt == 0 & agency_new == "SHA", "US",
-                                      ifelse((pid != lag(pid, 1) | is.na(lag(pid, 1))) & 
-                                               yt == 0 & agency_new == "KCHA", "UK",
-                                             start_type)))),
-    # Find when people moved within YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt_old, 1) == 1, "YY", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt_new, 1) == 1, "YN", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt_new, 1) == 1, "NN", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt_old, 1) == 1, "NY", start_type),
-    # Find when people were previously at YT but are no longer
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 0 & lag(yt_old, 1) == 1 &
-                          agency_new == "SHA", "YS", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 0 & lag(yt_old, 1) == 1 &
-                          agency_new == "KCHA", "YK", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 0 & lag(yt_new, 1) == 1 &
-                          agency_new == "SHA", "NS", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 0 & lag(yt_new, 1) == 1 &
-                          agency_new == "KCHA", "NK", start_type),
-    # Find when people moved from non-YT into YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt, 1) == 0 &
-                          lag(agency_new, 1) == "SHA", "SY", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_old == 1 & lag(yt, 1) == 0 &
-                          lag(agency_new, 1) == "KCHA", "KY", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt, 1) == 0 &
-                          lag(agency_new, 1) == "SHA", "SN", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt_new == 1 & lag(yt, 1) == 0 &
-                          lag(agency_new, 1) == "KCHA", "KN", start_type),
-    # Find when people moved from non-YT to another non-YT
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
-                          agency_new == "SHA" & lag(agency_new, 1) == "SHA", "SS", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
-                          agency_new == "SHA" & lag(agency_new, 1) == "KCHA", "KS", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
-                          agency_new == "KCHA" & lag(agency_new, 1) == "SHA", "SK", start_type),
-    start_type = ifelse(pid == lag(pid, 1) & !is.na(lag(pid, 1)) & yt == 0 & lag(yt, 1) == 0 &
-                          agency_new == "KCHA" & lag(agency_new, 1) == "KCHA", "KK", start_type),
-    
+    start_type = ifelse(pid2 != lag(pid2, 1) | is.na(lag(pid2, 1)), paste0("U", place),
+                        ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)), paste0(lag(place, 1), place), start_type)),
     end_type = NA,
-    # Find when people exited SHA system
-    end_type = ifelse((pid != lead(pid, 1) | is.na(lead(pid, 1))) & yt == 1, "YU",
-                      ifelse((pid != lead(pid, 1) | is.na(lead(pid, 1))) & yt == 0, "SU", end_type)),
-    # Find when people's next unit is also within YT
-    end_type = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & yt == lead(yt, 1) & yt == 1, "YY", end_type),
-    # Find when people are at YT but not in next location
-    end_type = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & yt == 1 & lead(yt, 1) == 0, "YS", end_type),
-    # Find when people are not at YT but are at YT in next location
-    end_type = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & yt == 0 & lead(yt, 1) == 1, "SY", end_type),
-    # Find when people are not at YT and nor is their next SHa unit
-    end_type = ifelse(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & yt == 0 & lead(yt, 1) == 0, "SS", end_type)
+    end_type = ifelse((pid2 != lead(pid2, 1) | is.na(lead(pid2, 1))) & enddate_c < as.Date("2017-09-15"), paste0(place, "U"),
+                      ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)), paste0(place, lead(place, 1)), end_type))
     )
 
 
-##### Plot events #####
+yt_moves <- yt_elig_final %>%
+  select(pid2, yt, yt_old, yt_new, X, Y, place, start_type, end_type) %>%
+  filter(yt == 1 & !is.na(X) & !is.na(Y)) %>%
+  mutate(northing = X, easting = Y)
+
+
+#### Plot events ####
+# Convert spatial coordinates to one that can go on Google maps (they are stored in 1983 HARN State Plane WA N FIPS 4601)
+coordinates(yt_moves) <- ~ easting + northing
+proj4string(yt_moves) <- CRS("+proj=lcc +lat_1=47.5 +lat_2=49.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000.0000000001 +y_0=0 +ellps=GRS80 +to_meter=0.3048006096012192 +no_defs")
+yt_moves <- spTransform(yt_moves, CRS("+init=epsg:4326"))
+
+# Add basemap
+yt_move_map <- get_map(location = c(lon = mean(yt_moves$easting, na.rm = T), lat = mean(yt_moves$northing, na.rm = T)), zoom = 14, crop = F)
+
+ggmap(yt_move_map) + 
+  geom_point(data = as.data.frame(yt_moves), aes(x = easting, y = northing, color = start_type, shape = start_type)) +
+#  geom_label(data = as.data.frame(yt_moves), aes(x = easting, y = northing, label = pid2)) +
+  scale_color_manual(name = "Move-in type",
+                     labels = c("KCHA to new YT", "KCHA to old YT", "New YT to new YT", "Other SHA to new YT", "Other SHA to old YT",
+                                "Scattered sites to new YT", "Scattered sites to old YT", "Unknown to new YT", "Unknown to old YT",
+                                "Old YT to new YT", "Old YT to old YT"),
+                     values = c("#999999", "#999999", "#E69F00", "#56B4E9", "#56B4E9", "#F0E442", "#F0E442",
+                                "#0072B2", "#0072B2", "#D55E00", "#D55E00")) +
+  scale_shape_manual(name = "Move-in type",
+                     labels = c("KCHA to new YT", "KCHA to old YT", "New YT to new YT", "Other SHA to new YT", "Other SHA to old YT",
+                                "Scattered sites to new YT", "Scattered sites to old YT", "Unknown to new YT", "Unknown to old YT",
+                                "Old YT to new YT", "Old YT to old YT"),
+                     values = c(16, 17, 16, 16, 17, 16, 17, 16, 17, 16, 17)) +
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +
+  ggtitle("Move types in SHA data")
+
+
 # Bring in map of Seattle from Google
 seattle.map = get_map(location = "Seattle", source = "google", maptype = "terrain", color = "bw")
 map <- ggmap(seattle.map)
-moveins <- map + geom_point(data = yt_cleanadd, aes(y = Y, x = X, color = start_type)) +
+moveins <- map + geom_point(data = yt_moves, aes(y = Y, x = X, color = start_type, shape = place)) +
   scale_color_brewer(type = "qual", palette = "Dark2") +
   theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank()) +
-  ggtitle("Move types in SHA data")
+  ggtitle("Types of moves into Yesler Terrace")
 moveins
 
-
-  scale_color_brewer(type = "qual", palette = "Set2")

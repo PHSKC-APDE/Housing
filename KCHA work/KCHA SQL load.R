@@ -91,6 +91,6 @@ sqlSave(db.apde51, kcha, tablename = "dbo.kcha_combined_raw",
 
 
 ##### Remove temporary files #####
-rm(list = ls(pattern = "kcha_old_p"))
-rm(list = ls(pattern = "kcha_new_p"))
+rm(list = ls(pattern = "kcha_old"))
+rm(list = ls(pattern = "kcha_new"))
 gc()

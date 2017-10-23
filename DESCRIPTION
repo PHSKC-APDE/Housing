@@ -1,0 +1,32 @@
+Package: housing
+Version: 0.0.0.9000
+Title: Organizes public housing authority data into a longitudinal record
+Description: LARGELY FOR INTERNAL USE
+  Takes raw public housing authority extracts (specific to Seattle Housing Authority and King County Housing Authority currently)
+  and merges them into a single, deduplicated, longitudinal record. Can also link the longitudinal data to Medicaid claims data (which
+  will already be processed and stored in a given format)
+Authors@R: person("Alastair", "Matheson", email = "alastair.matheson@kingcounty.gov", role = c("aut", "cre"))
+BugReports: https://github.com/PHSKC-APDE/Housing/issues
+Depends: R (>= 3.3.3)
+License: None
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    car,
+    data.table,
+    dplyr (>= 0.7.0),
+    dtplyr,
+    ggplot2,
+    lubridate,
+    openxlsx,
+    phonics,
+    RecordLinkage,
+    rlang,
+    RODBC,
+    stringr,
+    tidyr
+Suggests:
+    haven,
+    pastecs,
+    reticulate
+RoxygenNote: 6.0.1

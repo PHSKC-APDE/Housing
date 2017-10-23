@@ -24,9 +24,7 @@ library(phonics) # used to extract phonetic version of names
 
 
 ##### Connect to the servers #####
-db.apde50 <- odbcConnect("PH_APDEStore50")
 db.apde51 <- odbcConnect("PH_APDEStore51")
-db.claims50 <- odbcConnect("PHClaims50")
 db.claims51 <- odbcConnect("PHClaims51")
 
 
