@@ -1,0 +1,1185 @@
+###############################################################################
+# OVERVIEW:
+# Code to create a cleaned person table from the combined 
+# King County Housing Authority and Seattle Housing Authority data sets
+# Aim is to have a single row per contiguous time in a house per person
+#
+# STEPS:
+# Process raw KCHA data and load to SQL database
+# Process raw SHA data and load to SQL database
+# Bring in individual PHA datasets and combine into a single file
+# Deduplicate data and tidy up via matching process ### (THIS CODE) ###
+# Recode race and other demographics
+# Clean up addresses and geocode
+# Consolidate data rows
+# Add in final data elements and set up analyses
+#
+# Alastair Matheson (PHSKC-APDE)
+# alastair.matheson@kingcounty.gov
+# 2016-05-13, split into separate files 2017-10
+# 
+###############################################################################
+
+
+#### Set up global parameter and call in libraries ####
+options(max.print = 350, tibble.print_max = 50, scipen = 999)
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+
+library(housing) # contains many useful functions for cleaning
+library(dplyr) # Used to manipulate data
+library(stringr) # Used to manipulate string data
+library(lubridate) # used to manipulate dates
+library(RecordLinkage) # used to clean up duplicates in the data
+library(phonics) # used to extract phonetic version of names
+
+
+#### Bring in data ####
+# Assumes pha_combining.R has been run at some point
+pha <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_combined.Rda"))
+
+### Remove duplicate records in preparation for matching
+pha_dedup <- pha %>%
+  select(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, lname_new, fname_new:lnamesuf_new, 
+         lname_trim:fname_phon, lname_rec, fname_new_cnt:lnamesuf_new_cnt,
+         dob, dob_y:dob_cnt, gender_new, gender_new_cnt) %>%
+  distinct(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, lname_new, lnamesuf_new, 
+           fname_new, mname_new, lname_rec, fname_new_cnt, mname_new_cnt,
+           lnamesuf_new_cnt, dob, dob_y, dob_mth, dob_d, dob_cnt, gender_new, gender_new_cnt,
+           .keep_all = TRUE)
+
+
+##### Matching protocol #####
+# 01) Block on SSN, soundex lname, and DOB year; match fname, mname, lname suffix, gender, and other DOB elements
+# 02) Repeat match 01 but block on HUD ID instead of SSN
+# 03) Repeat match 01 with relaxed last name match to capture people with spelling variations
+# 04) Repeat match 02 with relaxed last name match to capture people with spelling variations
+# 05) Block on soundex lname, soundex fname, and DOB; match SSN, mname, gender, and lname suffix
+# 06) Block on soundex lname, soundex fname, and DOB; match combined SSN/HUD ID, mname, gender, and lname suffix
+
+#### Match #01 - block on SSN, soundex lname, and DOB year; match fname, mname, lname suffix, gender, and other DOB elements ####
+match1 <- compare.dedup(
+  pha_dedup, blockfld = c("ssn_new", "lname_trim", "dob_y"),
+  strcmp = c("mname_new", "dob_mth", "dob_d", "gender_new", "lnamesuf_new"),
+  phonetic = c("lname_trim", "fname_trim"), phonfun = soundex,
+  exclude = c("ssn_c", "ssn_new_junk", "ssn_c_junk", "lname_new", "lname_phon", 
+              "fname_new", "fname_phon", "dob", "lname_rec", "fname_new_cnt", 
+              "mname_new_cnt", "lnamesuf_new_cnt", "dob_cnt", "gender_new_cnt"))
+
+# Using EpiLink approach
+match1_tmp <- epiWeights(match1)
+classify1 <- epiClassify(match1_tmp, threshold.upper = 0.49)
+summary(classify1)
+pairs1 <- getPairs(classify1, single.rows = FALSE)
+
+
+# Fix formattings
+pairs1 <- pairs1 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob = as.Date(dob, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new, ssn_new_junk, ssn_c_junk, dob_y, dob_mth, dob_d, 
+                 fname_new_cnt, mname_new_cnt, lnamesuf_new_cnt, gender_new, 
+                 gender_new_cnt, dob_cnt, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, lname_rec, 
+                 lname_trim, lname_phon, fname_trim, fname_phon), 
+            funs(as.character(.))
+  ) %>%
+  filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair
+  group_by(pair) %>%
+  mutate(Weight = last(Weight)) %>%
+  ungroup()
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs1_full <- pairs1 %>%
+  filter(ssn_new_junk == 0 | ssn_c_junk == 0) %>%
+  group_by(pair) %>%
+  mutate(
+    # Use most recent name (this field should be the same throughout)
+    lname_new_m1 = lname_rec,
+    # Take most common first name (for ties, the first ocurrance is used)
+    fname_new_m1 = fname_new[which.max(fname_new_cnt)],
+    # Take most common middle name (character(0) accounts for groups with no middle name)
+    # (for ties, the first ocurrance is used)
+    mname_new_m1 = ifelse(identical(mname_new[which.max(mname_new_cnt)], character(0)),
+                          "", mname_new[which.max(mname_new_cnt)]),
+    # Take most common last name suffix (character(0) accounts for groups with no suffix)
+    # (for ties, the first ocurrance is used)
+    lnamesuf_new_m1 = ifelse(identical(lnamesuf_new[which.max(lnamesuf_new_cnt)], character(0)),
+                             "", lnamesuf_new[which.max(lnamesuf_new_cnt)]),
+    # Take most common gender (character(0) accounts for groups with missing genders)
+    # (for ties, the first ocurrance is used)
+    gender_new_m1 = ifelse(identical(gender_new[which.max(gender_new_cnt)], character(0)),
+                           "", gender_new[which.max(gender_new_cnt)]),
+    # Take most common DOB (character(0) accounts for groups with missing DOBs)
+    # (for ties, the first ocurrance is used)
+    dob_m1 = as.Date(ifelse(identical(dob[which.max(dob_cnt)], character(0)),
+                            "", dob[which.max(dob_cnt)]), origin = "1970-01-01"),
+    # Keep track of most common variables for future matches
+    # If identical, the first ocurrance is used
+    lname_rec_m1 = lname_rec,
+    fname_new_cnt_m1 = fname_new_cnt[which.max(fname_new_cnt)],
+    mname_new_cnt_m1 = ifelse(identical(mname_new_cnt[which.max(mname_new_cnt)], character(0)),
+                              NA,
+                              mname_new_cnt[which.max(mname_new_cnt)]),
+    lnamesuf_new_cnt_m1 = ifelse(identical(lnamesuf_new_cnt[which.max(lnamesuf_new_cnt)], character(0)),
+                                 NA,
+                                 lnamesuf_new_cnt[which.max(lnamesuf_new_cnt)]),
+    gender_new_cnt_m1 = ifelse(identical(gender_new_cnt[which.max(gender_new_cnt)], character(0)),
+                               NA,
+                               gender_new_cnt[which.max(gender_new_cnt)]),
+    dob_cnt_m1 = ifelse(identical(dob_cnt[which.max(dob_cnt)], character(0)),
+                        NA,
+                        dob_cnt[which.max(dob_cnt)]),
+    # Keep track of other variables for future matches
+    lname_trim_m1 = lname_trim,
+    lname_phon_m1 = lname_phon,
+    fname_trim_m1 = fname_trim[which.max(fname_new_cnt)],
+    fname_phon_m1 = fname_phon[which.max(fname_new_cnt)],
+    ssn_new_junk_m1 = ssn_new_junk,
+    ssn_c_junk_m1 = ssn_c_junk
+  ) %>%
+  ungroup() %>%
+  select(ssn_new:lnamesuf_new, gender_new, dob, lname_new_m1:ssn_c_junk_m1) %>%
+  distinct(ssn_new, ssn_c, lname_new, fname_new, mname_new, dob, gender_new, .keep_all = TRUE)
+
+
+# Make cleaner data for next deduplication process
+pha_complete <- left_join(pha_dedup, pairs1_full, 
+                          by = c("ssn_new", "ssn_c", "ssn_new_junk", "ssn_c_junk",
+                                 "lname_new", "fname_new", "mname_new", 
+                                 "lnamesuf_new", "dob", "gender_new")) %>%
+  mutate(lname_new_m1 = ifelse(is.na(lname_new_m1), lname_new, lname_new_m1),
+         fname_new_m1 = ifelse(is.na(fname_new_m1), fname_new, fname_new_m1),
+         mname_new_m1 = ifelse(is.na(mname_new_m1), mname_new, mname_new_m1),
+         lnamesuf_new_m1 = ifelse(is.na(lnamesuf_new_m1), lnamesuf_new, lnamesuf_new_m1),
+         dob_m1 = as.Date(ifelse(is.na(dob_m1), dob, dob_m1), origin = "1970-01-01"),
+         dob_y_m1 = as.numeric(year(dob_m1)),
+         dob_mth_m1 = as.numeric(month(dob_m1)),
+         dob_d_m1 = as.numeric(day(dob_m1)),
+         gender_new_m1 = ifelse(is.na(gender_new_m1), gender_new, gender_new_m1),
+         lname_rec_m1 = ifelse(is.na(lname_rec_m1), lname_rec, lname_rec_m1),
+         fname_new_cnt_m1 = ifelse(is.na(fname_new_cnt_m1), fname_new_cnt, fname_new_cnt_m1),
+         mname_new_cnt_m1 = ifelse(is.na(mname_new_cnt_m1), mname_new_cnt, mname_new_cnt_m1),
+         lnamesuf_new_cnt_m1 = ifelse(is.na(lnamesuf_new_cnt_m1), lnamesuf_new_cnt, lnamesuf_new_cnt_m1),
+         dob_cnt_m1 = ifelse(is.na(dob_cnt_m1), dob_cnt, dob_cnt_m1),
+         gender_new_cnt_m1 = ifelse(is.na(gender_new_cnt_m1), gender_new_cnt, gender_new_cnt_m1),
+         lname_trim_m1 = ifelse(is.na(lname_trim_m1), lname_trim, lname_trim_m1),
+         lname_phon_m1 = ifelse(is.na(lname_phon_m1), lname_phon, lname_phon_m1),
+         fname_trim_m1 = ifelse(is.na(fname_trim_m1), fname_trim, fname_trim_m1),
+         fname_phon_m1 = ifelse(is.na(fname_phon_m1), fname_phon, fname_phon_m1),
+         ssn_new_junk_m1 = ifelse(is.na(ssn_new_junk_m1), ssn_new_junk, ssn_new_junk_m1),
+         ssn_c_junk_m1 = ifelse(is.na(ssn_c_junk_m1), ssn_c_junk, ssn_c_junk_m1)
+  )
+
+pha_new <- pha_complete %>% 
+  select(ssn_new, ssn_c, lname_new_m1:dob_m1, dob_y_m1:dob_d_m1, lname_rec_m1:ssn_c_junk_m1) %>%
+  distinct(ssn_new, ssn_c, lname_new_m1, fname_new_m1, mname_new_m1, 
+           lnamesuf_new_m1, dob_m1, gender_new_m1, .keep_all = TRUE)
+
+
+#### Match #02 - Repeat match 01 but block on HUD ID instead of SSN ####
+match2 <- compare.dedup(
+  pha_new, blockfld = c("ssn_c", "lname_trim_m1", "dob_y_m1"),
+  strcmp = c("mname_new_m1", "dob_mth_m1", "dob_d_m1", "gender_new_m1", "lnamesuf_new_m1"),
+  phonetic = c("lname_trim_m1", "fname_trim_m1"), phonfun = soundex,
+  exclude = c("ssn_new", "ssn_new_junk_m1", "ssn_c_junk_m1", "lname_new_m1", 
+              "lname_phon_m1", "fname_new_m1", "fname_phon_m1", "dob_m1", 
+              "lname_rec_m1", "fname_new_cnt_m1", "mname_new_cnt_m1", 
+              "lnamesuf_new_cnt_m1", "dob_cnt_m1", "gender_new_cnt_m1"))
+
+# Using EpiLink approach
+match2_tmp <- epiWeights(match2)
+classify2 <- epiClassify(match2_tmp, threshold.upper = 0.49)
+summary(classify2)
+pairs2 <- getPairs(classify2, single.rows = FALSE)
+
+
+pairs2 <- pairs2 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob_m1 = as.Date(dob_m1, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new, ssn_new_junk_m1, ssn_c_junk_m1, dob_y_m1, dob_mth_m1, 
+                 dob_d_m1, fname_new_cnt_m1, mname_new_cnt_m1, lnamesuf_new_cnt_m1, 
+                 gender_new_m1, dob_cnt_m1, gender_new_cnt_m1, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_c, lname_new_m1, fname_new_m1, mname_new_m1, lname_rec_m1, 
+                 lname_trim_m1, lname_phon_m1, lnamesuf_new_m1, fname_trim_m1, 
+                 fname_phon_m1), funs(as.character(.))
+  ) %>%
+  # Remove blank row
+  filter(!(id == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair
+  group_by(pair) %>%
+  mutate(Weight = last(Weight)) %>%
+  ungroup()
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs2_full <- pairs2 %>%
+  filter(ssn_c != "" & ssn_c_junk_m1 == 0) %>%
+  group_by(pair) %>%
+  mutate(
+    # See match 1 above for details on this block of code
+    lname_new_m2 = lname_rec_m1,
+    fname_new_m2 = fname_new_m1[which.max(fname_new_cnt_m1)],
+    mname_new_m2 = ifelse(identical(mname_new_m1[which.max(mname_new_cnt_m1)], character(0)),
+                          "", mname_new_m1[which.max(mname_new_cnt_m1)]),
+    lnamesuf_new_m2 = ifelse(identical(lnamesuf_new_m1[which.max(lnamesuf_new_cnt_m1)], character(0)),
+                             "", lnamesuf_new_m1[which.max(lnamesuf_new_cnt_m1)]),
+    gender_new_m2 = ifelse(identical(gender_new_m1[which.max(gender_new_cnt_m1)], character(0)),
+                           "", gender_new_m1[which.max(gender_new_cnt_m1)]),
+    dob_m2 = as.Date(ifelse(identical(dob_m1[which.max(dob_cnt_m1)], character(0)),
+                            "", dob_m1[which.max(dob_cnt_m1)]), origin = "1970-01-01"),
+    lname_rec_m2 = lname_rec_m1,
+    fname_new_cnt_m2 = fname_new_cnt_m1[which.max(fname_new_cnt_m1)],
+    mname_new_cnt_m2 = ifelse(identical(mname_new_cnt_m1[which.max(mname_new_cnt_m1)], character(0)),
+                              NA,
+                              mname_new_cnt_m1[which.max(mname_new_cnt_m1)]),
+    lnamesuf_new_cnt_m2 = ifelse(identical(lnamesuf_new_cnt_m1[which.max(lnamesuf_new_cnt_m1)], character(0)),
+                                 NA,
+                                 lnamesuf_new_cnt_m1[which.max(lnamesuf_new_cnt_m1)]),
+    gender_new_cnt_m2 = ifelse(identical(gender_new_cnt_m1[which.max(gender_new_cnt_m1)], character(0)),
+                               NA,
+                               gender_new_cnt_m1[which.max(gender_new_cnt_m1)]),
+    dob_cnt_m2 = ifelse(identical(dob_cnt_m1[which.max(dob_cnt_m1)], character(0)),
+                        NA,
+                        dob_cnt_m1[which.max(dob_cnt_m1)]),
+    lname_trim_m2 = lname_trim_m1,
+    lname_phon_m2 = lname_phon_m1,
+    fname_trim_m2 = fname_trim_m1[which.max(fname_new_cnt_m1)],
+    fname_phon_m2 = fname_phon_m1[which.max(fname_new_cnt_m1)],
+    ssn_new_junk_m2 = ssn_new_junk_m1,
+    ssn_c_junk_m2 = ssn_c_junk_m1
+  ) %>%
+  ungroup() %>%
+  select(ssn_new:lnamesuf_new_m1, gender_new_m1, dob_m1, ssn_new_junk_m1, ssn_c_junk_m1,
+         lname_new_m2:ssn_c_junk_m2) %>%
+  distinct(ssn_new, ssn_c, lname_new_m1, fname_new_m1, mname_new_m1, dob_m1, gender_new_m1, .keep_all = TRUE)
+
+
+# Add to full dedup set and make cleaner data for next deduplication process
+pha_complete2 <- left_join(pha_complete, pairs2_full, 
+                           by = c("ssn_new", "ssn_c", "ssn_new_junk_m1", "ssn_c_junk_m1",
+                                  "lname_new_m1", "fname_new_m1", "mname_new_m1", 
+                                  "lnamesuf_new_m1", "dob_m1", "gender_new_m1")) %>%
+  mutate(lname_new_m2 = ifelse(is.na(lname_new_m2), lname_new_m1, lname_new_m2),
+         fname_new_m2 = ifelse(is.na(fname_new_m2), fname_new_m1, fname_new_m2),
+         mname_new_m2 = ifelse(is.na(mname_new_m2), mname_new_m1, mname_new_m2),
+         lnamesuf_new_m2 = ifelse(is.na(lnamesuf_new_m2), lnamesuf_new_m1, lnamesuf_new_m2),
+         dob_m2 = as.Date(ifelse(is.na(dob_m2), dob_m1, dob_m2), origin = "1970-01-01"),
+         dob_y_m2 = as.numeric(year(dob_m2)),
+         dob_mth_m2 = as.numeric(month(dob_m2)),
+         dob_d_m2 = as.numeric(day(dob_m2)),
+         gender_new_m2 = ifelse(is.na(gender_new_m2), gender_new_m1, gender_new_m2),
+         lname_rec_m2 = ifelse(is.na(lname_rec_m2), lname_rec_m1, lname_rec_m2),
+         fname_new_cnt_m2 = ifelse(is.na(fname_new_cnt_m2), fname_new_cnt_m1, fname_new_cnt_m2),
+         mname_new_cnt_m2 = ifelse(is.na(mname_new_cnt_m2), mname_new_cnt_m1, mname_new_cnt_m2),
+         lnamesuf_new_cnt_m2 = ifelse(is.na(lnamesuf_new_cnt_m2), lnamesuf_new_cnt_m1, lnamesuf_new_cnt_m2),
+         dob_cnt_m2 = ifelse(is.na(dob_cnt_m2), dob_cnt_m1, dob_cnt_m2),
+         gender_new_cnt_m2 = ifelse(is.na(gender_new_cnt_m2), gender_new_cnt_m1, gender_new_cnt_m2),
+         lname_trim_m2 = ifelse(is.na(lname_trim_m2), lname_trim_m1, lname_trim_m2),
+         lname_phon_m2 = ifelse(is.na(lname_phon_m2), lname_phon_m1, lname_phon_m2),
+         fname_trim_m2 = ifelse(is.na(fname_trim_m2), fname_trim_m1, fname_trim_m2),
+         fname_phon_m2 = ifelse(is.na(fname_phon_m2), fname_phon_m1, fname_phon_m2),
+         ssn_new_junk_m2 = ifelse(is.na(ssn_new_junk_m2), ssn_new_junk_m1, ssn_new_junk_m2),
+         ssn_c_junk_m2 = ifelse(is.na(ssn_c_junk_m2), ssn_c_junk_m1, ssn_c_junk_m2)
+  )
+
+pha_new2 <- pha_complete2 %>%
+  select(ssn_new, ssn_c, lname_new_m2:dob_m2, dob_y_m2:dob_d_m2, lname_rec_m2:ssn_c_junk_m2) %>%
+  distinct(ssn_new, ssn_c, lname_new_m2, fname_new_m2, mname_new_m2, lnamesuf_new_m2, dob_m2, gender_new_m2, .keep_all = TRUE)
+
+
+
+#### Match #03 - repeat match 01 with relaxed last name match to capture people with spelling variations ####
+# (i.e., block on SSN, and DOB year; match soundex lname, fname, mname, and other DOB elements) #
+match3 <- compare.dedup(
+  pha_new2, blockfld = c("ssn_new", "dob_y_m2"),
+  strcmp = c("mname_new_m2", "dob_mth_m2", "dob_d_m2", "gender_new_m2", "lnamesuf_new_m2"),
+  phonetic = c("lname_trim_m2", "fname_trim_m2"), phonfun = soundex,
+  exclude = c("ssn_c", "ssn_new_junk_m2", "ssn_c_junk_m2", "lname_new_m2", 
+              "lname_phon_m2", "fname_new_m2", "fname_phon_m2", "dob_m2", 
+              "lname_rec_m2", "fname_new_cnt_m2", "mname_new_cnt_m2", 
+              "lnamesuf_new_cnt_m2", "dob_cnt_m2", "gender_new_cnt_m2"))
+
+
+# Using EpiLink approach
+match3_tmp <- epiWeights(match3)
+classify3 <- epiClassify(match3_tmp, threshold.upper = 0.38)
+summary(classify3)
+pairs3 <- getPairs(classify3, single.rows = FALSE)
+
+
+# Fix formattings
+pairs3 <- pairs3 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob_m2 = as.Date(dob_m2, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new, ssn_new_junk_m2, ssn_c_junk_m2, dob_y_m2, dob_mth_m2, 
+                 dob_d_m2, fname_new_cnt_m2, mname_new_cnt_m2, lnamesuf_new_cnt_m2, 
+                 gender_new_m2, dob_cnt_m2, gender_new_cnt_m2, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_c, lname_new_m2, fname_new_m2, mname_new_m2, lname_rec_m2, 
+                 lname_trim_m2, lname_phon_m2, lnamesuf_new_m2, fname_trim_m2, 
+                 fname_phon_m2), funs(as.character(.))
+  ) %>%
+  filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair
+  group_by(pair) %>%
+  mutate(Weight = last(Weight)) %>%
+  ungroup()
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs3_full <- pairs3 %>%
+  filter(ssn_new_junk_m2 == 0 & Weight > 0.38) %>%
+  group_by(pair) %>%
+  mutate(
+    # See match 1 above for details on this block of code
+    lname_new_m3 = lname_rec_m2,
+    fname_new_m3 = fname_new_m2[which.max(fname_new_cnt_m2)],
+    mname_new_m3 = ifelse(identical(mname_new_m2[which.max(mname_new_cnt_m2)], character(0)),
+                          "", mname_new_m2[which.max(mname_new_cnt_m2)]),
+    lnamesuf_new_m3 = ifelse(identical(lnamesuf_new_m2[which.max(lnamesuf_new_cnt_m2)], character(0)),
+                             "", lnamesuf_new_m2[which.max(lnamesuf_new_cnt_m2)]),
+    gender_new_m3 = ifelse(identical(gender_new_m2[which.max(gender_new_cnt_m2)], character(0)),
+                           "", gender_new_m2[which.max(gender_new_cnt_m2)]),
+    dob_m3 = as.Date(ifelse(identical(dob_m2[which.max(dob_cnt_m2)], character(0)),
+                            "", dob_m2[which.max(dob_cnt_m2)]), origin = "1970-01-01"),
+    lname_rec_m3 = lname_rec_m2,
+    fname_new_cnt_m3 = fname_new_cnt_m2[which.max(fname_new_cnt_m2)],
+    mname_new_cnt_m3 = ifelse(identical(mname_new_cnt_m2[which.max(mname_new_cnt_m2)], character(0)),
+                              NA,
+                              mname_new_cnt_m2[which.max(mname_new_cnt_m2)]),
+    lnamesuf_new_cnt_m3 = ifelse(identical(lnamesuf_new_cnt_m2[which.max(lnamesuf_new_cnt_m2)], character(0)),
+                                 NA,
+                                 lnamesuf_new_cnt_m2[which.max(lnamesuf_new_cnt_m2)]),
+    gender_new_cnt_m3 = ifelse(identical(gender_new_cnt_m2[which.max(gender_new_cnt_m2)], character(0)),
+                               NA,
+                               gender_new_cnt_m2[which.max(gender_new_cnt_m2)]),
+    dob_cnt_m3 = ifelse(identical(dob_cnt_m2[which.max(dob_cnt_m2)], character(0)),
+                        NA,
+                        dob_cnt_m2[which.max(dob_cnt_m2)]),
+    lname_trim_m3 = lname_trim_m2,
+    lname_phon_m3 = lname_phon_m2,
+    fname_trim_m3 = fname_trim_m2[which.max(fname_new_cnt_m2)],
+    fname_phon_m3 = fname_phon_m2[which.max(fname_new_cnt_m2)],
+    ssn_new_junk_m3 = ssn_new_junk_m2,
+    ssn_c_junk_m3 = ssn_c_junk_m2
+  ) %>%
+  ungroup() %>%
+  select(ssn_new:lnamesuf_new_m2, ssn_new_junk_m2, ssn_c_junk_m2, gender_new_m2, 
+         dob_m2, lname_new_m3:ssn_c_junk_m3) %>%
+  distinct(ssn_new, ssn_c, lname_new_m2, fname_new_m2, mname_new_m2, dob_m2, 
+           gender_new_m2, .keep_all = TRUE)
+
+
+# Add to full dedup set and make cleaner data for next deduplication process
+pha_complete3 <- left_join(pha_complete2, pairs3_full, 
+                           by = c("ssn_new", "ssn_c", "ssn_new_junk_m2", "ssn_c_junk_m2",
+                                  "lname_new_m2", "fname_new_m2", "mname_new_m2", 
+                                  "lnamesuf_new_m2", "dob_m2", "gender_new_m2")) %>%
+  mutate(lname_new_m3 = ifelse(is.na(lname_new_m3), lname_new_m2, lname_new_m3),
+         fname_new_m3 = ifelse(is.na(fname_new_m3), fname_new_m2, fname_new_m3),
+         mname_new_m3 = ifelse(is.na(mname_new_m3), mname_new_m2, mname_new_m3),
+         lnamesuf_new_m3 = ifelse(is.na(lnamesuf_new_m3), lnamesuf_new_m2, lnamesuf_new_m3),
+         dob_m3 = as.Date(ifelse(is.na(dob_m3), dob_m2, dob_m3), origin = "1970-01-01"),
+         dob_y_m3 = as.numeric(year(dob_m3)),
+         dob_mth_m3 = as.numeric(month(dob_m3)),
+         dob_d_m3 = as.numeric(day(dob_m3)),
+         gender_new_m3 = ifelse(is.na(gender_new_m3), gender_new_m2, gender_new_m3),
+         lname_rec_m3 = ifelse(is.na(lname_rec_m3), lname_rec_m2, lname_rec_m3),
+         fname_new_cnt_m3 = ifelse(is.na(fname_new_cnt_m3), fname_new_cnt_m2, fname_new_cnt_m3),
+         mname_new_cnt_m3 = ifelse(is.na(mname_new_cnt_m3), mname_new_cnt_m2, mname_new_cnt_m3),
+         lnamesuf_new_cnt_m3 = ifelse(is.na(lnamesuf_new_cnt_m3), lnamesuf_new_cnt_m2, lnamesuf_new_cnt_m3),
+         dob_cnt_m3 = ifelse(is.na(dob_cnt_m3), dob_cnt_m2, dob_cnt_m3),
+         gender_new_cnt_m3 = ifelse(is.na(gender_new_cnt_m3), gender_new_cnt_m2, gender_new_cnt_m3),
+         lname_trim_m3 = ifelse(is.na(lname_trim_m3), lname_trim_m2, lname_trim_m3),
+         lname_phon_m3 = ifelse(is.na(lname_phon_m3), lname_phon_m2, lname_phon_m3),
+         fname_trim_m3 = ifelse(is.na(fname_trim_m3), fname_trim_m2, fname_trim_m3),
+         fname_phon_m3 = ifelse(is.na(fname_phon_m3), fname_phon_m2, fname_phon_m3),
+         ssn_new_junk_m3 = ifelse(is.na(ssn_new_junk_m3), ssn_new_junk_m2, ssn_new_junk_m3),
+         ssn_c_junk_m3 = ifelse(is.na(ssn_c_junk_m3), ssn_c_junk_m2, ssn_c_junk_m3)
+  )
+
+pha_new3 <- pha_complete3 %>%
+  select(ssn_new, ssn_c, ssn_new_junk_m3, ssn_c_junk_m3, lname_new_m3:dob_m3, 
+         dob_y_m3:dob_d_m3, lname_rec_m3:fname_phon_m3) %>%
+  distinct(ssn_new, ssn_c, lname_new_m3, fname_new_m3, mname_new_m3, 
+           lnamesuf_new_m3, dob_m3, gender_new_m3, .keep_all = TRUE)
+
+
+
+#### Match #04 - repeat match 02 with relaxed last name match to capture people with spelling variations ####
+# (i.e., block on HUD ID, and DOB year; match soundex lname, fname, mname, and other DOB elements) #
+match4 <- compare.dedup(
+  pha_new3, blockfld = c("ssn_c", "dob_y_m3"),
+  strcmp = c("mname_new_m3", "dob_mth_m3", "dob_d_m3", "gender_new_m3", "lnamesuf_new_m3"),
+  phonetic = c("lname_trim_m3", "fname_trim_m3"), phonfun = soundex,
+  exclude = c("ssn_new", "ssn_new_junk_m3", "ssn_c_junk_m3", "lname_new_m3", 
+              "lname_phon_m3", "fname_new_m3", "fname_phon_m3", "dob_m3", 
+              "lname_rec_m3", "fname_new_cnt_m3", "mname_new_cnt_m3", 
+              "lnamesuf_new_cnt_m3", "dob_cnt_m3", "gender_new_cnt_m3"))
+
+
+# Using EpiLink approach
+match4_tmp <- epiWeights(match4)
+classify4 <- epiClassify(match4_tmp, threshold.upper = 0.4)
+summary(classify4)
+pairs4 <- getPairs(classify4, single.rows = FALSE)
+
+
+# Fix formattings
+pairs4 <- pairs4 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob_m3 = as.Date(dob_m3, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new, ssn_new_junk_m3, ssn_c_junk_m3, dob_y_m3, dob_mth_m3, 
+                 dob_d_m3, fname_new_cnt_m3, mname_new_cnt_m3, lnamesuf_new_cnt_m3, 
+                 gender_new_m3, dob_cnt_m3, gender_new_cnt_m3, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_c, lname_new_m3, fname_new_m3, mname_new_m3, lname_rec_m3, 
+                 lname_trim_m3, lname_phon_m3, lnamesuf_new_m3, fname_trim_m3, fname_phon_m3), 
+            funs(as.character(.))
+  ) %>%
+  filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair
+  group_by(pair) %>%
+  mutate(Weight = last(Weight)) %>%
+  ungroup()
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs4_full <- pairs4 %>%
+  filter(ssn_c != "" & ssn_c_junk_m3 == 0 & Weight > 0.4) %>%
+  group_by(pair) %>%
+  mutate(
+    # See match 1 above for details on this block of code
+    lname_new_m4 = lname_rec_m3,
+    fname_new_m4 = fname_new_m3[which.max(fname_new_cnt_m3)],
+    mname_new_m4 = ifelse(identical(mname_new_m3[which.max(mname_new_cnt_m3)], character(0)),
+                          "",
+                          mname_new_m3[which.max(mname_new_cnt_m3)]),
+    lnamesuf_new_m4 = ifelse(identical(lnamesuf_new_m3[which.max(lnamesuf_new_cnt_m3)], character(0)),
+                             "",
+                             lnamesuf_new_m3[which.max(lnamesuf_new_cnt_m3)]),
+    gender_new_m4 = ifelse(identical(gender_new_m3[which.max(gender_new_cnt_m3)], character(0)),
+                           "",
+                           gender_new_m3[which.max(gender_new_cnt_m3)]),
+    dob_m4 = as.Date(ifelse(identical(dob_m3[which.max(dob_cnt_m3)], character(0)),
+                            "",
+                            dob_m3[which.max(dob_cnt_m3)]), origin = "1970-01-01"),
+    lname_rec_m4 = lname_rec_m3,
+    fname_new_cnt_m4 = fname_new_cnt_m3[which.max(fname_new_cnt_m3)],
+    mname_new_cnt_m4 = ifelse(identical(mname_new_cnt_m3[which.max(mname_new_cnt_m3)], character(0)),
+                              NA,
+                              mname_new_cnt_m3[which.max(mname_new_cnt_m3)]),
+    lnamesuf_new_cnt_m4 = ifelse(identical(lnamesuf_new_cnt_m3[which.max(lnamesuf_new_cnt_m3)], character(0)),
+                                 NA,
+                                 lnamesuf_new_cnt_m3[which.max(lnamesuf_new_cnt_m3)]),
+    gender_new_cnt_m4 = ifelse(identical(gender_new_cnt_m3[which.max(gender_new_cnt_m3)], character(0)),
+                               NA,
+                               gender_new_cnt_m3[which.max(gender_new_cnt_m3)]),
+    dob_cnt_m4 = ifelse(identical(dob_cnt_m3[which.max(dob_cnt_m3)], character(0)),
+                        NA,
+                        dob_cnt_m3[which.max(dob_cnt_m3)]),
+    lname_trim_m4 = lname_trim_m3,
+    lname_phon_m4 = lname_phon_m3,
+    fname_trim_m4 = fname_trim_m3[which.max(fname_new_cnt_m3)],
+    fname_phon_m4 = fname_phon_m3[which.max(fname_new_cnt_m3)],
+    ssn_new_junk_m4 = ssn_new_junk_m3,
+    ssn_c_junk_m4 = ssn_c_junk_m3
+  ) %>%
+  ungroup() %>%
+  select(ssn_new:lnamesuf_new_m3, ssn_new_junk_m3, ssn_c_junk_m3, gender_new_m3, 
+         dob_m3, lname_new_m4:ssn_c_junk_m4) %>%
+  distinct(ssn_new, ssn_c, lname_new_m3, fname_new_m3, mname_new_m3, dob_m3, 
+           gender_new_m3, .keep_all = TRUE)
+
+
+# Add to full dedup set and make cleaner data for next deduplication process
+pha_complete4 <- left_join(pha_complete3, pairs4_full, 
+                           by = c("ssn_new", "ssn_c", "ssn_new_junk_m3", "ssn_c_junk_m3",
+                                  "lname_new_m3", "fname_new_m3", "mname_new_m3", 
+                                  "lnamesuf_new_m3", "dob_m3", "gender_new_m3")) %>%
+  mutate(lname_new_m4 = ifelse(is.na(lname_new_m4), lname_new_m3, lname_new_m4),
+         fname_new_m4 = ifelse(is.na(fname_new_m4), fname_new_m3, fname_new_m4),
+         mname_new_m4 = ifelse(is.na(mname_new_m4), mname_new_m3, mname_new_m4),
+         lnamesuf_new_m4 = ifelse(is.na(lnamesuf_new_m4), lnamesuf_new_m3, lnamesuf_new_m4),
+         dob_m4 = as.Date(ifelse(is.na(dob_m4), dob_m3, dob_m4), origin = "1970-01-01"),
+         dob_y_m4 = as.numeric(year(dob_m4)),
+         dob_mth_m4 = as.numeric(month(dob_m4)),
+         dob_d_m4 = as.numeric(day(dob_m4)),
+         gender_new_m4 = ifelse(is.na(gender_new_m4), gender_new_m3, gender_new_m4),
+         lname_rec_m4 = ifelse(is.na(lname_rec_m4), lname_rec_m3, lname_rec_m4),
+         fname_new_cnt_m4 = ifelse(is.na(fname_new_cnt_m4), fname_new_cnt_m3, fname_new_cnt_m4),
+         mname_new_cnt_m4 = ifelse(is.na(mname_new_cnt_m4), mname_new_cnt_m3, mname_new_cnt_m4),
+         lnamesuf_new_cnt_m4 = ifelse(is.na(lnamesuf_new_cnt_m4), lnamesuf_new_cnt_m3, lnamesuf_new_cnt_m4),
+         dob_cnt_m4 = ifelse(is.na(dob_cnt_m4), dob_cnt_m3, dob_cnt_m4),
+         gender_new_cnt_m4 = ifelse(is.na(gender_new_cnt_m4), gender_new_cnt_m3, gender_new_cnt_m4),
+         lname_trim_m4 = ifelse(is.na(lname_trim_m4), lname_trim_m3, lname_trim_m4),
+         lname_phon_m4 = ifelse(is.na(lname_phon_m4), lname_phon_m3, lname_phon_m4),
+         fname_trim_m4 = ifelse(is.na(fname_trim_m4), fname_trim_m3, fname_trim_m4),
+         fname_phon_m4 = ifelse(is.na(fname_phon_m4), fname_phon_m3, fname_phon_m4),
+         ssn_new_junk_m4 = ifelse(is.na(ssn_new_junk_m4), ssn_new_junk_m3, ssn_new_junk_m4),
+         ssn_c_junk_m4 = ifelse(is.na(ssn_c_junk_m4), ssn_c_junk_m3, ssn_c_junk_m4)
+  )
+
+pha_new4 <- pha_complete4 %>%
+  select(ssn_new, ssn_c, lname_new_m4:dob_m4, dob_y_m4:dob_d_m4, lname_rec_m4:ssn_c_junk_m4) %>%
+  distinct(ssn_new, ssn_c, lname_new_m4, fname_new_m4, mname_new_m4, lnamesuf_new_m4, 
+           dob_m4, gender_new_m4, .keep_all = TRUE)
+
+
+#### Match #05 - block on soundex lname, soundex fname, and DOB; match SSN, mname, gender, and lname suffix ####
+### Need to first identify which is the 'correct' SSN
+# For non-junk SSNs (i.e., 9 digits that do not repeat/use consecutive numbers), take most common
+# For junk SSNs, assume none are correct
+# NB. This approach will contain errors because one person's mistyped SSNs will be included in another person's SSN count
+# However, this error rate should be small and dwarfed by the count of the correct social
+# Other errors exist because not all junk SSNs are caught here
+pha_ssn <- pha %>%
+  filter(ssn_new_junk == 0) %>%
+  group_by(ssn_new) %>%
+  summarise(ssn_new_cnt = n()) %>%
+  ungroup()
+
+pha_new4 <- left_join(pha_new4, pha_ssn, by = c("ssn_new"))
+rm(pha_ssn) 
+
+
+match5 <- compare.dedup(
+  pha_new4, blockfld = c("lname_trim_m4", "fname_trim_m4","dob_m4"),
+  strcmp = c("ssn_new","mname_new_m4", "gender_new_m4", "lnamesuf_new_m4"),
+  phonetic = c("lname_trim_m4", "fname_trim_m4"), phonfun = soundex,
+  exclude = c("ssn_c", "ssn_new_junk_m4", "ssn_c_junk_m4", "lname_new_m4", 
+              "lname_phon_m4", "fname_new_m4", "fname_phon_m4", "dob_y_m4", 
+              "dob_mth_m4", "dob_d_m4", "lname_rec_m4", "fname_new_cnt_m4", 
+              "mname_new_cnt_m4", "lnamesuf_new_cnt_m4", "dob_cnt_m4", 
+              "gender_new_cnt_m4", "ssn_new_cnt"))
+
+# Using EpiLink approach
+match5_tmp <- epiWeights(match5)
+classify5 <- epiClassify(match5_tmp, threshold.upper = 0.5)
+summary(classify5)
+pairs5 <- getPairs(classify5, single.rows = FALSE)
+
+
+# Fix formattings
+pairs5 <- pairs5 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob_m4 = as.Date(dob_m4, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new, ssn_new_junk_m4, ssn_c_junk_m4, dob_y_m4, dob_mth_m4, 
+                 dob_d_m4, fname_new_cnt_m4, mname_new_cnt_m4, lnamesuf_new_cnt_m4, 
+                 gender_new_m4, dob_cnt_m4, gender_new_cnt_m4, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_c, lname_new_m4, fname_new_m4, mname_new_m4, lname_rec_m4, 
+                 lname_trim_m4, lname_phon_m4, lnamesuf_new_m4, fname_trim_m4, fname_phon_m4), 
+            funs(as.character(.))
+  ) %>%
+  filter(!(id == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair and find pairs where at least one SSN is non-junk
+  group_by(pair) %>%
+  mutate(Weight = last(Weight),
+         ssn_reg = ifelse(first(ssn_new_junk_m4) == 0 | last(ssn_new_junk_m4) == 0, 
+                          1, 0)) %>%
+  ungroup()
+
+
+### Need a method to identify twins
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs5_full <- pairs5 %>%
+  filter((Weight >= 0.2 & !(dob_mth_m4 == 1 & dob_d_m4 == 1) & ssn_reg == 1) | 
+           (Weight >= 0.8218 & (dob_mth_m4 == 1 & dob_d_m4 == 1) & ssn_reg == 1)  
+  ) %>%
+  group_by(pair) %>%
+  mutate(
+    # See match 1 above for details on this block of code (exceptions noted below)
+    ssn_new_m5 = ifelse(is.na(first(ssn_new_cnt)), last(ssn_new), 
+                        ifelse(is.na(last(ssn_new_cnt)), first(ssn_new), 
+                               ssn_new[which.max(ssn_new_cnt)])),
+    # Can no longer assume lname_rec is the same on both rows because of junk SSNs
+    # Now look for non-missing rows and decide what to do when both rows are non-missing
+    # Currently taking the lname associated with the most common fname, taking the first row when ties occur
+
+    lname_new_m5 = ifelse(is.na(first(lname_rec_m4)), last(lname_rec_m4), 
+                          ifelse(is.na(last(lname_rec_m4)), first(lname_rec_m4),
+                                 lname_rec_m4[which.max(fname_new_cnt_m4)])),
+    # Now need to rule out missing counts for other name variables
+    fname_new_m5 = ifelse(is.na(first(fname_new_cnt_m4)), 
+                          last(fname_new_m4), 
+                          ifelse(is.na(last(fname_new_cnt_m4)), first(fname_new_m4),
+                                 fname_new_m4[which.max(fname_new_cnt_m4)])),
+    mname_new_m5 = ifelse(is.na(first(mname_new_cnt_m4)), last(mname_new_m4), 
+                          ifelse(is.na(last(mname_new_cnt_m4)),
+                                 first(mname_new_m4), 
+                                 ifelse(identical(mname_new_m4[which.max(mname_new_cnt_m4)], character(0)), "",
+                                        mname_new_m4[which.max(mname_new_cnt_m4)]))),
+    lnamesuf_new_m5 = ifelse(is.na(first(lnamesuf_new_cnt_m4)), last(lnamesuf_new_m4), 
+                             ifelse(is.na(last(lnamesuf_new_cnt_m4)),
+                                    first(lnamesuf_new_m4), 
+                                    ifelse(identical(lnamesuf_new_m4[which.max(lnamesuf_new_cnt_m4)], character(0)), "",
+                                           lnamesuf_new_m4[which.max(lnamesuf_new_cnt_m4)]))),
+    gender_new_m5 = ifelse(is.na(first(gender_new_cnt_m4)), last(gender_new_m4), 
+                           ifelse(is.na(last(gender_new_cnt_m4)),
+                                  first(gender_new_m4), 
+                                  ifelse(identical(gender_new_m4[which.max(gender_new_cnt_m4)], character(0)), "",
+                                         gender_new_m4[which.max(gender_new_cnt_m4)]))),
+    dob_m5 = as.Date(ifelse(identical(dob_m4[which.max(dob_cnt_m4)], character(0)),
+                            "",
+                            dob_m4[which.max(dob_cnt_m4)]), origin = "1970-01-01"),
+    # Reset lname_rec to match current lname using the logic above
+    lname_rec_m5 = lname_new_m5,
+    fname_new_cnt_m5 = ifelse(is.na(first(fname_new_cnt_m4)), 
+                              last(fname_new_cnt_m4), 
+                              ifelse(is.na(last(fname_new_cnt_m4)),
+                                     first(fname_new_cnt_m4), fname_new_cnt_m4[which.max(fname_new_cnt_m4)])),
+    mname_new_cnt_m5 = ifelse(is.na(first(mname_new_cnt_m4)), last(mname_new_cnt_m4), 
+                              ifelse(is.na(last(mname_new_cnt_m4)),
+                                     first(mname_new_cnt_m4), 
+                                     ifelse(identical(mname_new_cnt_m4[which.max(mname_new_cnt_m4)], character(0)),
+                                            NA,
+                                            mname_new_cnt_m4[which.max(mname_new_cnt_m4)]))),
+    lnamesuf_new_cnt_m5 = ifelse(is.na(first(lnamesuf_new_cnt_m4)), last(lnamesuf_new_cnt_m4), 
+                                 ifelse(is.na(last(lnamesuf_new_cnt_m4)),
+                                        first(lnamesuf_new_cnt_m4), 
+                                        ifelse(identical(lnamesuf_new_cnt_m4[which.max(lnamesuf_new_cnt_m4)], character(0)),
+                                               NA,
+                                               lnamesuf_new_cnt_m4[which.max(lnamesuf_new_cnt_m4)]))),
+    gender_new_cnt_m5 = ifelse(is.na(first(gender_new_cnt_m4)), last(gender_new_cnt_m4), 
+                               ifelse(is.na(last(gender_new_cnt_m4)),
+                                      first(gender_new_cnt_m4), 
+                                      ifelse(identical(gender_new_cnt_m4[which.max(gender_new_cnt_m4)], character(0)),
+                                             NA,
+                                             gender_new_cnt_m4[which.max(gender_new_cnt_m4)]))),
+    dob_cnt_m5 = ifelse(identical(dob_cnt_m4[which.max(dob_cnt_m4)], character(0)),
+                                NA,
+                                dob_cnt_m4[which.max(dob_cnt_m4)]),
+    # Easier to recreate the trim and phonetic variables than apply the logic above
+    lname_trim_m5 = str_replace_all(lname_new_m5, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
+    fname_trim_m5 = str_replace_all(fname_new_m5, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
+    # Make soundex versions of names for matching/grouping
+    lname_phon_m5 = soundex(lname_trim_m5),
+    fname_phon_m5 = soundex(fname_trim_m5),
+    # Cannot assume junk SSN flags apply, need to reset
+    ssn_new_junk_m5 = ifelse(is.na(first(ssn_new_cnt)), last(ssn_new_junk_m4), 
+                             ifelse(is.na(last(ssn_new_cnt)), first(ssn_new_junk_m4), 
+                                    ssn_new_junk_m4[which.max(ssn_new_cnt)])),
+    ssn_c_junk_m5 = ssn_c_junk_m4
+  ) %>%
+  ungroup() %>%
+  select(ssn_new, ssn_new_junk_m4, ssn_c_junk_m4, ssn_new_m5, ssn_c, 
+         lname_new_m4:dob_m4, lname_new_m5:ssn_c_junk_m5) %>%
+  distinct(ssn_new, ssn_c, lname_new_m4, fname_new_m4, mname_new_m4, dob_m4, 
+           gender_new_m4, .keep_all = TRUE)
+
+
+# Add to full dedup set and make cleaner data for next deduplication process
+pha_complete5 <- left_join(pha_complete4, pairs5_full, 
+                           by = c("ssn_new", "ssn_c", "ssn_new_junk_m4", "ssn_c_junk_m4",
+                                  "lname_new_m4", "fname_new_m4", "mname_new_m4", 
+                                  "lnamesuf_new_m4", "dob_m4", "gender_new_m4")) %>%
+  mutate(ssn_new_m5 = ifelse(is.na(ssn_new_m5), ssn_new, ssn_new_m5),
+         lname_new_m5 = ifelse(is.na(lname_new_m5), lname_new_m4, lname_new_m5),
+         fname_new_m5 = ifelse(is.na(fname_new_m5), fname_new_m4, fname_new_m5),
+         mname_new_m5 = ifelse(is.na(mname_new_m5), mname_new_m4, mname_new_m5),
+         lnamesuf_new_m5 = ifelse(is.na(lnamesuf_new_m5), lnamesuf_new_m4, lnamesuf_new_m5),
+         dob_m5 = as.Date(ifelse(is.na(dob_m5), dob_m4, dob_m5), origin = "1970-01-01"),
+         dob_y_m5 = as.numeric(year(dob_m5)),
+         dob_mth_m5 = as.numeric(month(dob_m5)),
+         dob_d_m5 = as.numeric(day(dob_m5)),
+         gender_new_m5 = ifelse(is.na(gender_new_m5), gender_new_m4, gender_new_m5),
+         lname_rec_m5 = ifelse(is.na(lname_rec_m5), lname_rec_m4, lname_rec_m5),
+         fname_new_cnt_m5 = ifelse(is.na(fname_new_cnt_m5), fname_new_cnt_m4, fname_new_cnt_m5),
+         mname_new_cnt_m5 = ifelse(is.na(mname_new_cnt_m5), mname_new_cnt_m4, mname_new_cnt_m5),
+         lnamesuf_new_cnt_m5 = ifelse(is.na(lnamesuf_new_cnt_m5), lnamesuf_new_cnt_m4, lnamesuf_new_cnt_m5),
+         dob_cnt_m5 = ifelse(is.na(dob_cnt_m5), dob_cnt_m4, dob_cnt_m5),
+         gender_new_cnt_m5 = ifelse(is.na(gender_new_cnt_m5), gender_new_cnt_m4, gender_new_cnt_m5),
+         lname_trim_m5 = ifelse(is.na(lname_trim_m5), lname_trim_m4, lname_trim_m5),
+         lname_phon_m5 = ifelse(is.na(lname_phon_m5), lname_phon_m4, lname_phon_m5),
+         fname_trim_m5 = ifelse(is.na(fname_trim_m5), fname_trim_m4, fname_trim_m5),
+         fname_phon_m5 = ifelse(is.na(fname_phon_m5), fname_phon_m4, fname_phon_m5),
+         ssn_new_junk_m5 = ifelse(is.na(ssn_new_junk_m5), ssn_new_junk_m4, ssn_new_junk_m5),
+         ssn_c_junk_m5 = ifelse(is.na(ssn_c_junk_m5), ssn_c_junk_m4, ssn_c_junk_m5)
+  )
+
+pha_new5 <- pha_complete5 %>%
+  select(ssn_new_m5, ssn_c, lname_new_m5:dob_m5, dob_y_m5:dob_d_m5, lname_rec_m5:ssn_c_junk_m5) %>%
+  distinct(ssn_new_m5, ssn_c, lname_new_m5, fname_new_m5, mname_new_m5, 
+           lnamesuf_new_m5, dob_m5, gender_new_m5, .keep_all = TRUE)
+
+
+
+
+#### Match #06 - block on soundex lname, soundex fname, and DOB; match combined SSN/HUD ID, mname, gender, and lname suffix ####
+# Next make combined SSN/HUD ID variable (there are no overlaps between the two initially)
+pha_complete5 <- pha_complete5 %>% mutate(
+  ssn_id = ifelse(ssn_new_junk_m5 == 0, ssn_new_m5,
+                  ifelse(ssn_c != "" & ssn_c_junk_m5 == 0, ssn_c,
+                         NA)))
+
+pha_new5 <- pha_new5 %>% mutate(
+  ssn_id = ifelse(ssn_new_junk_m5 == 0, ssn_new_m5,
+                  ifelse(ssn_c != "" & ssn_c_junk_m5 == 0, ssn_c,
+                         NA)))
+
+### Identify which is the 'correct' SSN/ID
+# Prioritize numeric SSNs over IDs
+# Then take most common
+pha_ssn <- pha_complete5 %>%
+  filter(!is.na(ssn_id)) %>%
+  group_by(ssn_id) %>%
+  summarise(ssn_id_cnt = n()) %>%
+  ungroup()
+
+pha_new5 <- left_join(pha_new5, pha_ssn, by = c("ssn_id"))
+rm(pha_ssn) 
+
+
+
+match6 <- compare.dedup(
+  pha_new5, blockfld = c("lname_trim_m5", "fname_trim_m5","dob_m5"),
+  strcmp = c("ssn_id","mname_new_m5", "gender_new_m5", "lnamesuf_new_m5"),
+  phonetic = c("lname_trim_m5", "fname_trim_m5"), phonfun = soundex,
+  exclude = c("ssn_new_m5", "ssn_c", "ssn_id_cnt", "ssn_new_junk_m5", "ssn_c_junk_m5", 
+              "lname_new_m5", "lname_phon_m5", "fname_new_m5", "fname_phon_m5", 
+              "dob_y_m5", "dob_mth_m5", "dob_d_m5", "lname_rec_m5", 
+              "fname_new_cnt_m5", "mname_new_cnt_m5", "lnamesuf_new_cnt_m5", 
+              "dob_cnt_m5", "gender_new_cnt_m5"))
+
+
+# Using EpiLink approach
+match6_tmp <- epiWeights(match6)
+classify6 <- epiClassify(match6_tmp, threshold.upper = 0.5)
+summary(classify6)
+pairs6 <- getPairs(classify6, single.rows = FALSE)
+
+
+# Fix formattings
+pairs6 <- pairs6 %>%
+  mutate(
+    # Add ID to each pair
+    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
+    dob_m5 = as.Date(dob_m5, origin = "1970-01-01")
+  ) %>%
+  # Fix up formatting by removing factors
+  mutate_at(vars(id, ssn_new_m5, ssn_id_cnt, ssn_new_junk_m5, ssn_c_junk_m5, 
+                 dob_y_m5, dob_mth_m5, dob_d_m5, fname_new_cnt_m5, mname_new_cnt_m5,
+                 lnamesuf_new_cnt_m5, gender_new_m5, dob_cnt_m5, gender_new_cnt_m5, Weight), 
+            funs(as.numeric(as.character(.)))
+  ) %>%
+  mutate_at(vars(ssn_id, ssn_c, lname_new_m5, fname_new_m5, mname_new_m5, lname_rec_m5, lname_trim_m5, lname_phon_m5,
+                 lnamesuf_new_m5, fname_trim_m5, fname_phon_m5), funs(as.character(.))
+  ) %>%
+  filter(!(id == "" & Weight == "")) %>%
+  # Propogate weight to both rows in a pair and find pairs where at least one SSN is non-junk
+  group_by(pair) %>%
+  mutate(Weight = last(Weight)) %>%
+  ungroup()
+
+
+# Clean data based on matches and set up matches for relevant rows
+pairs6_full <- pairs6 %>%
+  filter((Weight >= 0.2 & !(dob_mth_m5 == 1 & dob_d_m5 == 1)) | 
+           (Weight >= 0.8211 & (dob_mth_m5 == 1 & dob_d_m5 == 1))  
+  ) %>%
+  group_by(pair) %>%
+  mutate(
+    # See match 1 above for details on this block of code (exceptions noted below)
+    ssn_id_m6 = ifelse(is.na(first(ssn_id_cnt)), last(ssn_id), 
+                       ifelse(is.na(last(ssn_id_cnt)), first(ssn_id),
+                              ssn_id[which.max(ssn_id_cnt)])),
+    # Can no longer assume lname_rec is the same on both rows because of junk SSNs.
+    # Now look for non-missing rows and decide what to do when both rows are non-missing
+    # Currently taking the lname associated with the most common fname, taking the first row when ties occur
+    lname_new_m6 = ifelse(is.na(first(lname_rec_m5)), last(lname_rec_m5), 
+                          ifelse(is.na(last(lname_rec_m5)), first(lname_rec_m5),
+                                 lname_rec_m5[which.max(fname_new_cnt_m5)])),
+    # Now need to rule out missing counts for other name variables
+    fname_new_m6 = ifelse(is.na(first(fname_new_cnt_m5)), last(fname_new_m5), 
+                          ifelse(is.na(last(fname_new_cnt_m5)), first(fname_new_m5),
+                                 fname_new_m5[which.max(fname_new_cnt_m5)])),
+    mname_new_m6 = ifelse(is.na(first(mname_new_cnt_m5)), last(mname_new_m5), 
+                          ifelse(is.na(last(mname_new_cnt_m5)),
+                                 first(mname_new_m5), 
+                                 ifelse(identical(mname_new_m5[which.max(mname_new_cnt_m5)], character(0)), "",
+                                        mname_new_m5[which.max(mname_new_cnt_m5)]))),
+    lnamesuf_new_m6 = ifelse(is.na(first(lnamesuf_new_cnt_m5)), last(lnamesuf_new_m5), 
+                             ifelse(is.na(last(lnamesuf_new_cnt_m5)),
+                                    first(lnamesuf_new_m5), 
+                                    ifelse(identical(lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)], character(0)), "",
+                                           lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)]))),
+    gender_new_m6 = ifelse(is.na(first(gender_new_cnt_m5)), last(gender_new_m5), 
+                           ifelse(is.na(last(gender_new_cnt_m5)),
+                                  first(gender_new_m5), 
+                                  ifelse(identical(gender_new_m5[which.max(gender_new_cnt_m5)], character(0)), "",
+                                         gender_new_m5[which.max(gender_new_cnt_m5)]))),
+    dob_m6 = as.Date(ifelse(is.na(first(dob_cnt_m5)), last(dob_m5), 
+                            ifelse(is.na(last(dob_cnt_m5)),
+                                   first(dob_m5), 
+                                   ifelse(identical(dob_m5[which.max(dob_cnt_m5)], character(0)), "",
+                                          dob_m5[which.max(dob_cnt_m5)]))), origin = "1970-01-01"),
+    # Reset lname_rec to match current lname using the logic above
+    lname_rec_m6 = lname_new_m6,
+    fname_new_cnt_m6 = ifelse(is.na(first(fname_new_cnt_m5)), last(fname_new_cnt_m5), 
+                              ifelse(is.na(last(fname_new_cnt_m5)), 
+                                     first(fname_new_cnt_m5),
+                                     fname_new_cnt_m5[which.max(fname_new_cnt_m5)])),
+    mname_new_cnt_m6 = ifelse(is.na(first(mname_new_cnt_m5)), last(mname_new_cnt_m5), 
+                              ifelse(is.na(last(mname_new_cnt_m5)),
+                                     first(mname_new_cnt_m5), 
+                                     ifelse(identical(mname_new_cnt_m5[which.max(mname_new_cnt_m5)], character(0)),
+                                            NA,
+                                            mname_new_cnt_m5[which.max(mname_new_cnt_m5)]))),
+    lnamesuf_new_cnt_m6 = ifelse(is.na(first(lnamesuf_new_cnt_m5)), last(lnamesuf_new_cnt_m5), 
+                                 ifelse(is.na(last(lnamesuf_new_cnt_m5)),
+                                        first(lnamesuf_new_cnt_m5), 
+                                        ifelse(identical(lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)], character(0)),
+                                               NA,
+                                               lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)]))),
+    gender_new_cnt_m6 = ifelse(is.na(first(gender_new_cnt_m5)), last(gender_new_cnt_m5), 
+                               ifelse(is.na(last(gender_new_cnt_m5)),
+                                      first(gender_new_cnt_m5), 
+                                      ifelse(identical(gender_new_cnt_m5[which.max(gender_new_cnt_m5)], character(0)),
+                                             NA,
+                                             gender_new_cnt_m5[which.max(gender_new_cnt_m5)]))),
+    dob_cnt_m6 = ifelse(is.na(first(dob_cnt_m5)), last(dob_cnt_m5), 
+                                ifelse(is.na(last(dob_cnt_m5)),
+                                       first(dob_cnt_m5), 
+                                       ifelse(identical(dob_cnt_m5[which.max(dob_cnt_m5)], character(0)), "",
+                                              dob_cnt_m5[which.max(dob_cnt_m5)]))),
+    # Easier to recreate the trim and phonetic variables than apply the logic above
+    lname_trim_m6 = str_replace_all(lname_new_m6, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
+    fname_trim_m6 = str_replace_all(fname_new_m6, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
+    # Make soundex versions of names for matching/grouping
+    lname_phon_m6 = soundex(lname_trim_m6),
+    fname_phon_m6 = soundex(fname_trim_m6)
+    # Don't make new junk SSN/ID flags, recreate from ssn_id_m6 later
+  ) %>%
+  ungroup() %>%
+  select(ssn_new_m5, ssn_c, ssn_id, ssn_id_m6, ssn_new_junk_m5, ssn_c_junk_m5,
+         lname_new_m5:dob_m5, lname_new_m6:fname_phon_m6) %>%
+  distinct(ssn_new_m5, ssn_c, ssn_id, lname_new_m5, fname_new_m5, mname_new_m5, 
+           dob_m5, gender_new_m5, .keep_all = TRUE)
+
+
+# Add to full dedup set and make cleaner data for next deduplication process
+pha_complete6 <- left_join(pha_complete5, pairs6_full, 
+                           by = c("ssn_new_m5", "ssn_c", "ssn_id", "ssn_new_junk_m5", 
+                                  "ssn_c_junk_m5", "lname_new_m5", "fname_new_m5",
+                                  "mname_new_m5", "lnamesuf_new_m5", "dob_m5", "gender_new_m5")) %>%
+  mutate(ssn_id_m6 = ifelse(is.na(ssn_id_m6), ssn_id, ssn_id_m6),
+         lname_new_m6 = ifelse(is.na(lname_new_m6), lname_new_m5, lname_new_m6),
+         fname_new_m6 = ifelse(is.na(fname_new_m6), fname_new_m5, fname_new_m6),
+         mname_new_m6 = ifelse(is.na(mname_new_m6), mname_new_m5, mname_new_m6),
+         lnamesuf_new_m6 = ifelse(is.na(lnamesuf_new_m6), lnamesuf_new_m5, lnamesuf_new_m6),
+         dob_m6 = as.Date(ifelse(is.na(dob_m6), dob_m5, dob_m6), origin = "1970-01-01"),
+         dob_y_m6 = as.numeric(year(dob_m6)),
+         dob_mth_m6 = as.numeric(month(dob_m6)),
+         dob_d_m6 = as.numeric(day(dob_m6)),
+         gender_new_m6 = ifelse(is.na(gender_new_m6), gender_new_m5, gender_new_m6),
+         lname_rec_m6 = ifelse(is.na(lname_rec_m6), lname_rec_m5, lname_rec_m6),
+         fname_new_cnt_m6 = ifelse(is.na(fname_new_cnt_m6), fname_new_cnt_m5, fname_new_cnt_m6),
+         mname_new_cnt_m6 = ifelse(is.na(mname_new_cnt_m6), mname_new_cnt_m5, mname_new_cnt_m6),
+         lnamesuf_new_cnt_m6 = ifelse(is.na(lnamesuf_new_cnt_m6), lnamesuf_new_cnt_m5, lnamesuf_new_cnt_m6),
+         dob_cnt_m6 = ifelse(is.na(dob_cnt_m6), dob_cnt_m5, dob_cnt_m6),
+         gender_new_cnt_m6 = ifelse(is.na(gender_new_cnt_m6), gender_new_cnt_m5, gender_new_cnt_m6),
+         lname_trim_m6 = ifelse(is.na(lname_trim_m6), lname_trim_m5, lname_trim_m6),
+         lname_phon_m6 = ifelse(is.na(lname_phon_m6), lname_phon_m5, lname_phon_m6),
+         fname_trim_m6 = ifelse(is.na(fname_trim_m6), fname_trim_m5, fname_trim_m6),
+         fname_phon_m6 = ifelse(is.na(fname_phon_m6), fname_phon_m5, fname_phon_m6)
+  )
+
+pha_new6 <- pha_complete6 %>%
+  select(ssn_id_m6, lname_new_m6:dob_m6, dob_y_m6:dob_d_m6, lname_rec_m6:fname_phon_m6) %>%
+  distinct(ssn_id_m6, lname_new_m6, fname_new_m6, mname_new_m6, lnamesuf_new_m6, dob_m6, gender_new_m6, .keep_all = TRUE)
+
+
+
+#### MERGE FINAL DEDUPLICATED DATA BACK TO ORIGINAL ####
+pha_clean <- pha_complete6 %>%
+  select(ssn_new:lnamesuf_new, lname_rec:gender_new_cnt, ssn_new_m5, ssn_id_m6:dob_d_m6) %>%
+  right_join(., pha, by = c("ssn_new", "ssn_c", "ssn_new_junk", "ssn_c_junk",
+                            "lname_new", "lnamesuf_new", "fname_new", "mname_new", 
+                             "lname_rec", "fname_new_cnt", "mname_new_cnt", "lnamesuf_new_cnt", "dob",
+                             "dob_y", "dob_mth", "dob_d", "dob_cnt", "gender_new", "gender_new_cnt"))
+
+
+## TEMPORTARY UNTIL PHA_CLEANING RERUN
+### Clean addresses
+pha_clean <- mutate_at(pha_clean, vars(contains("unit")), funs(toupper(.)))
+
+
+#### Trim extraneous variables ####
+# Try to limit to only those that are needed for cleanup or analyses
+# Adding in more variables increased the chance of duplicate rows per action date
+pha_clean <- pha_clean %>%
+  select(
+    # Person demographics
+    ssn_new:lnamesuf_new, dob, gender_new, citizen, disability, relcode, 
+    ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_num,
+    # don't keep mbr_id for now as there are some individuals with multiple IDs on the same date
+    # Head of household demographics
+    hh_id, hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
+    # Household details
+    hhold_size, hhold_id,
+    # Action details
+    act_type:admit_date, reexam_date,
+    # Program details
+    agency, agency_new, portability, cost_pha, major_prog, prog_type, prog_subtype, 
+    portfolio_group, prog_group, spec_purp_type, sha_source,
+    # Unit details
+    property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
+    # Assets (only keep incasset_id to tidy up SHA data below)
+    incasset_id,
+    # Income details
+    inc_fixed, hhold_inc_fixed, hhold_inc_vary
+    # Rent details (not used for now)
+    #rent_tenant:bdrm_voucher, cost_month, rent_owner:tb_rent_ceiling
+  )
+# With some variables stripped out, can reduce the number of rows
+pha_clean <- pha_clean %>% distinct()
+
+
+#### Fix up SHA member numbers and head-of-household info ####
+# Ideally will move this fix to when the raw data are loaded
+
+
+# ISSUE 1: Some households seem to have multiple HoHs recorded
+# (hhold defined as the same address, action date, and PHA-generated hhold IDs)
+# FIX 1: Overwrite HoH data to match mbr_num = 1
+# ISSUE 2: The listed HoH isn't always member #1
+# FIX 2: Switch member numbers around to make HoH member #1
+# ISSUE 3: Not all households have member numbers or are missing #1
+# FIX 3: Make sure the HoH has member number = 1
+
+### First set up temporary household ID that should be unique to a household and action date
+pha_clean$hhold_id_temp <- group_indices(pha_clean, hh_id, hhold_id, agency_new, 
+                                         major_prog, unit_add, unit_apt, unit_apt2, 
+                                         unit_city, act_date, act_type, incasset_id)
+
+#### FIX 1: Deal with households that have multiple HoHs listed ####
+# Check for households with >1 people listed as HoH
+multi_hoh <- pha_clean %>%
+  filter(agency_new == "SHA") %>%
+  group_by(hhold_id_temp) %>%
+  summarise(people = n_distinct(hh_ssn, hh_lname, hh_fname, hh_mname, hh_dob)) %>%
+  ungroup() %>%
+  filter(people > 1) %>%
+  mutate(rowcheck = row_number())
+
+# Join to main data, restrict to member #1
+multi_hoh_join <- left_join(multi_hoh, pha_clean, by = "hhold_id_temp") %>%
+  filter(mbr_num == 1) %>%
+  select(rowcheck, hhold_id_temp, hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname, hh_lnamesuf, 
+         hh_fname, hh_mname, hh_dob) %>%
+  distinct()
+
+# Add back to main data and bring over data into new columns
+pha_clean <- left_join(pha_clean, multi_hoh_join, by = "hhold_id_temp") %>%
+  rename_at(vars(ends_with(".x")), funs(str_replace(., ".x", "_orig"))) %>%
+  rename_at(vars(ends_with(".y")), funs(str_replace(., ".y", ""))) %>%
+  mutate(
+    hh_ssn = ifelse(is.na(hh_ssn), hh_ssn_orig, hh_ssn),
+    hh_ssn_new = ifelse(is.na(hh_ssn_new), hh_ssn_new_orig, hh_ssn_new),
+    hh_ssn_c = ifelse(is.na(hh_ssn_c), hh_ssn_c_orig, hh_ssn_c),
+    hh_lname = ifelse(is.na(hh_lname), hh_lname_orig, hh_lname),
+    hh_lnamesuf = ifelse(is.na(hh_lnamesuf), hh_lnamesuf_orig, hh_lnamesuf),
+    hh_fname = ifelse(is.na(hh_fname), hh_fname_orig, hh_fname),
+    hh_mname = ifelse(is.na(hh_mname), hh_mname_orig, hh_mname),
+    hh_dob = ifelse(is.na(hh_dob), hh_dob_orig, hh_dob)
+  )
+rm(multi_hoh)
+rm(multi_hoh_join)
+
+
+#### FIX 2: Switch member numbers around to make HoH member #1 ####
+# NB. Sometimes the original person names/SSN and HoH names/SSN don't match,
+# even when the HOH is actually member #1.
+# Overall, a small number of households have this general problem so skipping for
+# now to avoid introducing other errors.
+
+# Find when HoH != member number #1
+# wrong_hoh <- pha_clean %>%
+#   filter(mbr_num == 1 & ssn_new != hh_ssn_new & (lname_new != hh_lname | fname_new != hh_fname)) %>%
+#   distinct(hhold_id_temp)
+# 
+# # Bring in other housheold members
+# wrong_hoh_join <- left_join(wrong_hoh, pha_clean, by = "hhold_id_temp") %>%
+#   select(hhold_id_temp, ssn_new, lname_new, fname_new, mbr_num, 
+#          hh_ssn_new, hh_lname, hh_fname, hh_dob) %>%
+#   arrange(hhold_id_temp, mbr_num) %>%
+#   distinct()
+
+
+#### FIX 3: Make sure the HoH has member number = 1 ####
+# NB. Fixing this is also problematic because the original person-level and HoH data
+# do not always match. 
+# For now find households with completely missing member numbers and set the person
+# whose data matches the HoH data to be member #1
+
+
+### ID households that only has missing member numbers (SHA HCV data)
+# First find smallest non-missing member number (almost all = 1)
+# Exclude difficult temp HH IDs
+min_mbr <- pha_clean %>%
+  filter(!is.na(mbr_num)) %>%
+  group_by(hhold_id_temp) %>%
+  summarise(mbr_num_min = min(mbr_num)) %>%
+  ungroup()
+
+
+# Join with full list of temporary HH IDs to find which ones are missing member numbers
+mbr_miss <- anti_join(pha_clean, min_mbr, by = "hhold_id_temp") %>%
+  select(hhold_id_temp, act_date, ssn_new, ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, dob,
+         mbr_num, hh_ssn_new, hh_ssn_c, hh_lname, hh_fname, hh_mname, hh_lnamesuf, hh_dob) %>%
+  arrange(hhold_id_temp, ssn_new, ssn_c, lname_new, fname_new)
+
+# Find the HoH and label them as member #1
+# Don't use hh_dob as all are missing
+# These two approaches work for 99.6% of households (277,295 of 278,369) with missing numbers
+mbr_miss <- mbr_miss %>%
+  # Try matching on SSN
+  mutate(mbr_num = ifelse(ssn_new == hh_ssn_new & ssn_c == hh_ssn_c, 1, mbr_num)) %>%
+  group_by(hhold_id_temp) %>%
+  mutate(done = max(mbr_num, na.rm = T)) %>%
+  ungroup() %>%
+  # Then try name combos
+  mutate(mbr_num = ifelse(is.infinite(done) & lname_new == hh_lname & fname_new == hh_fname, 1, mbr_num)) %>%
+  select(-done)
+
+# If multiple people were flagged as #1, take the oldest
+# Common when there are children and parents with the same name or DOB typos
+# If same DOB, take row with middle inital, then last name suffix
+# If still a clash, take newer SHA data
+mbr_miss <- mbr_miss %>%
+  arrange(hhold_id_temp, mbr_num, dob, hh_mname, hh_lnamesuf) %>%
+  group_by(hhold_id_temp) %>%
+  mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
+  ungroup()
+
+
+# Restrict to the newly identified HoHs and join back to main data
+mbr_miss_join <- mbr_miss %>%
+  filter(mbr_num == 1) %>%
+  distinct(hhold_id_temp, act_date, ssn_new, ssn_c, lname_new, fname_new, 
+           mname_new, lnamesuf_new, dob, mbr_num)
+pha_clean <- left_join(pha_clean, mbr_miss_join, 
+                       by = c("hhold_id_temp", "act_date", "ssn_new", "ssn_c", 
+                              "lname_new", "fname_new", "mname_new", "lnamesuf_new", "dob"))
+
+# Bring over older member numbers
+pha_clean <- pha_clean %>%
+  mutate(mbr_num = ifelse(!is.na(mbr_num.y), mbr_num.y, mbr_num.x)) %>%
+  select(-mbr_num.x, -mbr_num.y)
+
+rm(min_mbr)
+rm(mbr_miss)
+rm(mbr_miss_join)
+
+
+#### Carry over updated names etc. to head-of-household details ####
+# Ideally, this will eventually happen in parallel with each cleanup step above for use in later deduplication
+# Set up cleaned head of household names
+# Can only use ssn_id not ssn_new and ssn_c because the latter two differ across 
+# rows for the same HoH
+
+# Temporary measure until pha_combing run again
+pha_clean <- pha_clean %>% mutate_at(vars(contains("name")), funs(ifelse(is.na(.), "", .)))
+#
+
+pha_clean <- pha_clean %>%
+  mutate(
+    hh_ssn_id_m6 = ifelse(mbr_num == 1 & ssn_id_m6 != "", ssn_id_m6, ""),
+    hh_lname_m6 = ifelse(mbr_num == 1 & lname_new_m6 != "", lname_new_m6, hh_lname),
+    hh_lnamesuf_m6 = ifelse(mbr_num == 1 & lnamesuf_new_m6 != "", lnamesuf_new_m6, hh_lnamesuf),
+    hh_fname_m6 = ifelse(mbr_num == 1 & fname_new_m6 != "", fname_new_m6, hh_fname),
+    hh_mname_m6 = ifelse(mbr_num == 1 & mname_new_m6 != "", mname_new_m6, hh_mname),
+    hh_dob_m6 = as.Date(ifelse(mbr_num == 1 & !is.na(dob_m6), dob_m6, hh_dob), origin = "1970-01-01")
+  )
+
+
+# Set up another temporary household ID based on slightly modified original HoH characteristics
+# Need to use date and addresses too because the cleanup didn't catch everything
+# Result is some inconsistency in HoH name over time but the overall numbers should work
+pha_clean$hhold_id_temp <- group_indices(pha_clean, hh_ssn_new, hh_ssn_c, 
+                                         hh_lname, hh_lnamesuf, hh_fname, hh_dob, 
+                                         unit_add, unit_apt, unit_apt2, unit_city, 
+                                         incasset_id, act_date, act_type)
+
+## Temporary measure
+pha_clean <- mutate(pha_clean, rowcheck = row_number())
+
+# Limit to just the cleaned up HH variables
+pha_clean_hh <- pha_clean %>%
+  distinct(hhold_id_temp, act_date, act_type, 
+           hh_ssn_id_m6, hh_lname_m6, hh_lnamesuf_m6, 
+           hh_fname_m6, hh_mname_m6, hh_dob_m6, mbr_num) %>%
+  filter(mbr_num == 1) %>%
+  select(-mbr_num)
+
+# Merge back to the main data and clean up duplicated varnames
+pha_clean <- left_join(pha_clean, pha_clean_hh, 
+                       by = c("hhold_id_temp", "act_date", "act_type")) %>%
+  rename(hh_ssn_id_m6 = hh_ssn_id_m6.y, hh_lname_m6 = hh_lname_m6.y, 
+         hh_lnamesuf_m6 = hh_lnamesuf_m6.y, hh_fname_m6 = hh_fname_m6.y,
+         hh_mname_m6 = hh_mname_m6.y, hh_dob_m6 = hh_dob_m6.y) %>%
+  select(-ends_with(".x"))
+
+
+### Make a new household ID based on head of household characteristics
+pha_clean$hhold_id_new <- group_indices(pha_clean, hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6)
+
+### Make new flags for junk SSNs
+pha_clean <- junk_ssn_all(pha_clean, ssn_id_m6)
+pha_clean <- junk_ssn_all(pha_clean, hh_ssn_id_m6)
+
+### Clean up column order
+pha_clean <- pha_clean %>% 
+  select(ssn_new:ssn_id_m6, ssn_id_m6_junk, lname_new_m6:hh_ssn_id_m6, hh_ssn_id_m6_junk,
+         hh_lname_m6:hhold_id_new, -hhold_id_temp, -rowcheck)
+
+
+### Filter out test names
+pha_clean <- pha_clean %>% filter(!(lname_new_m6 == "DUFUS" & fname_new_m6 == "IAM"))
+
+
+#### Save point ####
+saveRDS(pha_clean, file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+
+
+# Remove data frames and values made along the way
+rm(list = ls(pattern = "pha_new[1-6]*$"))
+rm(list = ls(pattern = "pha_complete[1-6]*$"))
+rm(list = ls(pattern = "pairs[1-6]"))
+rm(list = ls(pattern = "classify"))
+rm(list = ls(pattern = "match"))
+rm(list = ls(pattern = "pha_dedup"))
+rm(pha_clean_hh)
+gc()
