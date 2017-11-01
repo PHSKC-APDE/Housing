@@ -4,4 +4,5 @@
 ^SHA work$
 ^pha_*\.R$
 ^counts_apply\.R$
-^pha processing$
+^processing$
+^analyses$
