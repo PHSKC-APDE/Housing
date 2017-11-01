@@ -11,3 +11,4 @@ Relies on functions created in the housing package
 - Clean up addresses and geocode (pha_address_cleaning.R)
 - Consolidate data rows (pha_consolidation.R)
 - Add in final data elements and set up analyses (pha_analyses_prep.R)
+- Join with Medicaid eligibility data and set up analyses (pha_medicaid_join.R)
