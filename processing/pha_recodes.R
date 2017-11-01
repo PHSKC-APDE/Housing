@@ -13,6 +13,7 @@
 # Clean up addresses and geocode
 # Consolidate data rows
 # Add in final data elements and set up analyses
+# Join with Medicaid eligibility data and set up analyses
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
@@ -85,4 +86,8 @@ pha_recoded <- pha_recoded %>%
 
 #### Save point ####
 saveRDS(pha_recoded, file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+
+#### Clean up ####
+rm(pha_clean)
+gc()
 
