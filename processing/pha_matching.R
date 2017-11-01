@@ -13,6 +13,7 @@
 # Clean up addresses and geocode
 # Consolidate data rows
 # Add in final data elements and set up analyses
+# Join with Medicaid eligibility data and set up analyses
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
@@ -929,11 +930,6 @@ pha_clean <- pha_complete6 %>%
                             "lname_new", "lnamesuf_new", "fname_new", "mname_new", 
                              "lname_rec", "fname_new_cnt", "mname_new_cnt", "lnamesuf_new_cnt", "dob",
                              "dob_y", "dob_mth", "dob_d", "dob_cnt", "gender_new", "gender_new_cnt"))
-
-
-## TEMPORTARY UNTIL PHA_CLEANING RERUN
-### Clean addresses
-pha_clean <- mutate_at(pha_clean, vars(contains("unit")), funs(toupper(.)))
 
 
 #### Trim extraneous variables ####
