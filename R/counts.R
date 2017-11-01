@@ -31,7 +31,8 @@
 #' @param  birth A named variable that determines which date of birth field to 
 #' use when calculating age (normally dob_h or dob_m6 but can also use hh_dob_m6
 #' if calculating age at the household level).
-#' @param ... Additional arguments for the \code{\link{time_range}} function.
+#' @param ... Additional arguments for the \code{\link{time_range}} function
+#' (yearmin, yearmax, period, and date).
 #' 
 #' @examples
 #' #' \dontrun{
@@ -100,14 +101,11 @@ counts <- function(df,
   if(!missing(birth)) {
     birth <- enquo(birth)
   } else if("dob_h" %in% names(df)) {
-    dob <- quo(dob_h)
-    print("Using dob_h to calculate age")
+    birth <- quo(dob_h)
   } else if("dob_m6" %in% names(df)) {
     birth <- quo(dob_m6)
-    print("Using dob_m6 to calculate age")
   } else if("hh_dob_m6" %in% names(df)) {
     birth <- quo(hh_dob_m6)
-    print("Using hh_dob_m6 to calculate age")
   } else {
     stop("No valid dob found")
   }
@@ -138,23 +136,10 @@ counts <- function(df,
   templist = list()
  
   for (i in 1:length(timestart)) {
-    # print(quo(df_temp <- df %>%
-    #             filter(!!start_var <= as.Date(timeend[i]) & 
-    #                      !!end_var >= as.Date(timestart[i]) & 
-    #                      agency_new %in% agency_filter)))
-    
-    # Apply function over list of dates
-    if(start_var == quo(startdate_c)) {
-      df_temp <- df %>%
-        filter(startdate_c <= as.Date(timeend[i]) & 
-                 enddate_c >= as.Date(timestart[i]) & 
-                 agency_new %in% agency_filter)
-    } else {
-      df_temp <- df %>%
-        filter(startdate <= as.Date(timeend[i]) & 
-                 enddate >= as.Date(timestart[i]) & 
-                 agency_new %in% agency_filter)
-    }
+    df_temp <- df %>%
+      filter((!!start_var) <= as.Date(timeend[i]) &
+               (!!end_var) >= as.Date(timestart[i]) &
+               agency_new %in% agency_filter)
     
     if (quo_name(unit) == "hhold_id_new") {
       df_temp <- df_temp %>% filter(mbr_num == 1)
@@ -182,7 +167,28 @@ counts <- function(df,
                                  ifelse(adult == 1 & senior == 1 & 
                                           !is.na(adult), "Senior", NA)))
         )
-        }
+    }
+    
+    # Recalculate length of stay groups if they are one of the grouping variables
+    if (str_detect(paste(grouping_vars, collapse = ""), "time_")) {
+      df_temp <- df_temp %>% mutate(
+        time_housing_temp = 
+          round(interval(start = start_housing, end = timeend[i]) / years(1), 1),
+        time_housing = 
+          car::recode(time_housing_temp, "0:1.99 = '<2 years'; 2:4.99 = '2 to <5 years';
+                      5:hi = '5+ years'; else = NA"),
+        time_pha_temp = 
+          round(interval(start = start_pha, end = timeend[i]) / years(1), 1),
+        time_pha = 
+          car::recode(time_pha_temp, "0:1.99 = '<2 years'; 2:4.99 = '2 to <5 years';
+                      5:hi = '5+ years'; else = NA"),
+        time_prog_temp = 
+          round(interval(start = start_prog, end = timeend[i]) / years(1), 1),
+        time_prog = 
+          car::recode(time_prog_temp, "0:1.99 = '<2 years'; 2:4.99 = '2 to <5 years';
+                      5:hi = '5+ years'; else = NA")
+      )
+    }
       
     templist[[i]] <- group_vars(df_temp, !!!grouping_vars) %>%
       summarise(count = n_distinct(!!unit)) %>% 
