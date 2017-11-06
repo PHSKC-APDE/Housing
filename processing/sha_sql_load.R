@@ -34,7 +34,6 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 db.apde51 <- odbcConnect("PH_APDEStore51")
 
 
-
 #### Bring in data ####
 sha3a_new <- read.csv(file = paste0(housing_path, "/SHA/Original/3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
 sha3b_new <- read.csv(file = paste0(housing_path, "/SHA/Original/3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
@@ -52,10 +51,10 @@ sha4a <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/4_HCV 2004 t
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(paste0(housing_path, "/SHA/Original/HCV Voucher Type_2017-05-15.xlsx"))
-sha_prog_codes <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-08-11.xlsx"), 2)
+sha_prog_codes <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-11-02.xlsx"), 2)
 
-# Bring in program/portfolio codes
-sha_portfolio_codes  <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-08-11.xlsx"), 1)
+# Bring in portfolio codes
+sha_portfolio_codes  <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-11-02.xlsx"), 1)
 
 
 #### Join data sets together ####
@@ -64,7 +63,7 @@ sha_portfolio_codes  <- read.xlsx(paste0(housing_path, "/SHA/Original/Program co
 # Make list of data frames to deduplicate
 dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
             sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4a = sha4a, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, sha_prog_codes = sha_prog_codes)
+            sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, sha_portfolio_codes = sha_portfolio_codes)
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -89,7 +88,7 @@ sha2b <- data.table::setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA
 sha2c <- data.table::setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
 sha3a_new <- data.table::setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
 sha3b_new <- data.table::setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- data.table::setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_new_ph)])
+sha_portfolio_codes <- data.table::setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
 
 
 # Clean up mismatching variables
@@ -131,18 +130,19 @@ sha_ph <- sha_ph %>%
 # Join with portfolio data
 sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
 
-# Add program type
-sha_ph <- mutate(sha_ph, major_prog = "PH", prog_type = "PH", prog_subtype = "PH")
+# Rename specific portfolio
+sha_ph <- mutate(sha_ph, 
+                 portfolio = ifelse(str_detect(portfolio, "Lake City Court"),
+                                    "Lake City Court", portfolio))
 
 
 #### Join HCV files
-
 # Fix up names
 sha4a <- data.table::setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
 sha5a_new <- data.table::setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA_new_hcv)])
 sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), fields$SHA_new_hcv)])
 sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
-sha_prog_codes <- data.table::setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_new_hcv)])
+sha_prog_codes <- data.table::setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_prog_port_codes)])
 
 
 # Clean up mismatching variables
@@ -186,8 +186,6 @@ sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
 sha5 <- left_join(sha5a_new, sha5b_new, by = c("cert_id", "mbr_id"))
 sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
-# This line deprecated
-#sha5 <- left_join(sha5, sha_vouch_increment, by = c("increment"))
 sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
 # Add source field to track where each row came from
@@ -196,10 +194,6 @@ sha5 <- sha5 %>% mutate(sha_source = "sha5")
 
 # Append data
 sha_hcv <- bind_rows(sha4, sha5)
-
-
-# Add program type if missing
-sha_hcv <- mutate(sha_hcv, major_prog = ifelse(is.na(major_prog), "HCV", major_prog))
 
 
 ### Join PH and HCV combined files
@@ -239,16 +233,35 @@ sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
   ungroup() %>%
   select(-inc_fixed_temp)
   
-# Restrict to relevant fields (can drop specific income fields)
-sha <- sha %>% select(-inc_code, -inc_year, -inc_excl, -inc_fin) %>% distinct()
+# Restrict to relevant fields 
+# (can drop specific income and asset fields once fixed income flag is made)
+sha <- sha %>% 
+  select(-inc_code, -inc_year, -inc_excl, -inc_fin, -inc_fin_tot,
+         -inc_tot, -inc_adj, -inc_deduct, -inc_mbr_num, -incasset_id,
+         -asset_type, -asset_val, -antic_inc,
+         -antic_inc_tot, -asset_impute, -asset_final, -asset_tot) %>% 
+  distinct()
 
+
+### Transfer over data to rows with missing programs and vouchers
+# (not all rows were joined earlier and it is easier to clean up at this point once duplicate rows are deleted)
+sha <- sha %>%
+  arrange(ssn, lname, fname, dob, act_date) %>%
+  group_by(ssn, lname, fname, dob) %>%
+  mutate(prog_type = ifelse(is.na(prog_type) & !is.na(lag(prog_type, 1)) & 
+                          unit_add == lag(unit_add, 1), 
+                          lag(prog_type, 1), prog_type),
+         vouch_type = ifelse(is.na(vouch_type) & !is.na(lag(vouch_type, 1)) & 
+                              unit_add == lag(unit_add, 1), 
+                            lag(vouch_type, 1), vouch_type)) %>%
+  ungroup()
 
 
 
 ##### Load to SQL server #####
 # May need to delete table first
-sqlDrop(db.apde51, "dbo.sha_combined_raw")
-sqlSave(db.apde51, sha, tablename = "dbo.sha_combined_raw",
+sqlDrop(db.apde51, "dbo.sha_combined")
+sqlSave(db.apde51, sha, tablename = "dbo.sha_combined",
         varTypes = c(
           act_date = "Date",
           admit_date = "Date",
