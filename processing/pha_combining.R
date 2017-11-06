@@ -34,7 +34,7 @@ housing_db <- odbcConnect("PH_APDEStore51")
 #### Bring in data ####
 # This takes ~90 seconds
 sha <- sqlQuery(housing_db,
-                "SELECT * FROM dbo.sha_combined_raw",
+                "SELECT * FROM dbo.sha_combined",
                 stringsAsFactors = FALSE)
 # This takes ~35 seconds
 kcha_long <- sqlQuery(housing_db,
@@ -64,14 +64,14 @@ pha <- pha %>% distinct()
 ### Lots of variables have white space
 pha <- trim_f(pha, relcode, unit_add, unit_apt, unit_apt2, 
               unit_city, unit_state, contains("name"), 
-              prog_type, prog_subtype, spec_purp_type, property_name, 
+              prog_type, prog_subtype, vouch_type, property_name, 
               property_type, portfolio, cost_pha)
 
 
 ### Fix up inconsistent capitalization in key variables
 # Change names to be consistently upper case
 pha <- pha %>% mutate_at(vars(contains("name"), contains("unit"), 
-                              prog_type, prog_subtype, spec_purp_type, property_name, 
+                              prog_type, prog_subtype, vouch_type, property_name, 
                               property_type, portfolio, cost_pha), 
                          funs(toupper))
 

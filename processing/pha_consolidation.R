@@ -49,7 +49,7 @@ pha_cleanadd_sort$pid <- group_indices(pha_cleanadd_sort, ssn_id_m6, lname_new_m
 
 ### Concatenated agency field
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  mutate(agency_prog_concat = paste(agency_new, major_prog, prog_type, prog_subtype, spec_purp_type, sep = ", "))
+  mutate(agency_prog_concat = paste(agency_new, major_prog, prog_type, prog_subtype, vouch_type, sep = ", "))
 
 
 #### Merge with KCHA EOP data - TEMPORARY MEASURE ####
@@ -111,11 +111,11 @@ kcha_eop_merge <- kcha_eop_join %>%
   mutate(hh_ssn_id_m6 = hh_ssn_new, act_type = act_type.x, 
          act_date = act_date.x, prog_type = prog_type.x, agency_new = "KCHA", 
          major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
-         prog_subtype = NA, spec_purp_type = "",
+         prog_subtype = NA, vouch_type = "",
          agency_prog_concat = paste(agency_new, major_prog, prog_type, 
-                                    prog_subtype, spec_purp_type, sep = ", ")) %>%
+                                    prog_subtype, vouch_type, sep = ", ")) %>%
   select(pid, hhold_id_new, hh_ssn_id_m6, act_type, act_date, agency_new, 
-         major_prog, prog_type, prog_subtype, spec_purp_type, agency_prog_concat) %>%
+         major_prog, prog_type, prog_subtype, vouch_type, agency_prog_concat) %>%
   distinct()
 
 # Join with all other people in the household
@@ -125,7 +125,7 @@ kcha_eop_full <- kcha_eop_full %>%
   mutate(pid = pid.y, hh_ssn_id_m6 = hh_ssn_id_m6.y, act_type = act_type.x, 
          act_date = act_date.x,  agency_new = agency_new.x, 
          major_prog = major_prog.x, prog_type = prog_type.x,
-         prog_subtype = prog_subtype.x, spec_purp_type = spec_purp_type.x,
+         prog_subtype = prog_subtype.x, vouch_type = vouch_type.x,
          agency_prog_concat = agency_prog_concat.x,
          source_eop = "eop") %>%
   select(pid, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, hhold_id_new, 
@@ -1023,10 +1023,10 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     drop = ifelse(
       (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
          startdate == lead(startdate, 1) & enddate == lead(enddate, 1) & 
-         spec_purp_type != "" & !is.na(spec_purp_type) & (lead(spec_purp_type, 1) == "" | is.na(lead(spec_purp_type, 1)))) |
+         vouch_type != "" & !is.na(vouch_type) & (lead(vouch_type, 1) == "" | is.na(lead(vouch_type, 1)))) |
         (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
            startdate == lag(startdate, 1) & enddate == lag(enddate, 1) & 
-           spec_purp_type != "" & !is.na(spec_purp_type) & (lag(spec_purp_type, 1) == "" | is.na(lag(spec_purp_type, 1)))), 12, drop),
+           vouch_type != "" & !is.na(vouch_type) & (lag(vouch_type, 1) == "" | is.na(lag(vouch_type, 1)))), 12, drop),
     # For the remaining ~84 pairs, drop the second row
     drop = ifelse(drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
                     startdate == lag(startdate, 1) & enddate == lag(enddate, 1), 12, drop)
