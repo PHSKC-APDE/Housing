@@ -1,7 +1,7 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^KCHA work$
-^SHA work$
+^KCHA$
+^SHA$
 ^pha_*\.R$
 ^counts_apply\.R$
 ^processing$
