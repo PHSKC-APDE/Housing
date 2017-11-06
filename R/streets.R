@@ -1,6 +1,6 @@
 #' Standardizes street names.
 #' 
-#' \code{streets} creates a move in date for calculating time in public housing.
+#' \code{streets} standardizes street names to have USPS abbreviations.
 #' 
 #' This function applies standard USPS abbreviations to variables containing
 #' street names
@@ -9,7 +9,7 @@
 #' @param ... A set of variables names that need cleaning
 #' 
 #' @examples 
-#' #' \dontrun{
+#' \dontrun{
 #' los(pha_longitudinal, unit_add_new)
 #' }
 #' 

@@ -39,7 +39,8 @@ not present then the next default is enddate.}
 use when calculating age (normally dob_h or dob_m6 but can also use hh_dob_m6
 if calculating age at the household level).}
 
-\item{...}{Additional arguments for the \code{\link{time_range}} function.}
+\item{...}{Additional arguments for the \code{\link{time_range}} function
+(yearmin, yearmax, period, and date).}
 }
 \description{
 \code{counts} summarizes the number of enrollees in the PHA data.
@@ -52,7 +53,7 @@ The function works for PHA data regardless of whether or not it has also
 been matched to Medicaid data.
 }
 \examples{
-#' \dontrun{
+\dontrun{
 counts(pha_longitudinal)
 counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
 agency = "kcha", unit = hhold_id_new)

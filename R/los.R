@@ -13,7 +13,7 @@
 #' @param df A data frame
 #' 
 #' @examples 
-#' #' \dontrun{
+#' \dontrun{
 #' los(pha_longitudinal)
 #' }
 #' 

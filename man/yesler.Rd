@@ -27,7 +27,7 @@ For now, it is assumed that the df has variables called property_id, unit_add_ne
 and variable to group people on (pid or pid2).
 }
 \examples{
-#' \dontrun{
+\dontrun{
 yesler(pha_elig_demogs, unit = pid)
 }
 

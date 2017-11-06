@@ -22,7 +22,7 @@ For now, it is assumed that the df has variables called pid, period,
 agency_new, and major_program.
 }
 \examples{
-#' \dontrun{
+\dontrun{
 los(pha_longitudinal)
 }
 

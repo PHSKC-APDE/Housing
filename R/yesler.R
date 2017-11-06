@@ -17,7 +17,7 @@
 #' been matched to Medicaid data.
 #' 
 #' @examples 
-#' #' \dontrun{
+#' \dontrun{
 #' yesler(pha_elig_demogs, unit = pid)
 #' }
 #' 

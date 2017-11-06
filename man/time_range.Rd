@@ -28,7 +28,7 @@ Its output is a list of start and end vectors, plus a string showing the
 period of time being counted in each start/end combo.
 }
 \examples{
-#' \dontrun{
+\dontrun{
 time_range()
 time_range(yearmin = 2014, yearmax = 2015, period = "quarter")
 time_range(period = "date", date = "-06-30")

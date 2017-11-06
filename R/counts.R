@@ -35,7 +35,7 @@
 #' (yearmin, yearmax, period, and date).
 #' 
 #' @examples
-#' #' \dontrun{
+#' \dontrun{
 #' counts(pha_longitudinal)
 #' counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
 #' agency = "kcha", unit = hhold_id_new)

@@ -12,14 +12,14 @@ streets(df)
 \item{...}{A set of variables names that need cleaning}
 }
 \description{
-\code{streets} creates a move in date for calculating time in public housing.
+\code{streets} standardizes street names to have USPS abbreviations.
 }
 \details{
 This function applies standard USPS abbreviations to variables containing
 street names
 }
 \examples{
-#' \dontrun{
+\dontrun{
 los(pha_longitudinal, unit_add_new)
 }
 

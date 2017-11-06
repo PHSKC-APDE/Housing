@@ -15,7 +15,7 @@
 #' dates will produce a charToDate(x) error.
 #' 
 #' @examples 
-#' #' \dontrun{
+#' \dontrun{
 #' time_range()
 #' time_range(yearmin = 2014, yearmax = 2015, period = "quarter")
 #' time_range(period = "date", date = "-06-30")
