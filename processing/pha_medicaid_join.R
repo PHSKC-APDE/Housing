@@ -121,8 +121,8 @@ elig_join <- left_join(elig, elig_demog, by = c("MEDICAID_RECIPIENT_ID", "SOCIAL
     )
 
 #### Save point ####
-#saveRDS(elig_join, file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Alastair/elig_housing.Rda")
-#elig_join <- readRDS(file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Alastair/elig_housing.Rda")
+#saveRDS(elig_join, file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analyses/Alastair/elig_housing.Rda")
+#elig_join <- readRDS(file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analyses/Alastair/elig_housing.Rda")
 
 
 # Limit to one row per person for merging with housing
