@@ -8,8 +8,8 @@
 #' Once each person's addresses have been flagged as Yesler Terrace/scattered 
 #' sites or not, a new set of variables is made to indicate whether or not the 
 #' person has ever lived at Yesler Terrace/scattered sites.
-#' For now, it is assumed that the df has variables called property_id, unit_add_new, 
-#' and variable to group people on (pid or pid2).
+#' For now, it is assumed that the df has variables called property_id, 
+#' unit_add_new or unit_add_h, and a variable to group people on (pid or pid2).
 #' 
 #' @param df A data frame
 #' @param unit A named variable that determines the unit to group by. Default is 
@@ -38,24 +38,33 @@ yesler <- function(df, unit = NULL){
     stop("No valid unit of analysis found")
   }
   
+  # Figure out which address field to use
+  if("unit_add_h" %in% names(df)) {
+    address <- quo(unit_add_h)
+  } else if("unit_add_new" %in% names(df)) {
+    address <- quo(unit_add_new)
+  } else {
+    stop("No valid address variable")
+  }
+  
   ### Yesler Terrace and scattered sites indicators
   df <- df %>%
     mutate(
       yt = ifelse(
         (property_id %in% c("001", "1", "591", "738", "743") & !is.na(property_id)) |
-          (!is.na(unit_add_new) & 
-              (str_detect(unit_add_new, "1105 E F") | 
-                 str_detect(unit_add_new, "1305 E F") | 
-                 str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER"))),
+          (!is.na(!!address) & 
+              (str_detect(!!address, "1105 E F") | 
+                 str_detect(!!address, "1305 E F") | 
+                 str_detect(!!address, "820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
       yt_old = ifelse(property_id %in% c("1", "001") & !is.na(property_id), 
                       1, 0),
       yt_new = ifelse(
         (property_id %in% c("591", "738", "743") & !is.na(property_id)) |
-          (!is.na(unit_add_new) & 
-             (str_detect(unit_add_new, "1105 E F") | 
-                str_detect(unit_add_new, "1305 E F") | 
-                str_detect(unit_add_new, "820[:space:]*[E]*[:space:]*YESLER"))),
+          (!is.na(!!address) & 
+             (str_detect(!!address, "1105 E F") | 
+                str_detect(!!address, "1305 E F") | 
+                str_detect(!!address, "820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
       ss = ifelse(property_id %in% 
                     c("050", "051", "052", "053", "054", "055", "056", "057",
