@@ -30,6 +30,8 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(dplyr) # Used to manipulate data
 
+data_path = "~/data/"
+
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 db.apde51 <- odbcConnect("PH_APDEStore51")
 
