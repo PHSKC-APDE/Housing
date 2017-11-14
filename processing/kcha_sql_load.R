@@ -123,14 +123,14 @@ kcha <- bind_rows(kcha_old_full, kcha_new_full)
 
 #### Load to SQL server ####
 # May need to delete table first
-sqlDrop(db.apde51, "dbo.kcha_combined_raw")
-sqlSave(db.apde51, kcha, tablename = "dbo.kcha_combined_raw",
-        varTypes = c(
-          h2b = "Date",
-          h2h = "Date",
-          h3e01 = "Date", h3e02 = "Date", h3e03 = "Date", h3e04 = "Date", h3e05 = "Date", h3e06 = "Date",
-          h3e07 = "Date", h3e08 = "Date", h3e09 = "Date", h3e10 = "Date", h3e11 = "Date", h3e12 = "Date"
-        ))
+#sqlDrop(db.apde51, "dbo.kcha_combined_raw")
+#sqlSave(db.apde51, kcha, tablename = "dbo.kcha_combined_raw",
+#        varTypes = c(
+#          h2b = "Date",
+#          h2h = "Date",
+#          h3e01 = "Date", h3e02 = "Date", h3e03 = "Date", h3e04 = "Date", h3e05 = "Date", h3e06 = "Date",
+#          h3e07 = "Date", h3e08 = "Date", h3e09 = "Date", h3e10 = "Date", h3e11 = "Date", h3e12 = "Date"
+#        ))
 
 
 #### Remove temporary files ####
@@ -469,18 +469,18 @@ saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/k
 kcha_long <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
 
 ##### WRITE RESHAPED DATA TO SQL #####
-sqlDrop(db.apde51, "dbo.kcha_reshaped")
-sqlSave(
-  db.apde51,
-  kcha_long,
-  tablename = "dbo.kcha_reshaped",
-  varTypes = c(
-    act_date = "Date",
-    admit_date = "Date",
-    dob = "Date",
-    hh_dob = "Date"
-  )
-)
+#sqlDrop(db.apde51, "dbo.kcha_reshaped")
+#sqlSave(
+#  db.apde51,
+#  kcha_long,
+#  tablename = "dbo.kcha_reshaped",
+#  varTypes = c(
+#    act_date = "Date",
+#    admit_date = "Date",
+#    dob = "Date",
+#    hh_dob = "Date"
+#  )
+#)
 
 
 ##### Remove temporary files #####
