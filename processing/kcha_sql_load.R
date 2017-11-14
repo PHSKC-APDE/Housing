@@ -29,7 +29,7 @@ library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 
 housing_path <- "~/data"
 
