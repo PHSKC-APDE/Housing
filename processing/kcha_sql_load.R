@@ -56,25 +56,16 @@ new_panel_3_fname = "kcha_panel_03_2016.csv"
 
 #### Bring in raw data and combine ####
 ### Bring in data
-kcha_old_p1 <- read.csv(file=file.path(kcha_path,
-                                       old_panel_1_fname),
-                        stringsAsFactors = FALSE)
-kcha_old_p2 <- read.csv(file=file.path(kcha_path,
-                                       old_panel_2_fname),
-                        stringsAsFactors = FALSE)
-kcha_old_p3 <- read.csv(file=file.path(kcha_path,
-                                       old_panel_3_fname),
-                        stringsAsFactors = FALSE)
+kcha_old_p1 <- read.csv(file=file.path(kcha_path, old_panel_1_fname), stringsAsFactors = FALSE)
 
-kcha_new_p1 <- read.csv(file=file.path(kcha_path,
-                                       new_panel_1_fname),
-                        stringsAsFactors = FALSE)
-kcha_new_p2 <- read.csv(file=file.path(kcha_path,
-                                       new_panel_2_fname),
-                        stringsAsFactors = FALSE)
-kcha_new_p3 <- read.csv(file=file.path(kcha_path,
-                                       new_panel_3_fname),
-                        stringsAsFactors = FALSE)
+kcha_old_p2 <- read.csv(file=file.path(kcha_path, old_panel_2_fname), stringsAsFactors = FALSE)
+
+kcha_old_p3 <- read.csv(file=file.path(kcha_path, old_panel_3_fname), stringsAsFactors = FALSE)
+
+kcha_new_p1 <- read.csv(file=file.path(kcha_path, new_panel_1_fname), stringsAsFactors = FALSE)
+
+kcha_new_p2 <- read.csv(file=file.path(kcha_path, new_panel_2_fname), stringsAsFactors = FALSE)
+kcha_new_p3 <- read.csv(file=file.path(kcha_path,new_panel_3_fname),stringsAsFactors = FALSE)
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
 kcha_old_p1 <- kcha_old_p1 %>% distinct()
