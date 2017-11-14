@@ -28,6 +28,7 @@ library(housing) # contains many useful functions for cleaning
 library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
+library(data.table)
 library(dplyr) # Used to manipulate data
 
 housing_path <- "~/data"
@@ -56,16 +57,17 @@ new_panel_3_fname = "kcha_panel_03_2016.csv"
 
 #### Bring in raw data and combine ####
 ### Bring in data
-kcha_old_p1 <- read.csv(file=file.path(kcha_path, old_panel_1_fname), stringsAsFactors = FALSE)
+kcha_old_p1 <- fread(file=file.path(kcha_path, old_panel_1_fname), stringsAsFactors = FALSE)
 
-kcha_old_p2 <- read.csv(file=file.path(kcha_path, old_panel_2_fname), stringsAsFactors = FALSE)
+kcha_old_p2 <- fread(file=file.path(kcha_path, old_panel_2_fname), stringsAsFactors = FALSE)
 
-kcha_old_p3 <- read.csv(file=file.path(kcha_path, old_panel_3_fname), stringsAsFactors = FALSE)
+kcha_old_p3 <- fread(file=file.path(kcha_path, old_panel_3_fname), stringsAsFactors = FALSE)
 
-kcha_new_p1 <- read.csv(file=file.path(kcha_path, new_panel_1_fname), stringsAsFactors = FALSE)
+kcha_new_p1 <- fread(file=file.path(kcha_path, new_panel_1_fname), stringsAsFactors = FALSE)
 
-kcha_new_p2 <- read.csv(file=file.path(kcha_path, new_panel_2_fname), stringsAsFactors = FALSE)
-kcha_new_p3 <- read.csv(file=file.path(kcha_path,new_panel_3_fname),stringsAsFactors = FALSE)
+kcha_new_p2 <- fread(file=file.path(kcha_path, new_panel_2_fname), stringsAsFactors = FALSE)
+
+kcha_new_p3 <- fread(file=file.path(kcha_path,new_panel_3_fname), stringsAsFactors = FALSE)
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
 kcha_old_p1 <- kcha_old_p1 %>% distinct()
@@ -453,7 +455,7 @@ kcha_long <- kcha_long %>%
 
 ### HCV (currently being done after join with SHA and address cleanup)
 # Bring in data and rename variables
-# kcha_dev_adds <- read.csv(file = paste0(path, "/Original data/Development Addresses_received_2017-07-21.csv"), stringsAsFactors = FALSE)
+# kcha_dev_adds <- fread(file = paste0(path, "/Original data/Development Addresses_received_2017-07-21.csv"), stringsAsFactors = FALSE)
 # kcha_dev_adds <- setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
 #
 # # Drop spare rows and deduplicate
