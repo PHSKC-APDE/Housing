@@ -1,6 +1,6 @@
 ###############################################################################
 # OVERVIEW:
-# Code to create a cleaned person table from the combined 
+# Code to create a cleaned person table from the combined
 # King County Housing Authority and Seattle Housing Authority data sets
 # Aim is to have a single row per contiguous time in a house per person
 #
@@ -18,7 +18,7 @@
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2017-05-17, split into separate files 2017-10
-# 
+#
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
@@ -30,10 +30,24 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(dplyr) # Used to manipulate data
 
-data_path = "~/data/"
+housing_path <- "~/data"
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+kcha_path = file.path(housing_path, "KCHA")
 db.apde51 <- odbcConnect("PH_APDEStore51")
+
+old_panel_1_fname = "kcha_panel_01.csv"
+old_panel_2_fname = "kcha_panel_02.csv"
+old_panel_3_fname = "kcha_panel_03.csv"
+new_panel_1_fname = "kcha_panel_01_2016.csv"
+new_panel_2_fname = "kcha_panel_02_2016.csv"
+new_panel_3_fname = "kcha_panel_03_2016.csv"
+
+#old_panel_1_fname = "kcha_panel_01_2004-2015_received_2017-03-07.csv"
+#old_panel_2_fname = "kcha_panel_02_2004-2015_received_2017-03-07.csv"
+#old_panel_3_fname = "kcha_panel_03_2004-2015_received_2017-03-07.csv"
+#new_panel_1_fname = "kcha_panel_01_2016_received_2017-05-04.csv"
+#new_panel_2_fname = "kcha_panel_02_2016_received_2017-05-04.csv"
+#new_panel_3_fname = "kcha_panel_03_2016_received_2017-05-04.csv"
 
 
 #####################################
@@ -42,14 +56,25 @@ db.apde51 <- odbcConnect("PH_APDEStore51")
 
 #### Bring in raw data and combine ####
 ### Bring in data
-kcha_old_p1 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_01_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
-kcha_old_p2 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_02_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
-kcha_old_p3 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_03_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
+kcha_old_p1 <- read.csv(file=file.path(kcha_path,
+                        old_panel_1_fname,
+                        stringsAsFactors = FALSE)
+kcha_old_p2 <- read.csv(file=file.path(kcha_path,
+                        old_panel_2_fname,
+                        stringsAsFactors = FALSE)
+kcha_old_p3 <- read.csv(file=file.path(kcha_path,
+                        old_panel_3_fname,
+                        stringsAsFactors = FALSE)
 
-kcha_new_p1 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_01_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
-kcha_new_p2 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_02_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
-kcha_new_p3 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_03_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
-
+kcha_new_p1 <- read.csv(file=file.path(kcha_path,
+                        new_panel_1_fname,
+                        stringsAsFactors = FALSE)
+kcha_new_p2 <- read.csv(file=file.path(kcha_path,
+                        new_panel_2_fname,
+                        stringsAsFactors = FALSE)
+kcha_new_p3 <- read.csv(file=file.path(kcha_path,
+                        new_panel_3_fname,
+                        stringsAsFactors = FALSE)
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
 kcha_old_p1 <- kcha_old_p1 %>% distinct()
@@ -70,7 +95,7 @@ kcha_new_full <- list(kcha_new_p1, kcha_new_p2, kcha_new_p3) %>%
 kcha_old_full <- kcha_old_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
             funs(as.Date(ifelse(nchar(as.character(.)) == 7, paste0("0", as.character(.)),
-                                ifelse(nchar(as.character(.)) == 6, 
+                                ifelse(nchar(as.character(.)) == 6,
                                        paste0("0", str_sub(., 1, 1), "0", str_sub(., 2, 6)),
                                        as.character(.))), "%m%d%Y")))
 
@@ -132,7 +157,7 @@ gc()
 kcha <- kcha %>%
   select(h1a, h2a, h2b, h2c, h2d, h2h, starts_with("h3"), starts_with("h5"),
          h19a1b, h19a2b, h19a3b, h19a4b, h19a5b, h19a6b,h19a7b, h19a8b, h19a9b, h1910b, h1911b, h1912b, h1913b,
-         h1914b, h1915b, h1916b, starts_with("h19b"), starts_with("h19d"), starts_with("h19f"), h19g, h19h, 
+         h1914b, h1915b, h1916b, starts_with("h19b"), starts_with("h19d"), starts_with("h19f"), h19g, h19h,
          starts_with("h20"), starts_with("h21"), program_type, householdid:developmentname, spec_vouch, subsidy_id) %>%
   # Fix up some inconsistent naming
   rename(h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b, h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
@@ -147,7 +172,7 @@ kcha <- kcha %>% distinct()
 # First clean up white space around income codes
 kcha <- mutate_at(kcha, vars(starts_with("h19b")), funs(str_trim(.)))
 
-# Next take most complete income data 
+# Next take most complete income data
 # (sometimes h19h is missing when h19g is not, unclear if this is always true for h19d and h19f, which add up to h19g and h19h, respectively)
 kcha <- kcha %>%
   mutate(
@@ -391,7 +416,7 @@ kcha_long <- left_join(kcha_long, inc_temp2, by = c("hhold_id_temp", "mbr_num"))
 
 ### Remove extraneous columns
 kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificationid, subsidy_id,
-                    h1a:h2h, mbr_num, h3a:h3n, h5a1a:h5a5, developmentname, h5e:h5d, income1:income6, 
+                    h1a:h2h, mbr_num, h3a:h3n, h5a1a:h5a5, developmentname, h5e:h5d, income1:income6,
                     h20b:h21q, hh_lname:hh_dob, hhold_inc_fixed, hhold_inc_vary, hhold_size)
 
 
@@ -427,7 +452,7 @@ kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
-kcha_long <- kcha_long %>% 
+kcha_long <- kcha_long %>%
   # There shouldn't be any rows with values in both property_name columns (checked and seems to be the case)
   mutate(property_name = ifelse(is.na(property_name.y) & !is.na(property_name.x) & property_name.x != "", property_name.x,
                                 ifelse(!is.na(property_name.y), property_name.y, NA))) %>%
@@ -438,13 +463,13 @@ kcha_long <- kcha_long %>%
 # Bring in data and rename variables
 # kcha_dev_adds <- read.csv(file = paste0(path, "/Original data/Development Addresses_received_2017-07-21.csv"), stringsAsFactors = FALSE)
 # kcha_dev_adds <- setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
-# 
+#
 # # Drop spare rows and deduplicate
 # # Note that only three rows (plus rows used for merging) are being kept for now.
 # # If all rows are used later, deduplication is still required.
 # kcha_dev_adds <- kcha_dev_adds %>% select(dev_add_apt, dev_city, property_name, portfolio, property_type)
 # kcha_dev_adds <- kcha_dev_adds %>% distinct()
-# 
+#
 # kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
 
 
@@ -473,4 +498,3 @@ rm(list = c('members', 'maxnum', 'rowcount', 'sublong', 'names', 'colnum', 'resh
 rm(kcha_portfolio_codes)
 rm(kcha)
 gc()
-
