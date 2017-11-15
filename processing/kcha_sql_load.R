@@ -420,7 +420,7 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 
 #### Rename variables ####
 # Bring in variable name mapping table
-fields <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx(file.path(kcha_path, "Field_name_mapping.xlsx"))
 # Change names
 kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
 
