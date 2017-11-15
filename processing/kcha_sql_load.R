@@ -440,8 +440,8 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(paste0(housing_path, "/KCHA/Original data/Property list with project code_received_2017-07-26.xlsx"))
-kcha_portfolio_codes <- data.table::setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
+kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property_list_with_project_code.xlsx"))
+kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
