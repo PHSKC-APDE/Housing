@@ -400,9 +400,9 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 
 #### Rename variables ####
 # Bring in variable name mapping table
-fields <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
 # Change names
-kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- data.table::setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
@@ -410,7 +410,7 @@ kcha_long <- kcha_long %>%
   mutate(
     prog_type = ifelse(prog_type == "P", "PH",
                        ifelse(prog_type == "PR", "PBS8",
-                              ifelse(prog_type == "T", "TBS8",
+                              ifelse(prog_type %in% c("T", "VO"), "TBS8",
                                      prog_type))),
     major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
     property_id = as.numeric(ifelse(str_detect(subsidy_id, "^[0-9]-") == T, str_sub(subsidy_id, 3, 5), NA))
@@ -420,8 +420,8 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(paste0(path, "/Original data/Property list with project code_received_2017-07-26.xlsx"))
-kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
+kcha_portfolio_codes <- read.xlsx(paste0(housing_path, "/KCHA/Original data/Property list with project code_received_2017-07-26.xlsx"))
+kcha_portfolio_codes <- data.table::setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
