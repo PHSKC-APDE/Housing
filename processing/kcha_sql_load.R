@@ -468,8 +468,8 @@ kcha_long <- kcha_long %>%
 
 # TEMP SAVE POINT
 dir.create("~/data/Housing/OrganizedData",recursive = T)
-saveRDS(kcha_long, file = "~data/Housing/OrganizedData/kcha_long.Rda")
-kcha_long <- readRDS(file = "~data/Housing/OrganizedData/kcha_long.Rda")
+saveRDS(kcha_long, file = "~/data/Housing/OrganizedData/kcha_long.Rda")
+kcha_long <- readRDS(file = "~/data/Housing/OrganizedData/kcha_long.Rda")
 # saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
 # kcha_long <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
 
