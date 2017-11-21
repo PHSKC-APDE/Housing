@@ -948,12 +948,9 @@ pha_clean <- pha_clean %>%
     # Action details
     act_type:admit_date, reexam_date,
     # Program details
-    agency, agency_new, portability, cost_pha, major_prog, prog_type, prog_subtype, 
-    portfolio_group, prog_group, spec_purp_type, sha_source,
+    agency, agency_new, portability, cost_pha, major_prog, prog_type, vouch_type, sha_source,
     # Unit details
     property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
-    # Assets (only keep incasset_id to tidy up SHA data below)
-    incasset_id,
     # Income details
     inc_fixed, hhold_inc_fixed, hhold_inc_vary
     # Rent details (not used for now)
@@ -961,143 +958,6 @@ pha_clean <- pha_clean %>%
   )
 # With some variables stripped out, can reduce the number of rows
 pha_clean <- pha_clean %>% distinct()
-
-
-#### Fix up SHA member numbers and head-of-household info ####
-# Ideally will move this fix to when the raw data are loaded
-
-
-# ISSUE 1: Some households seem to have multiple HoHs recorded
-# (hhold defined as the same address, action date, and PHA-generated hhold IDs)
-# FIX 1: Overwrite HoH data to match mbr_num = 1
-# ISSUE 2: The listed HoH isn't always member #1
-# FIX 2: Switch member numbers around to make HoH member #1
-# ISSUE 3: Not all households have member numbers or are missing #1
-# FIX 3: Make sure the HoH has member number = 1
-
-### First set up temporary household ID that should be unique to a household and action date
-pha_clean$hhold_id_temp <- group_indices(pha_clean, hh_id, hhold_id, agency_new, 
-                                         major_prog, unit_add, unit_apt, unit_apt2, 
-                                         unit_city, act_date, act_type, incasset_id)
-
-#### FIX 1: Deal with households that have multiple HoHs listed ####
-# Check for households with >1 people listed as HoH
-multi_hoh <- pha_clean %>%
-  filter(agency_new == "SHA") %>%
-  group_by(hhold_id_temp) %>%
-  summarise(people = n_distinct(hh_ssn, hh_lname, hh_fname, hh_mname, hh_dob)) %>%
-  ungroup() %>%
-  filter(people > 1) %>%
-  mutate(rowcheck = row_number())
-
-# Join to main data, restrict to member #1
-multi_hoh_join <- left_join(multi_hoh, pha_clean, by = "hhold_id_temp") %>%
-  filter(mbr_num == 1) %>%
-  select(rowcheck, hhold_id_temp, hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname, hh_lnamesuf, 
-         hh_fname, hh_mname, hh_dob) %>%
-  distinct()
-
-# Add back to main data and bring over data into new columns
-pha_clean <- left_join(pha_clean, multi_hoh_join, by = "hhold_id_temp") %>%
-  rename_at(vars(ends_with(".x")), funs(str_replace(., ".x", "_orig"))) %>%
-  rename_at(vars(ends_with(".y")), funs(str_replace(., ".y", ""))) %>%
-  mutate(
-    hh_ssn = ifelse(is.na(hh_ssn), hh_ssn_orig, hh_ssn),
-    hh_ssn_new = ifelse(is.na(hh_ssn_new), hh_ssn_new_orig, hh_ssn_new),
-    hh_ssn_c = ifelse(is.na(hh_ssn_c), hh_ssn_c_orig, hh_ssn_c),
-    hh_lname = ifelse(is.na(hh_lname), hh_lname_orig, hh_lname),
-    hh_lnamesuf = ifelse(is.na(hh_lnamesuf), hh_lnamesuf_orig, hh_lnamesuf),
-    hh_fname = ifelse(is.na(hh_fname), hh_fname_orig, hh_fname),
-    hh_mname = ifelse(is.na(hh_mname), hh_mname_orig, hh_mname),
-    hh_dob = ifelse(is.na(hh_dob), hh_dob_orig, hh_dob)
-  )
-rm(multi_hoh)
-rm(multi_hoh_join)
-
-
-#### FIX 2: Switch member numbers around to make HoH member #1 ####
-# NB. Sometimes the original person names/SSN and HoH names/SSN don't match,
-# even when the HOH is actually member #1.
-# Overall, a small number of households have this general problem so skipping for
-# now to avoid introducing other errors.
-
-# Find when HoH != member number #1
-# wrong_hoh <- pha_clean %>%
-#   filter(mbr_num == 1 & ssn_new != hh_ssn_new & (lname_new != hh_lname | fname_new != hh_fname)) %>%
-#   distinct(hhold_id_temp)
-# 
-# # Bring in other housheold members
-# wrong_hoh_join <- left_join(wrong_hoh, pha_clean, by = "hhold_id_temp") %>%
-#   select(hhold_id_temp, ssn_new, lname_new, fname_new, mbr_num, 
-#          hh_ssn_new, hh_lname, hh_fname, hh_dob) %>%
-#   arrange(hhold_id_temp, mbr_num) %>%
-#   distinct()
-
-
-#### FIX 3: Make sure the HoH has member number = 1 ####
-# NB. Fixing this is also problematic because the original person-level and HoH data
-# do not always match. 
-# For now find households with completely missing member numbers and set the person
-# whose data matches the HoH data to be member #1
-
-
-### ID households that only has missing member numbers (SHA HCV data)
-# First find smallest non-missing member number (almost all = 1)
-# Exclude difficult temp HH IDs
-min_mbr <- pha_clean %>%
-  filter(!is.na(mbr_num)) %>%
-  group_by(hhold_id_temp) %>%
-  summarise(mbr_num_min = min(mbr_num)) %>%
-  ungroup()
-
-
-# Join with full list of temporary HH IDs to find which ones are missing member numbers
-mbr_miss <- anti_join(pha_clean, min_mbr, by = "hhold_id_temp") %>%
-  select(hhold_id_temp, act_date, ssn_new, ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, dob,
-         mbr_num, hh_ssn_new, hh_ssn_c, hh_lname, hh_fname, hh_mname, hh_lnamesuf, hh_dob) %>%
-  arrange(hhold_id_temp, ssn_new, ssn_c, lname_new, fname_new)
-
-# Find the HoH and label them as member #1
-# Don't use hh_dob as all are missing
-# These two approaches work for 99.6% of households (277,295 of 278,369) with missing numbers
-mbr_miss <- mbr_miss %>%
-  # Try matching on SSN
-  mutate(mbr_num = ifelse(ssn_new == hh_ssn_new & ssn_c == hh_ssn_c, 1, mbr_num)) %>%
-  group_by(hhold_id_temp) %>%
-  mutate(done = max(mbr_num, na.rm = T)) %>%
-  ungroup() %>%
-  # Then try name combos
-  mutate(mbr_num = ifelse(is.infinite(done) & lname_new == hh_lname & fname_new == hh_fname, 1, mbr_num)) %>%
-  select(-done)
-
-# If multiple people were flagged as #1, take the oldest
-# Common when there are children and parents with the same name or DOB typos
-# If same DOB, take row with middle inital, then last name suffix
-# If still a clash, take newer SHA data
-mbr_miss <- mbr_miss %>%
-  arrange(hhold_id_temp, mbr_num, dob, hh_mname, hh_lnamesuf) %>%
-  group_by(hhold_id_temp) %>%
-  mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
-  ungroup()
-
-
-# Restrict to the newly identified HoHs and join back to main data
-mbr_miss_join <- mbr_miss %>%
-  filter(mbr_num == 1) %>%
-  distinct(hhold_id_temp, act_date, ssn_new, ssn_c, lname_new, fname_new, 
-           mname_new, lnamesuf_new, dob, mbr_num)
-pha_clean <- left_join(pha_clean, mbr_miss_join, 
-                       by = c("hhold_id_temp", "act_date", "ssn_new", "ssn_c", 
-                              "lname_new", "fname_new", "mname_new", "lnamesuf_new", "dob"))
-
-# Bring over older member numbers
-pha_clean <- pha_clean %>%
-  mutate(mbr_num = ifelse(!is.na(mbr_num.y), mbr_num.y, mbr_num.x)) %>%
-  select(-mbr_num.x, -mbr_num.y)
-
-rm(min_mbr)
-rm(mbr_miss)
-rm(mbr_miss_join)
 
 
 #### Carry over updated names etc. to head-of-household details ####
@@ -1124,25 +984,21 @@ pha_clean <- pha_clean %>%
 # Set up another temporary household ID based on slightly modified original HoH characteristics
 # Need to use date and addresses too because the cleanup didn't catch everything
 # Result is some inconsistency in HoH name over time but the overall numbers should work
-pha_clean$hhold_id_temp <- group_indices(pha_clean, hh_ssn_new, hh_ssn_c, 
+pha_clean$hhold_id_temp <- group_indices(pha_clean, major_prog, hh_ssn_new, hh_ssn_c, 
                                          hh_lname, hh_lnamesuf, hh_fname, hh_dob, 
                                          unit_add, unit_apt, unit_apt2, unit_city, 
-                                         incasset_id, act_date, act_type)
-
-## Temporary measure
-pha_clean <- mutate(pha_clean, rowcheck = row_number())
+                                         act_date, act_type)
 
 # Limit to just the cleaned up HH variables
 pha_clean_hh <- pha_clean %>%
-  distinct(hhold_id_temp, act_date, act_type, 
+  distinct(hhold_id_temp, 
            hh_ssn_id_m6, hh_lname_m6, hh_lnamesuf_m6, 
            hh_fname_m6, hh_mname_m6, hh_dob_m6, mbr_num) %>%
   filter(mbr_num == 1) %>%
   select(-mbr_num)
 
 # Merge back to the main data and clean up duplicated varnames
-pha_clean <- left_join(pha_clean, pha_clean_hh, 
-                       by = c("hhold_id_temp", "act_date", "act_type")) %>%
+pha_clean <- left_join(pha_clean, pha_clean_hh, by = c("hhold_id_temp")) %>%
   rename(hh_ssn_id_m6 = hh_ssn_id_m6.y, hh_lname_m6 = hh_lname_m6.y, 
          hh_lnamesuf_m6 = hh_lnamesuf_m6.y, hh_fname_m6 = hh_fname_m6.y,
          hh_mname_m6 = hh_mname_m6.y, hh_dob_m6 = hh_dob_m6.y) %>%
@@ -1159,7 +1015,7 @@ pha_clean <- junk_ssn_all(pha_clean, hh_ssn_id_m6)
 ### Clean up column order
 pha_clean <- pha_clean %>% 
   select(ssn_new:ssn_id_m6, ssn_id_m6_junk, lname_new_m6:hh_ssn_id_m6, hh_ssn_id_m6_junk,
-         hh_lname_m6:hhold_id_new, -hhold_id_temp, -rowcheck)
+         hh_lname_m6:hhold_id_new, -hhold_id_temp)
 
 
 ### Filter out test names
@@ -1178,4 +1034,5 @@ rm(list = ls(pattern = "classify"))
 rm(list = ls(pattern = "match"))
 rm(list = ls(pattern = "pha_dedup"))
 rm(pha_clean_hh)
+rm(pha)
 gc()
