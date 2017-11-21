@@ -232,7 +232,134 @@ sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
   mutate(inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
   ungroup() %>%
   select(-inc_fixed_temp)
-  
+
+
+#### Fix up SHA member numbers and head-of-household info ####
+# ISSUE 1: Some households seem to have multiple HoHs recorded
+# (hhold defined as the same address, action date, and PHA-generated hhold IDs)
+# FIX 1: Overwrite HoH data to match mbr_num = 1
+# ISSUE 2: The listed HoH isn't always member #1
+# FIX 2: Switch member numbers around to make HoH member #1
+# ISSUE 3: Not all households have member numbers or are missing #1
+# FIX 3: Make sure the HoH has member number = 1
+
+### First set up temporary household ID that should be unique to a household and action date
+sha$hhold_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, unit_city, act_date, act_type, incasset_id)
+
+#### FIX 1: Deal with households that have multiple HoHs listed ####
+# Check for households with >1 people listed as HoH
+multi_hoh <- sha %>%
+  group_by(hhold_id_temp) %>%
+  summarise(people = n_distinct(hh_ssn, hh_lname, hh_lnamesuf, hh_fname, hh_mname)) %>%
+  ungroup() %>%
+  filter(people > 1) %>%
+  mutate(rowcheck = row_number())
+
+# Join to main data, restrict to member #1
+multi_hoh_join <- left_join(multi_hoh, sha, by = "hhold_id_temp") %>%
+  filter(mbr_num == 1) %>%
+  select(rowcheck, hhold_id_temp, hh_ssn, hh_lname, hh_lnamesuf, hh_fname, hh_mname) %>%
+  distinct()
+
+# Add back to main data and bring over data into new columns
+sha <- left_join(sha, multi_hoh_join, by = "hhold_id_temp") %>%
+  rename_at(vars(ends_with(".x")), funs(str_replace(., ".x", "_orig"))) %>%
+  rename_at(vars(ends_with(".y")), funs(str_replace(., ".y", ""))) %>%
+  mutate(
+    hh_ssn = ifelse(is.na(hh_ssn), hh_ssn_orig, hh_ssn),
+    hh_lname = ifelse(is.na(hh_lname), hh_lname_orig, hh_lname),
+    hh_lnamesuf = ifelse(is.na(hh_lnamesuf), hh_lnamesuf_orig, hh_lnamesuf),
+    hh_fname = ifelse(is.na(hh_fname), hh_fname_orig, hh_fname),
+    hh_mname = ifelse(is.na(hh_mname), hh_mname_orig, hh_mname)
+  )
+rm(multi_hoh)
+rm(multi_hoh_join)
+
+
+#### FIX 2: Switch member numbers around to make HoH member #1 ####
+# NB. Sometimes the original person names/SSN and HoH names/SSN don't match,
+# even when the HOH is actually member #1.
+# Overall, a small number of households have this general problem so skipping for
+# now to avoid introducing other errors.
+
+# Find when HoH != member number #1
+# wrong_hoh <- pha_clean %>%
+#   filter(mbr_num == 1 & ssn_new != hh_ssn_new & (lname_new != hh_lname | fname_new != hh_fname)) %>%
+#   distinct(hhold_id_temp)
+# 
+# # Bring in other housheold members
+# wrong_hoh_join <- left_join(wrong_hoh, pha_clean, by = "hhold_id_temp") %>%
+#   select(hhold_id_temp, ssn_new, lname_new, fname_new, mbr_num, 
+#          hh_ssn_new, hh_lname, hh_fname, hh_dob) %>%
+#   arrange(hhold_id_temp, mbr_num) %>%
+#   distinct()
+
+
+#### FIX 3: Make sure the HoH has member number = 1 ####
+# NB. Fixing this is also problematic because the original person-level and HoH data
+# do not always match. 
+# For now find households with completely missing member numbers and set the person
+# whose data matches the HoH data to be member #1
+
+
+### ID households that only has missing member numbers (SHA HCV data)
+# First find smallest non-missing member number (almost all = 1)
+# Exclude difficult temp HH IDs
+min_mbr <- sha %>%
+  filter(!is.na(mbr_num)) %>%
+  group_by(hhold_id_temp) %>%
+  summarise(mbr_num_min = min(mbr_num)) %>%
+  ungroup()
+
+
+# Join with full list of temporary HH IDs to find which ones are missing member numbers
+mbr_miss <- anti_join(sha, min_mbr, by = "hhold_id_temp") %>%
+  select(hhold_id_temp, act_date, ssn, lname, fname, mname, lnamesuf, dob,
+         mbr_num, hh_ssn, hh_lname, hh_fname, hh_mname, hh_lnamesuf) %>%
+  arrange(hhold_id_temp, ssn, lname, fname)
+
+# Find the HoH and label them as member #1
+mbr_miss <- mbr_miss %>%
+  # Try matching on SSN
+  mutate(mbr_num = ifelse(ssn == hh_ssn, 1, mbr_num)) %>%
+  group_by(hhold_id_temp) %>%
+  mutate(done = max(mbr_num, na.rm = T)) %>%
+  ungroup() %>%
+  # Then try name combos
+  mutate(mbr_num = ifelse(is.infinite(done) & lname == hh_lname & fname == hh_fname, 1, mbr_num)) %>%
+  select(-done)
+
+# If multiple people were flagged as #1, take the oldest
+# Common when there are children and parents with the same name or DOB typos
+# If same DOB, take row with middle inital, then last name suffix
+# If still a clash, take newer SHA data
+mbr_miss <- mbr_miss %>%
+  arrange(hhold_id_temp, mbr_num, dob, hh_mname, hh_lnamesuf) %>%
+  group_by(hhold_id_temp) %>%
+  mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
+  ungroup()
+
+
+# Restrict to the newly identified HoHs and join back to main data
+mbr_miss_join <- mbr_miss %>%
+  filter(mbr_num == 1) %>%
+  distinct(hhold_id_temp, act_date, ssn, lname, fname, mname, lnamesuf, dob, mbr_num)
+sha <- left_join(sha, mbr_miss_join, 
+                       by = c("hhold_id_temp", "act_date", "ssn", 
+                              "lname", "fname", "mname", "lnamesuf", "dob"))
+
+# Bring over older member numbers and clean up columns
+sha <- sha %>%
+  mutate(mbr_num = ifelse(!is.na(mbr_num.y), mbr_num.y, mbr_num.x)) %>%
+  select(-mbr_num.x, -mbr_num.y, -hhold_id_temp, -rowcheck)
+
+rm(min_mbr)
+rm(mbr_miss)
+rm(mbr_miss_join)
+
+#### END SHA HEAD OF HOUSEHOLD FIX ####
+
+
 # Restrict to relevant fields 
 # (can drop specific income and asset fields once fixed income flag is made)
 sha <- sha %>% 
