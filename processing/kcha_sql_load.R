@@ -30,6 +30,7 @@ library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
+library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(tidyverse) # Used to manipulate data
 
 housing_path <- "~/data"
