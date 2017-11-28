@@ -31,7 +31,7 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
-library(tidyverse) # Used to manipulate data
+library(dplyr) # Used to manipulate data
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
@@ -55,10 +55,6 @@ sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV Voucher Type_2017-05-15.xlsx"))
-
-  #
-  # Stuck on this sections - we don't have the data on this part
-  #
 
 sha_prog_codes <- read.xlsx(file.path(sha_path, "Program codes and portfolios_2017-11-02.xlsx"), 2)
 
