@@ -22,6 +22,7 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
+rm(list=ls()) #reset
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 library(housing) # contains many useful functions for cleaning
