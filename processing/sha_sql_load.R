@@ -31,7 +31,7 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
