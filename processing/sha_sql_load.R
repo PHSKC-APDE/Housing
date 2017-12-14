@@ -54,12 +54,12 @@ sha2c <- fread(file = file.path(sha_path, "2.c_Assets PublicHousing 2007 to 2012
 sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), stringsAsFactors = FALSE)
 
 # Bring in voucher data
-sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV Voucher Type_2017-05-15.xlsx"))
+sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV Voucher Type.xlsx"))
 
-sha_prog_codes <- read.xlsx(file.path(sha_path, "Program codes and portfolios_2017-11-02.xlsx"), 2)
+sha_prog_codes <- read.xlsx(file.path(sha_path, "Program Codes & Portfolios_November_Updates.xlsx"), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(file.path(sha_path, "Program codes and portfolios_2017-11-02.xlsx"), 1)
+sha_portfolio_codes  <- read.xlsx(file.path(sha_path, "Program Codes & Portfolios_November_Updates.xlsx"), 1)
 
 
 #### Join data sets together ####
