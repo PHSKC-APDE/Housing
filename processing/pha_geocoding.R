@@ -21,6 +21,8 @@
 ###############################################################################
 
 
+path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+
 
 # file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
 
@@ -33,7 +35,8 @@ adds <- pha_cleanadd %>%
   distinct(unit_add_new, unit_city_new, unit_state_new, unit_zip_new) %>%
   mutate(unit_concat_short = paste(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, sep = ", ")) %>%
   arrange(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, unit_concat_short) %>%
-  filter(str_detect(unit_concat_short, "CONFID|PORTABLE|, , , 0|, , , NA") == FALSE)
+  filter(str_detect(unit_concat_short, "CONFI|PORTABLE|, , , 0|, , , NA") == FALSE & 
+           unit_add_new != "PORT OUT")
 
 ### Make empty list to add data to
 addlist = list()
@@ -44,7 +47,8 @@ for (i in 1:nrow(adds)) {
 }
 
 ### Export data for geocoding
-write.xlsx(adds, file = "//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA addresses for geocoding.xlsx")
+write.xlsx(adds, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA addresses for geocoding_",
+                               Sys.Date(), ".xlsx"))
 
 
 
@@ -154,22 +158,23 @@ adds_matched_goog <- adds_matched_goog %>%
   mutate_at(vars(lat, long, accuracy, formatted_address, address_type), 
             funs(ifelse(accuracy %in% c("bar", "beauty_salon", "church", "convenience_store", "dentist"), NA, .)))
 
-# Convert lat/long from Google to NAD_1983_HARN_StatePlane_Washington_North_FIPS_4601_Feet
-# Remove blank coordinates
-adds_matched_goog_sp <- adds_matched_goog %>% filter(!is.na(lat))
-# Set up spatial data frame
-coordinates(adds_matched_goog_sp) <- ~ long + lat
-proj4string(adds_matched_goog_sp) <- CRS("+init=epsg:4326") # WGS 84 system used by Google Maps
-# Convert to WA plane
-adds_matched_goog_sp <- spTransform(adds_matched_goog_sp, CRS("+proj=lcc +lat_1=47.5 +lat_2=49.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000.0000000001 +y_0=0 +ellps=GRS80 +to_meter=0.3048006096012192 +no_defs"))
-
-# Select relevant columns and extract coordinates
-# NB. It seems like somewhere the lat/long, Y/X vectors were reversed. Need to check and fix.
-adds_matched_goog <- as.data.frame(adds_matched_goog_sp)
-adds_matched_goog <- adds_matched_goog %>%
-  mutate(X = long, Y = lat) %>%
-  select(FID, unit_conca:status, X, Y)
-
+#### NOW KEEPING EVERYTHING IN GOOGLE (ESRI 4326 FORMAT) ####
+# # Convert lat/long from Google to NAD_1983_HARN_StatePlane_Washington_North_FIPS_4601_Feet
+# # Remove blank coordinates
+# adds_matched_goog_sp <- adds_matched_goog %>% filter(!is.na(lat))
+# # Set up spatial data frame
+# coordinates(adds_matched_goog_sp) <- ~ long + lat
+# proj4string(adds_matched_goog_sp) <- CRS("+init=epsg:4326") # WGS 84 system used by Google Maps
+# # Convert to WA plane
+# adds_matched_goog_sp <- spTransform(adds_matched_goog_sp, CRS("+proj=lcc +lat_1=47.5 +lat_2=49.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000.0000000001 +y_0=0 +ellps=GRS80 +to_meter=0.3048006096012192 +no_defs"))
+# 
+# # Select relevant columns and extract coordinates
+# # NB. It seems like somewhere the lat/long, Y/X vectors were reversed. Need to check and fix.
+# adds_matched_goog <- as.data.frame(adds_matched_goog_sp)
+# adds_matched_goog <- adds_matched_goog %>%
+#   mutate(X = long, Y = lat) %>%
+#   select(FID, unit_conca:status, X, Y)
+#### END CRS CONVERSION ####
 
 #### Bring together ESRI and Google results ####
 # Bring in ESRI data
@@ -179,19 +184,19 @@ adds_matched <- left_join(adds_matched_esri, adds_matched_goog, by = "FID")
 
 # Collapse to useful columns and select matching from each source as appropriate
 adds_matched <- adds_matched %>%
-  rename(unit_add_new = unit_add_n, unit_city_new = unit_city_, unit_state_new = unit_state, 
-         unit_zip_new = unit_zip_n, unit_concat = unit_conca.x, status_esri = Status, 
-         status_goog = status, score_esri = Score, addr_type_esri = Addr_type, addr_type_goog = address_type,
-         add_esri = Match_addr, add_goog = formatted_address, accuracy_goog = accuracy,
-         match_type_esri = Match_type, id_esri = FID) %>%
+  rename(unit_add_new = unit_add_n.x, unit_city_new = unit_city_.x, unit_state_new = unit_state.x, 
+         unit_zip_new = unit_zip_n.x, unit_concat = unit_conca.x, status_esri = Status.x, 
+         status_goog = status, score_esri = Score.x, addr_type_esri = Addr_type.x, addr_type_goog = address_type,
+         add_esri = Match_addr.x, add_goog = formatted_address, accuracy_goog = accuracy,
+         match_type_esri = Match_type.x, id_esri = FID) %>%
   mutate(add_esri = toupper(add_esri),
          add_goog = toupper(add_goog),
-         X = ifelse(status_goog == "OK" & !is.na(status_goog), Y.y, Y.x),
-         Y = ifelse(status_goog == "OK" & !is.na(status_goog), X.x, X.x),
+         X = ifelse(status_goog == "OK" & !is.na(status_goog), long, POINT_X),
+         Y = ifelse(status_goog == "OK" & !is.na(status_goog), lat, POINT_Y),
          formatted_address = ifelse(status_goog == "OK" & !is.na(status_goog), add_goog, add_esri),
          source = ifelse(status_goog == "OK" & !is.na(status_goog), "Google", "ESRI")) %>%
   select(unit_add_new:unit_concat, id_esri, status_esri:add_esri, addr_type_esri, add_esri, accuracy_goog, status_goog, 
-         addr_type_goog, add_goog, formatted_address, FID, X, Y, source)
+         addr_type_goog, add_goog, formatted_address, X, Y, source)
 
 
 # Next steps
