@@ -8,7 +8,7 @@
 #' PHA, and in a given program.
 #' Relies on \code{\link{overlap}} and \code{\link{cumul_overlap}}
 #' For now, it is assumed that the df has variables called pid, period, 
-#' agency_new, and major_program.
+#' agency_new, and subsidy_type.
 #' 
 #' @param df A data frame
 #' 
@@ -37,7 +37,7 @@ los <- function(df){
     select(-overlap, -selector)
   
   # Time in program
-  df <- overlap(df, pid, period, agency_new, major_prog)
+  df <- overlap(df, pid, period, agency_new, subsidy_type)
   df <- df %>%
     mutate(
       selector = 1:nrow(.) - cumul_overlap(overlap), 
