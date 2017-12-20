@@ -19,7 +19,7 @@ housing overall (if the person moved between KCHA and SHA), at the
 PHA, and in a given program.
 Relies on \code{\link{overlap}} and \code{\link{cumul_overlap}}
 For now, it is assumed that the df has variables called pid, period, 
-agency_new, and major_program.
+agency_new, and subsidy_type.
 }
 \examples{
 \dontrun{
