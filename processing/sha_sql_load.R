@@ -23,20 +23,20 @@
 
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
+gc()
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
+library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(housing) # contains many useful functions for cleaning
-library(RODBC) # Used to connect to SQL server
+library(RODBC) # Used to connect to SQL servercopy
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
-library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(tidyverse) # Used to manipulate data
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
 # db.apde51 <- odbcConnect("PH_APDEStore51")
-
 
 #### Bring in data ####
 sha3a_new <- fread(file = file.path(sha_path, "3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
@@ -83,18 +83,31 @@ list2env(df_dedups, .GlobalEnv)
 #### Join PH files ####
 # Get field names to match
 # Bring in variable name mapping table
-fields <- read.xlsx("~/data/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
 
-sha1a <- data.table::setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- data.table::setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- data.table::setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- data.table::setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- data.table::setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- data.table::setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- data.table::setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
-sha3b_new <- data.table::setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- data.table::setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
 
+# Clean excel fields
+fields <- fields %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
+
+
+# fields$SHA_old <- gsub("\\.\\.\\."," - ", fields$SHA_old)
+# fields$SHA_old <- gsub("\\."," ", fields$SHA_old)
+
+
+head(fields)
+
+# Change names of variables in SHA
+sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
+sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
+sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
+sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
+sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
+sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
+sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
+sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
+sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
 
 # Clean up mismatching variables
 sha2a <- yesno_f(sha2a, ph_rent_ceiling)
@@ -105,7 +118,6 @@ sha3a_new <- sha3a_new %>%
          mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
          r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
   )
-
 
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
