@@ -87,6 +87,7 @@ fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
 
 
 # Clean excel fields
+
 fields <- fields %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
@@ -102,11 +103,21 @@ sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA
 sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
 sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
 
-# fields$SHA_old <- gsub("\\.\\.\\."," - ", fields$SHA_old)
-# fields$SHA_old <- gsub("\\."," ", fields$SHA_old)
+fields <- fields %>% mutate(
+  SHA_old=
+  ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+      ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+        ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+          ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
+  SHA_new_ph=
+  ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+      ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+        ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+          ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
+  )
 
-
-head(fields)
 
 # Change names of variables in SHA
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
