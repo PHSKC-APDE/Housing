@@ -78,7 +78,7 @@ list2env(df_dedups, .GlobalEnv)
 #### Join PH files ####
 # Get field names to match
 # Bring in variable name mapping table
-fields <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
 
 sha1a <- data.table::setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
 sha1b <- data.table::setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])

@@ -400,6 +400,7 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 
 #### Rename variables ####
 # Bring in variable name mapping table
+# (file is also here: https://github.com/PHSKC-APDE/Housing/blob/master/processing/Field%20name%20mapping.xlsx)
 fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
 # Change names
 kcha_long <- data.table::setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])

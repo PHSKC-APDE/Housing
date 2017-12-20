@@ -43,7 +43,7 @@ library(rgdal) # Used to convert coordinates between ESRI and Google output
 
 
 #### Bring in data #####
-pha_recoded <- readRDS(file = paste0(path, "/OrganizedData/pha_recoded.Rda"))
+pha_recoded <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
 
 ### Import Python address parser
 addparser <- import("usaddress")
@@ -64,7 +64,6 @@ pha_cleanadd <- pha_recoded %>%
 adds_specific <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
                            na.strings = "")
 adds_specific <- adds_specific %>%
-  mutate(unit_zip_new = as.numeric(unit_zip_new)) %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
   
 # For some reason there seem to be duplicates in the address data, possible created when cleaning up missing in the line above
@@ -296,20 +295,29 @@ pha_cleanadd <- pha_cleanadd %>%
 # Set up temporary IDs and agency fields for faster comparisons
 pha_cleanadd$pid <- group_indices(pha_cleanadd, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)
 pha_cleanadd <- pha_cleanadd %>%
-  mutate_at(vars(prog_type, prog_subtype, spec_purp_type, property_name, property_type, portfolio), 
+  mutate_at(vars(prog_type, vouch_type, property_name, property_type, portfolio), 
             funs(toupper(.))) %>% 
-  mutate(spec_purp_type = str_trim(spec_purp_type),
-         # Make concatenated agency/prog type/subtype/spec voucher type field to make life easier
-         agency_prog_concat = paste(agency_new, major_prog, prog_type, prog_subtype, spec_purp_type, sep = ", "))
+  # Make concatenated agency/prog type/subtype/spec voucher type field to make life easier
+  mutate(agency_prog_concat = paste(agency_new, major_prog, prog_type, vouch_type, sep = ", "))
 
 pha_cleanadd <- pha_cleanadd %>%
-  arrange(pid, agency_prog_concat, act_date) %>%
-  mutate_at(vars(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new, unit_zip_new),
-            funs(ifelse(. == "" & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+  arrange(pid, act_date, agency_prog_concat) %>%
+  mutate_at(vars(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new),
+            funs(ifelse((. == "") & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
                           agency_prog_concat == lag(agency_prog_concat, 1) & act_type %in% c(5, 6),
                         lag(., 1), .))) %>%
+  # Need to do ZIP separately
+  mutate(unit_zip_new = 
+           ifelse(unit_zip_new %in% c(0, NA) & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+                    agency_prog_concat == lag(agency_prog_concat, 1) & act_type %in% c(5, 6) &
+                    unit_add_new == lag(unit_add_new, 1),
+                  lag(unit_zip, 1), unit_zip_new)) %>%
   # remove temporary pid and agency
   select(-pid, -agency_prog_concat)
+
+# For some reason there are a bunch of blank ZIPs even though other rows with 
+# the same address have a ZIP. Sort by address and copy over ZIP.
+pha_cleanadd
 
 
 # Make concatenated version of address fields
@@ -332,18 +340,17 @@ rm(adds_specific)
 
 # Bring in data
 adds_matched <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA_addresses_matched_combined.Rda")
+adds_matched <- adds_matched %>% mutate(unit_zip_new = as.numeric(unit_zip_new))
 
 # Merge data
 pha_cleanadd <- left_join(pha_cleanadd, adds_matched, by = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"))
-pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x)
+pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
+  select(-unit_concat.y)
 
 # Parse out updated addresses (to come)
 # pha_cleanadd <- pha_cleanadd %>%
 #   mutate(unit_add_new2 = )
 # 
-# # Remake concatenated address field
-# pha_cleanadd <- pha_cleanadd %>%
-#   mutate(unit_concat = paste(unit_add_new, unit_apt_new, unit_city_new, unit_state_new, unit_zip_new, sep = ","))
 
 # Remove temp files
 rm(adds_matched)
@@ -360,7 +367,7 @@ pha_cleanadd <- pha_cleanadd %>%
 # Bring in data
 kcha_dev_adds <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/Development Addresses_received_2017-07-21.csv", stringsAsFactors = FALSE)
 # Bring in variable name mapping table and rename variables
-fields <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
 kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
 
 
@@ -421,4 +428,5 @@ saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_f
 rm(fields)
 rm(secondary)
 rm(secondary_init)
+rm(pha_recoded)
 gc()

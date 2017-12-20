@@ -64,14 +64,14 @@ pha <- pha %>% distinct()
 ### Lots of variables have white space
 pha <- trim_f(pha, relcode, unit_add, unit_apt, unit_apt2, 
               unit_city, unit_state, contains("name"), 
-              prog_type, prog_subtype, vouch_type, property_name, 
+              prog_type, vouch_type, property_name, 
               property_type, portfolio, cost_pha)
 
 
 ### Fix up inconsistent capitalization in key variables
 # Change names to be consistently upper case
 pha <- pha %>% mutate_at(vars(contains("name"), contains("unit"), 
-                              prog_type, prog_subtype, vouch_type, property_name, 
+                              prog_type, vouch_type, property_name, 
                               property_type, portfolio, cost_pha), 
                          funs(toupper))
 
@@ -98,8 +98,7 @@ pha <- junk_ssn_char(pha, ssn_c)
 
 ### Billed agency (just fix up KCHA and other common ones)
 pha <- pha %>%
-  mutate(cost_pha = ifelse(cost_pha == "NULL" | is.na(cost_pha), "", cost_pha),
-         cost_pha = ifelse(cost_pha %in% c("WAOO2", "WA02 ", " WA02", "W002"),
+  mutate(cost_pha = ifelse(cost_pha %in% c("WAOO2", "WA02 ", " WA02", "W002"),
                            "WA002", cost_pha),
          cost_pha = ifelse(cost_pha == " WA03", "WA003", cost_pha),
          cost_pha = ifelse(cost_pha == "NULL" | is.na(cost_pha), "", cost_pha))
@@ -128,7 +127,8 @@ pha <- pha %>%
   mutate_at(vars(contains("name")), funs(str_replace(., "[:space:]{2,}|, ", " "))) %>%
   mutate_at(vars(contains("name")), funs(str_replace(., "`", "'"))) %>%
   mutate_at(vars(contains("name")), funs(str_replace(., "_", "-"))) %>%
-  mutate_at(vars(contains("name")), funs(str_replace(., "NULL|\\.|\"|\\\\", "")))
+  mutate_at(vars(contains("name")), funs(str_replace(., "NULL|\\.|\"|\\\\", ""))) %>%
+  mutate_at(vars(contains("name")), funs(ifelse(is.na(.), "", .)))
 
 
 ### First name
