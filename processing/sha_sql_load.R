@@ -91,6 +91,21 @@ fields <- fields %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
 
+  fields <- fields %>% mutate(
+    SHA_old=
+   ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
+    SHA_new_ph=
+    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
+    )
+
 # Change names of variables in SHA
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
 sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
