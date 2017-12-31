@@ -74,31 +74,16 @@ proc.time() - ptm01
 
 ### Additional demographics for eligibility table (take most recent row per Medicaid ID/SSN combo)
 # Short version that only pulls what will be used (takes ~320 secs)
-ptm01 <- proc.time()
-elig_demog <-
-  sqlQuery(db.claims51,
-           "SELECT x.MEDICAID_RECIPIENT_ID, x.SOCIAL_SECURITY_NMBR, FIRST_NAME, LAST_NAME, MIDDLE_NAME,
-              GENDER, BIRTH_DATE, DUAL_ELIG, COVERAGE_TYPE_IND
-            FROM PHClaims.dbo.NewEligibility AS x
-            INNER JOIN (SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, MAX(CLNDR_YEAR_MNTH) AS maxdate
-              FROM PHClaims.dbo.NewEligibility
-              GROUP BY MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR) AS y
-            ON x.MEDICAID_RECIPIENT_ID = y.MEDICAID_RECIPIENT_ID AND
-            x.SOCIAL_SECURITY_NMBR = y.SOCIAL_SECURITY_NMBR AND
-            x.CLNDR_YEAR_MNTH = y.maxdate",
-           stringsAsFactors = FALSE)
-proc.time() - ptm01
-
-# More detailed pull with more vars for future comparisons (takes ~240 secs)
+# NB, this does not join properly when SSN is NA
 # ptm01 <- proc.time()
 # elig_demog <-
 #   sqlQuery(db.claims51,
-#            "SELECT x.MEDICAID_RECIPIENT_ID, x.SOCIAL_SECURITY_NMBR, FIRST_NAME, LAST_NAME, MIDDLE_NAME,
-#               GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, BIRTH_DATE, DUAL_ELIG,
-#               RSDNTL_ADRS_LINE_1, RSDNTL_ADRS_LINE_2, RSDNTL_CITY_NAME, RSDNTL_COUNTY_NAME, RSDNTL_POSTAL_CODE,
-#               RSDNTL_STATE_CODE, COVERAGE_TYPE_IND
+#            "SELECT x.MEDICAID_RECIPIENT_ID, x.SOCIAL_SECURITY_NMBR, 
+#            FIRST_NAME, LAST_NAME, MIDDLE_NAME,
+#            GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, BIRTH_DATE, 
+#            DUAL_ELIG, COVERAGE_TYPE_IND
 #             FROM PHClaims.dbo.NewEligibility AS x
-#             INNER JOIN (SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, MAX(CLNDR_YEAR_MNTH) AS maxdate
+#             RIGHT JOIN (SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, MAX(CLNDR_YEAR_MNTH) AS maxdate
 #               FROM PHClaims.dbo.NewEligibility
 #               GROUP BY MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR) AS y
 #             ON x.MEDICAID_RECIPIENT_ID = y.MEDICAID_RECIPIENT_ID AND
@@ -107,8 +92,29 @@ proc.time() - ptm01
 #            stringsAsFactors = FALSE)
 # proc.time() - ptm01
 
-# Get rid of duplicate rows (these arise because of people having multiple rows on the latest month due to multiple RACs)
-elig_demog <- elig_demog %>% distinct()
+# Use this instead, creates row for each unique combo of the group by variables
+ptm01 <- proc.time()
+elig_demog <-
+  sqlQuery(db.claims51,
+           "SELECT MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, FIRST_NAME, 
+           LAST_NAME, MIDDLE_NAME, GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, 
+           BIRTH_DATE, DUAL_ELIG, COVERAGE_TYPE_IND, MAX(CLNDR_YEAR_MNTH) AS maxdate
+           FROM PHClaims.dbo.NewEligibility
+           GROUP BY MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, FIRST_NAME, 
+           LAST_NAME, MIDDLE_NAME, GENDER, RACE1, RACE2, RACE3, RACE4, HISPANIC_ORIGIN_NAME, 
+           BIRTH_DATE, DUAL_ELIG, COVERAGE_TYPE_IND",
+           stringsAsFactors = FALSE)
+proc.time() - ptm01
+
+
+# Get rid of multiple rows (these arise because of people having one row per combo of demographics)
+# Take the most recent demographics for everyone
+elig_demog <- elig_demog %>%
+  arrange(MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR, maxdate) %>%
+  group_by(MEDICAID_RECIPIENT_ID, SOCIAL_SECURITY_NMBR) %>%
+  slice(n()) %>%
+  ungroup()
+  
 
 
 
@@ -117,8 +123,16 @@ elig_demog <- elig_demog %>% distinct()
 elig_join <- left_join(elig, elig_demog, by = c("MEDICAID_RECIPIENT_ID", "SOCIAL_SECURITY_NMBR")) %>%
   mutate(
     GENDER = as.numeric(car::recode(GENDER, "'Female' = 1; 'Male' = 2; 'Unknown' = NA; else = NA")),
-    BIRTH_DATE = as.Date(str_sub(BIRTH_DATE, 1, 10), format("%Y-%m-%d"))
-    )
+    BIRTH_DATE = as.Date(str_sub(BIRTH_DATE, 1, 10), format("%Y-%m-%d")),
+    race = RACE1,
+    race = ifelse(str_detect(race, "Alaskan|Indian"), "AIAN", race),
+    race = ifelse(str_detect(race, "Hawaiian|Pacific"), "NHPI", race),
+    race = ifelse(!is.na(RACE2), "Multiple race", 
+                   ifelse(is.na(race) | race == "Not Provided", NA, paste0(race, " only"))),
+    HISPANIC_ORIGIN_NAME = as.numeric(car::recode(HISPANIC_ORIGIN_NAME, "'HISPANIC' = 1; 'NOT HISPANIC' = 0; else = NA"))
+    ) %>%
+  select(MEDICAID_RECIPIENT_ID:GENDER, race, HISPANIC_ORIGIN_NAME:COVERAGE_TYPE_IND)
+
 
 #### Save point ####
 #saveRDS(elig_join, file = "//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analyses/Alastair/elig_housing.Rda")
@@ -221,7 +235,9 @@ pha_elig_merge <- pairs_final %>%
          senior_h = senior, age12_h = age12, age13_h = age13, age14_h = age14, 
          age15_h = age15, age16_h = age16,
          gender_h = gender_new_m6, gender2_h = gender2, gender_m = GENDER,
-         race_h = race2, disability_h = disability, disability2_h = disability2,
+         race_h = race2, race_m = race.x, 
+         hisp_h = r_hisp_new, hisp_m = HISPANIC_ORIGIN_NAME,
+         disability_h = disability, disability2_h = disability2,
          citizen_h = citizen,
          hh_ssn_h = hh_ssn_id_m6, hh_lname_h = hh_lname_m6, 
          hh_lnamesuf_h = hh_lnamesuf_m6, hh_fname_h = hh_fname_m6,
@@ -236,12 +252,11 @@ pha_elig_merge <- pairs_final %>%
   select(pid, ssn_h, lname_h, lnamesuf_h, fname_h, mname_h, dob_h, agegrp_h,
          age12_h:age16_h,
          adult_h, senior_h, gender_h, gender2_h, citizen_h, disability_h, disability2_h,
-         race_h, mbr_num, hhold_id_new, hh_ssn_h, hh_lname_h, hh_lnamesuf_h, hh_fname_h, 
-         hh_mname_h, hh_dob_h, agency_new:property_id, agency_prog_concat, 
-         portfolio_final, prog_final,
-         unit_id, unit_add_h:unit_zip_h, unit_concat_h, formatted_address_h:y_h, 
-         kc_area, property_name_new,
-         mid, ssn_m, lname_m, fname_m, mname_m, dob_m, gender_m, dual_elig_m, cov_type_m,
+         race_h, hisp_h, mbr_num, hhold_id_new, hh_ssn_h, hh_lname_h, hh_lnamesuf_h, hh_fname_h, 
+         hh_mname_h, hh_dob_h, agency_new, prog_type, subsidy_type:agency_prog_concat, 
+         property_id, property_name, unit_id, unit_add_h:unit_zip_h, unit_concat_h, formatted_address_h:y_h, 
+         kc_area, kc_only,
+         mid, ssn_m, lname_m, fname_m, mname_m, dob_m, gender_m, race_m, hisp_m, dual_elig_m, cov_type_m,
          startdate_h, enddate_h, truncated, period:time_prog, port_in:port_out_sha,
          startdate_m, enddate_m) %>%
   # Set up coverage times to look for overlap
@@ -264,18 +279,38 @@ rm(elig_merge)
 gc()
 
 
+#### Set up new variables ####
+### Make combined demographics
+# Logic: assume Medicaid is correct when there are conflicts 
+# (housing data likely to overestimate multiple race for example), 
+# use housing data to fill in missing Medicaid info.
+pha_elig_merge <- pha_elig_merge %>%
+  mutate(race_c = race_m,
+         race_c = ifelse(is.na(race_c), race_h, race_c),
+         hisp_c = hisp_m,
+         hisp_c = ifelse(is.na(hisp_c), hisp_h, hisp_c),
+         gender_c = gender_m,
+         gender_c = ifelse(is.na(gender_c), gender_h, gender_c))
+
+
 # Make new unique ID to anonymize data
 pha_elig_merge$pid2 <- group_indices(pha_elig_merge, mid, ssn_m, ssn_h, lname_h, fname_h, dob_h)
 
 
-### Save point
+#### Save point ####
 saveRDS(pha_elig_merge, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_merge.Rda")
 #pha_elig_merge <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_merge.Rda")
 
 
+#### Recode missing demogs - temp measure until pha_consolidation is rerun ####
+pha_elig_merge <- pha_elig_merge %>%
+  mutate_at(vars(gender_h, gender2_h, gender_c, race_h, race_c, hisp_h, hisp_c),
+            funs(ifelse(is.na(.) & !is.na(lag(., 1)) & pid2 == lag(pid2, 1),
+                        lag(., 1), .)))
+
+
 ##### Calculate overlapping periods #####
 # Set up intervals in each data set
-
 
 # This is horribly slow and ugly code. Would like to make it more efficient.
 
@@ -448,23 +483,23 @@ gc()
 
 # Choose variables to keep in the final data
 # Cutting out most of the geocoding and unit-specific variables as they are not currently being used
-keeplist <- c("pid2", "mid", "ssn_m", "ssn_h", "lname_h", "fname_h", "dob_h", "dob_m")
+keeplist <- c("pid2", "mid", "ssn_m", "ssn_h", "lname_h", "fname_h", "dob_h", "dob_m",
+              "race_c", "hisp_c", "gender_c")
 houselist <- c("pid", "startdate_h", "enddate_h", "truncated", "period", "start_housing", 
                "start_pha", "start_prog", "time_housing", "time_pha", "time_prog",
                "mbr_num", "lnamesuf_h", "agegrp_h", "age12_h", "age13_h", "age14_h", 
                "age15_h", "age16_h", "adult_h", "senior_h", "gender_h", "gender2_h",
-               "citizen_h", "disability_h", "disability2_h", "race_h", 
+               "citizen_h", "disability_h", "disability2_h", "race_h", "hisp_h",
                "hhold_id_new", "hh_ssn_h", "hh_lname_h", "hh_lnamesuf_h", 
                "hh_fname_h", "hh_mname_h", "hh_dob_h",
-               "agency_new", "major_prog", "prog_type", "prog_subtype", 
-               "spec_purp_type", "agency_prog_concat", "prog_group", "prog_final",
-               "portfolio_group", "portfolio_final", 
-               "property_id", "property_name_new", "unit_id", "unit_add_h", 
+               "agency_new", "prog_type", "subsidy_type", "vouch_type_final",
+               "portfolio_final", "operator_type", "agency_prog_concat",
+               "property_id", "property_name", "unit_id", "unit_add_h", 
                "unit_apt_h", "unit_apt2_h", "unit_city_h", "unit_state_h", "unit_zip_h", "unit_concat_h",
-               "formatted_address_h", "x_h", "y_h", "kc_area",
+               "formatted_address_h", "x_h", "y_h", "kc_area", "kc_only",
                "port_in", "port_out_kcha", "port_out_sha")
 medlist <- c("startdate_m", "enddate_m", "lname_m", "fname_m", "mname_m", 
-             "gender_m", "dual_elig_m", "cov_type_m")
+             "dob_m", "gender_m", "race_m", "hisp_m", "dual_elig_m", "cov_type_m")
 
 
 # Just the PHA demographics and merging variables
@@ -494,8 +529,8 @@ pha_elig_final <- bind_rows(merge1, merge2, merge3) %>%
   arrange(pid2, startdate_c, enddate_c)
 
 
-### NB. This produces leads to 7 more rows than in the original temp_ext file
-# This seems to be because of duplicate startdates and enddates in the pha_elig_merge_part1 files
+### NB. This produces leads to 19 more rows than in the original temp_ext file
+# This seems to mostly be because of duplicate startdates and enddates in the pha_elig_merge_part1 files
 # Need to further investigate this issue
 
 rm(list = ls(pattern = "pha_elig_merge_part"))
@@ -559,6 +594,16 @@ pt_temp_o <- pha_elig_final %>%
 pha_elig_final <- left_join(pha_elig_final, pt_temp_o, by = c("pid2", "startdate_o", "enddate_o"))
 rm(pt_temp_o)
 
+# Person-time specific to that interval, doesn't need to be done separately
+pha_elig_final <- pha_elig_final %>%
+  mutate(
+    pt12 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2012) / ddays(1)) + 1,
+    pt13 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2013) / ddays(1)) + 1,
+    pt14 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2014) / ddays(1)) + 1,
+    pt15 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2015) / ddays(1)) + 1,
+    pt16 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2016) / ddays(1)) + 1
+  )
+
 
 ### Fix up any NAs in the date fields
 # Otherwise SQL load fails
@@ -575,8 +620,8 @@ rm(pha_elig_merge)
 gc()
 
 #### Write to SQL for joining with claims ####
-ptm01 <- proc.time() # Times how long this query takes
 sqlDrop(db.apde51, "dbo.housing_medicaid")
+ptm01 <- proc.time() # Times how long this query takes
 sqlSave(
   db.apde51,
   pha_elig_final,

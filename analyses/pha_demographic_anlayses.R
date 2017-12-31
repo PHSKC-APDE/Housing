@@ -13,12 +13,11 @@
 # Turn scientific notation off and other settings
 options(max.print = 700, scipen = 100, digits = 5)
 
+library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
 library(dplyr) # Used to manipulate data
-library(data.table) # more data manipulation
-library(dtplyr) # lets dplyr and data.table play nicely together
 library(pastecs) # Used for summary statistics
 
 
@@ -32,7 +31,7 @@ pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_f
 
 #### Set up variables for analysis ####
 
-# Set up presence/absence in housing, Medicaid, and both at decmber 31 each year
+# Set up presence/absence in housing, Medicaid, and both at December 31 each year
 pha_elig_demogs <- pha_elig_demogs %>%
   mutate(
     # Enrolled in housing
@@ -114,38 +113,92 @@ i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
 # Note: Counts are highers for each PHA if run separately
 # This is because the first row is taken for a given period, which forces selection of just one PHA when the person may have switched during that period
 
+### Overall
+# Dual eligibility
+dual_agency_kcha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type", "dual_elig_m"), 
+                        period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+dual_race_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type", "dual_elig_m"), 
+                         period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+dual_age_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type", "dual_elig_m"), 
+                        period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+dual_disability_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type", "dual_elig_m"), 
+                        period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+dual_gender_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type", "dual_elig_m"), 
+                           period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+
+
+dual_agency_sha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type", "dual_elig_m"), 
+                           period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0))
+dual_race_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type", "dual_elig_m"), 
+                        period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0))
+dual_age_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type", "dual_elig_m"), 
+                        period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0))
+dual_disability_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type", "dual_elig_m"), 
+                       period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0))
+dual_gender_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type", "dual_elig_m"), 
+                           period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0))
+
+
+dual_agency <- bind_rows(dual_agency_kcha, dual_agency_sha) %>% mutate(category = "Agency", group = major_prog)
+dual_race <- bind_rows(dual_race_kcha, dual_race_sha) %>% mutate(category = "Race", group = race_h)
+dual_agegrp <- bind_rows(dual_age_kcha, dual_age_sha) %>% mutate(category = "Age group", group = agegrp)
+dual_disability <- bind_rows(dual_disability_kcha, dual_disability_sha) %>% mutate(category = "Disability", group = disability2_h)
+dual_gender <- bind_rows(dual_gender_kcha, dual_gender_sha) %>% mutate(category = "Gender", group = gender2_h)
+
+dual_pha <- bind_rows(dual_agency, dual_race, dual_agegrp, dual_disability, dual_gender) %>%
+  mutate(medicaid = car::recode(enroll_type, "'b' = 'Medicaid'; 'h' = 'No Medicaid'"),
+         unit = car::recode(unit, "'pid2' = 'Individuals'"),
+         source = "dual")
+
+write.xlsx(dual_pha, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/PHA enrollment count_", 
+                                    Sys.Date(), "_dual elig.xlsx"))
+write.table(dual_pha, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/PHA enrollment count_", 
+                                    Sys.Date(), "_dual elig.csv"))
+
+
+rm(list = ls(pattern = "^dual_[:alnum:]_kcha"))
+rm(list = ls(pattern = "^dual_[:alnum:]_sha"))
+rm(dual_agency)
+rm(dual_race)
+rm(dual_agegrp)
+rm(dual_disability)
+rm(dual_gender)
+gc()
+
+
 ### KCHA
 # Monthly
 agency_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 program_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "prog_final", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new,  filter = quo(port_out_kcha == 0))
 portfolio_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 race_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
-agegrp_count_hh_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
+agegrp_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 disability_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 gender_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 zip_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
-los_count_hh_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
+los_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "month", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 
 agency_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 program_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "prog_final", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 portfolio_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 race_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
-agegrp_count_ind_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+agegrp_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 disability_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 gender_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 zip_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
-los_count_ind_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+los_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
+
 
 # Yearly
 agency_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 program_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "prog_final", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 portfolio_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 race_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
-agegrp_count_yr_hh_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
+agegrp_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 disability_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 gender_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 zip_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
-los_count_yr_hh_kcha <- counts2(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
+los_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), period = "year", agency = "kcha", unit = hhold_id_new, filter = quo(port_out_kcha == 0))
 
 agency_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "major_prog", "enroll_type"), period = "year", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
 program_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "prog_final", "enroll_type"), period = "year", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0))
@@ -236,7 +289,7 @@ pha_count <- bind_rows(agency_count, program_count, portfolio_count, race_count,
          date_yr = ifelse(period == "year", year(date), NA))
 
 write.xlsx(pha_count, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/PHA enrollment count_", 
-                                    Sys.Date(), ".xlsx"))
+                                    Sys.Date(), ".xlsx"), sheetName = "enrollment")
 
 
 rm(list = ls(pattern = "^agency"))

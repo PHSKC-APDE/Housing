@@ -424,7 +424,7 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 # Bring in variable name mapping table
 fields <- read.xlsx(file.path(kcha_path, "Field_name_mapping.xlsx"))
 # Change names
-kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- data.table::setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
@@ -432,7 +432,7 @@ kcha_long <- kcha_long %>%
   mutate(
     prog_type = ifelse(prog_type == "P", "PH",
                        ifelse(prog_type == "PR", "PBS8",
-                              ifelse(prog_type == "T", "TBS8",
+                              ifelse(prog_type %in% c("T", "VO"), "TBS8",
                                      prog_type))),
     major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
     property_id = as.numeric(ifelse(str_detect(subsidy_id, "^[0-9]-") == T, str_sub(subsidy_id, 3, 5), NA))

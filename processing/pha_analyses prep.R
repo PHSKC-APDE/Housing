@@ -42,53 +42,27 @@ pha_cleanadd_sort_dedup <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing
 # (e.g., act_date, act_type, income data, household size (this will need to be remade))
 pha_longitudinal <- pha_cleanadd_sort_dedup %>%
   select(-(hhold_inc_fixed:hhold_inc_vary), -(act_type:correction_date), -(reexam_date:agency), 
-         -(portability:cost_pha), -(incasset_id:inc_fixed), 
-         -(sha_source), -(r_white_new_tot:r_hisp_new_tot), -drop, -add_yr)
+         -(portability:cost_pha), -inc_fixed, -(sha_source), 
+         -(r_white_new_tot:r_hisp_new_tot), -add_num, -drop, -next_hh_act, -add_yr)
 
 ### Fix date format
 pha_longitudinal <- pha_longitudinal %>% mutate(dob_m6 = as.Date(dob_m6, origin = "1970-01-01"))
 
 ### Fix up remaining program categories (will be moved earlier eventually)
 # Bring in program name mapping table and add new variables
-program_map <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Program name mapping.xlsx")
-# Replace NAs with blanks so the join works correctly
-program_map <- program_map %>% mutate(spec_purp_type = ifelse(is.na(spec_purp_type), "", spec_purp_type))
+#program_map <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Program name mapping.xlsx")
+# No longer needed. Still some KCHA PBS8 properties that could have their portfolio updated based on property name
+# but numbers are small
 
-pha_longitudinal <- left_join(pha_longitudinal, program_map, by = c("agency_new", "major_prog", "prog_type", "prog_subtype",
-                                                                    "spec_purp_type", "portfolio"))
-
-pha_longitudinal <- pha_longitudinal %>%
-  mutate(
-    property_name_new = ifelse(agency_new == "SHA" & !is.na(property_name) & 
-                                 str_detect(property_name, "HIGH"), "HIGH POINT",
-                               ifelse(agency_new == "SHA" & !is.na(property_name) & 
-                                        str_detect(property_name, "HOLLY"), "NEW HOLLY",
-                                      ifelse(agency_new == "SHA" & !is.na(property_name) & 
-                                               str_detect(property_name, "VISTA"), "RAINIER VISTA", property_name)))
-  )
-
-# Make final portfolio and program groups
-pha_longitudinal <- pha_longitudinal %>%
-  mutate(
-    portfolio_final = ifelse(agency_new == "SHA" & major_prog == "PH", toupper(portfolio_group),
-                             ifelse(agency_new == "KCHA", portfolio_new, NA)),
-    prog_final = ifelse(agency_new == "SHA" & major_prog == "HCV", toupper(prog_group),
-                        ifelse(agency_new == "SHA" & major_prog == "PH", "PH",
-                               ifelse(agency_new == "KCHA", prog_type, NA)))
-    
-  )
-
-rm(program_map)
 
 ### Set up time in housing for each row and note when there was a gap in coverage
 pha_longitudinal <- pha_longitudinal %>% 
-  mutate(
-    cov_time = interval(start = startdate, end = enddate) / ddays(1) + 1,
-    gap = ifelse(is.na(lag(pid, 1)) | pid != lag(pid, 1), 0,
-                 ifelse(startdate - lag(enddate, 1) > 62, 1, NA))) %>%
+  mutate(cov_time = interval(start = startdate, end = enddate) / ddays(1) + 1,
+         gap = ifelse(is.na(lag(pid, 1)) | pid != lag(pid, 1), 0,
+                      ifelse(startdate - lag(enddate, 1) > 62, 1, NA))) %>%
   # Find the number of unique periods a person was in housing
   group_by(pid, gap) %>%
-  mutate(period = row_number()*gap + 1) %>% 
+  mutate(period = row_number() * gap + 1) %>% 
   ungroup() %>%
   # Fill in missing data
   tidyr::fill(., period) %>%
@@ -105,7 +79,6 @@ pha_longitudinal <- pha_longitudinal %>%
     time_pha = round(interval(start = start_pha, end = enddate) / years(1), 1),
     time_prog = round(interval(start = start_prog, end = enddate) / years(1), 1)
   )
-
 
 ### Age
 # Age at each date

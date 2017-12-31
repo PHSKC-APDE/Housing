@@ -23,8 +23,8 @@ flags to a given data set. Also adds a flag for scattered sites.
 Once each person's addresses have been flagged as Yesler Terrace/scattered 
 sites or not, a new set of variables is made to indicate whether or not the 
 person has ever lived at Yesler Terrace/scattered sites.
-For now, it is assumed that the df has variables called property_id, unit_add_new, 
-and variable to group people on (pid or pid2).
+For now, it is assumed that the df has variables called property_id, 
+unit_add_new or unit_add_h, and a variable to group people on (pid or pid2).
 }
 \examples{
 \dontrun{

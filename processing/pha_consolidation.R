@@ -41,15 +41,60 @@ pha_cleanadd_sort <- pha_cleanadd %>%
   arrange(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, act_date, agency_new, prog_type)
 
 #### Create key variables ####
-### Flag junk SSNs/IDs
-pha_cleanadd_sort <- junk_ssn_all(pha_cleanadd_sort, ssn_id_m6)
-pha_cleanadd_sort <- junk_ssn_all(pha_cleanadd_sort, hh_ssn_id_m6)
-
+### ID
 pha_cleanadd_sort$pid <- group_indices(pha_cleanadd_sort, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)
+
+
+### Final agency and program fields
+# Set up the groupings we want to use in analyses
+pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  mutate(
+    # Hard vs. TBS8 units (subsidy type)
+    subsidy_type = ifelse(prog_type %in% c("TBS8", "TENANT BASED VOUCHER", "PORT"),
+                          "TENANT BASED/SOFT UNIT", "HARD UNIT"),
+    # Reorganize voucher types
+    vouch_type_final =  ifelse(agency_new == "SHA" & is.na(vouch_type), "",
+                               ifelse(subsidy_type == "TENANT BASED/SOFT UNIT", vouch_type, 
+                                      ifelse(agency_new == "SHA" & vouch_type == "MOD REHAB", "MOD REHAB",
+                                             ifelse(agency_new == "SHA" & vouch_type == "PARTNER PROJECT-BASED VOUCHER",
+                                                    "PARTNER PROJECT-BASED VOUCHER", 
+                                                    "")))),
+    vouch_type_final = ifelse(agency_new == "KCHA" & prog_type == "PBS8",
+                              "PARTNER PROJECT-BASED VOUCHER", vouch_type_final),
+    vouch_type_final = ifelse(vouch_type_final %in% c("DOMESTIC VIOLENCE", "TERMINALLY ILL"),
+                                  "OTHER (TI/DV)",
+                                  ifelse(vouch_type_final %in% c("PERMANENT SUPPORTIVE HOUSING",
+                                                                 "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                                                                 "PROJECT-BASED - REPLACEMENT HOUSING",
+                                                                 "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                                                                 "TENANT BASED VOUCHER"),
+                                         "GENERAL TENANT-BASED VOUCHER", vouch_type_final)),
+    vouch_type_final = ifelse(subsidy_type == "TENANT BASED/SOFT UNIT" & vouch_type_final == "",
+                              "GENERAL TENANT-BASED VOUCHER", vouch_type_final),
+    # Finalize portfolios
+    portfolio_final = ifelse(agency_new == "SHA" & prog_type == "SHA OWNED/MANAGED",
+                             portfolio,
+                             ifelse(agency_new == "KCHA", property_type, "")),
+    portfolio_final = ifelse(is.na(portfolio_final), "", portfolio_final),
+    # Make operator variable
+    operator_type = ifelse(subsidy_type == "HARD UNIT" & 
+                             (portfolio_final != "" |
+                                prog_type %in% c("PH", "SHA OWNED/MANAGED") |
+                                (vouch_type == "SHA OWNED PROJECT-BASED") & !is.na(vouch_type)), 
+                           "PHA OPERATED",
+                           ifelse(
+                             subsidy_type == "HARD UNIT" & !is.na(prog_type) &
+                               (portfolio_final == "") & 
+                               ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" &
+                                   (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type))) |
+                                  (agency_new == "KCHA" & prog_type != "PH")),
+                             "NON-PHA OPERATED", ""))
+  )
+
 
 ### Concatenated agency field
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  mutate(agency_prog_concat = paste(agency_new, major_prog, prog_type, prog_subtype, vouch_type, sep = ", "))
+  mutate(agency_prog_concat = paste(agency_new, subsidy_type, operator_type, vouch_type_final, portfolio_final, sep = ", "))
 
 
 #### Merge with KCHA EOP data - TEMPORARY MEASURE ####
@@ -57,7 +102,8 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 # Bring it in here and append. Eventually, move this step to the KCHA SQL load.
 kcha_eop <- read.xlsx(paste0(housing_path, "/KCHA/Original data/EOP Certifications_received_2017-10-05.xlsx"))
 # Bring in variable name mapping table
-fields <- read.xlsx(paste0(housing_path, "/OrganizedData/Field name mapping.xlsx"))
+# (file is also here: https://github.com/PHSKC-APDE/Housing/blob/master/processing/Field%20name%20mapping.xlsx)
+fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
 kcha_eop <- data.table::setnames(kcha_eop, fields$PHSKC[match(names(kcha_eop), fields$KCHA_eop)])
 # Fix up variable types
 kcha_eop <- kcha_eop %>%
@@ -84,11 +130,11 @@ kcha_eop <- kcha_eop %>%
 # Link to main data, match on SSN
 kcha_eop_join <- left_join(kcha_eop, pha_cleanadd_sort, by = c("hh_ssn_new" = "ssn_id_m6")) %>%
   select(hh_ssn_new:source_eop, pid, hhold_id_new, dob_m6, lname_new_m6, fname_new_m6, 
-         hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, prog_type.y, act_date.y, act_type.y)
+         hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, act_date.y, act_type.y, 
+         subsidy_type, operator_type, vouch_type_final, portfolio_final)
 # Drop rows where the names don't line up with the HoH or when no match found
 kcha_eop_join <- kcha_eop_join %>%
-  mutate(drop = if_else(
-    (is.na(act_date.y) & is.na(lname_new_m6)) | hh_ssn_new != hh_ssn_id_m6, 1, 0)) %>%
+  mutate(drop = if_else((is.na(act_date.y) & is.na(lname_new_m6)) | hh_ssn_new != hh_ssn_id_m6, 1, 0)) %>%
   filter(drop == 0)
 kcha_eop_join <- kcha_eop_join %>%
   mutate(
@@ -110,12 +156,13 @@ kcha_eop_join <- kcha_eop_join %>%
 kcha_eop_merge <- kcha_eop_join %>%
   mutate(hh_ssn_id_m6 = hh_ssn_new, act_type = act_type.x, 
          act_date = act_date.x, prog_type = prog_type.x, agency_new = "KCHA", 
-         major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
-         prog_subtype = NA, vouch_type = "",
-         agency_prog_concat = paste(agency_new, major_prog, prog_type, 
-                                    prog_subtype, vouch_type, sep = ", ")) %>%
-  select(pid, hhold_id_new, hh_ssn_id_m6, act_type, act_date, agency_new, 
-         major_prog, prog_type, prog_subtype, vouch_type, agency_prog_concat) %>%
+         subsidy_type = ifelse(prog_type.x %in% c("PH", "PBS8"), "HARD UNIT", 
+                               ifelse(prog_type.x == "TBS8", "TENANT BASED/SOFT UNIT", "")),
+         operator_type = NA, vouch_type_final = NA, portfolio_final = NA,
+         agency_prog_concat = paste(agency_new, subsidy_type, operator_type, 
+                                    vouch_type_final, portfolio_final, sep = ", ")) %>%
+  select(pid, hhold_id_new, hh_ssn_id_m6, act_type, act_date, agency_new, prog_type,
+         subsidy_type, operator_type, vouch_type_final, portfolio_final, agency_prog_concat) %>%
   distinct()
 
 # Join with all other people in the household
@@ -124,13 +171,17 @@ kcha_eop_full <- left_join(kcha_eop_merge, pha_cleanadd_sort, by = "hhold_id_new
 kcha_eop_full <- kcha_eop_full %>%
   mutate(pid = pid.y, hh_ssn_id_m6 = hh_ssn_id_m6.y, act_type = act_type.x, 
          act_date = act_date.x,  agency_new = agency_new.x, 
-         major_prog = major_prog.x, prog_type = prog_type.x,
-         prog_subtype = prog_subtype.x, vouch_type = vouch_type.x,
+         prog_type = prog_type.x, subsidy_type = subsidy_type.x, 
+         operator_type = operator_type.x,
+         vouch_type_final = vouch_type_final.x,
+         portfolio_final = portfolio_final.x,
          agency_prog_concat = agency_prog_concat.x,
          source_eop = "eop") %>%
   select(pid, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, hhold_id_new, 
          hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6,
-         act_type, act_date, agency_new, major_prog, prog_type) %>%
+         act_type, act_date, agency_new, prog_type, subsidy_type,
+         operator_type, vouch_type_final, portfolio_final, agency_prog_concat,
+         source_eop) %>%
   distinct()
 
 # Append data and remove any duplicate rows
@@ -138,6 +189,15 @@ pha_cleanadd_sort <- bind_rows(pha_cleanadd_sort, kcha_eop_full)
 pha_cleanadd_sort <- pha_cleanadd_sort %>% 
   arrange(pid, agency_prog_concat, act_date) %>%
   distinct()
+
+
+# Fill in any demographics that will be needed
+pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  mutate_at(vars(gender_new_m6, r_hisp_new, race2, dob_m6, r_hisp_new, race2, disability,
+                 citizen),
+            funs(ifelse(source_eop == "eop" & pid == lag(pid, 1) & is.na(.), lag(., 1), .))) %>%
+  mutate_at(vars(subsidy_type, operator_type, vouch_type_final, portfolio_final),
+            funs(ifelse(source_eop == "eop" & is.na(.), "", .)))
 
 # Remove temporary files
 rm(list = ls(pattern = "^kcha_eop"))
@@ -193,8 +253,7 @@ rm(add_num_tmp)
 pha_cleanadd_sort <- pha_cleanadd_sort %>% 
   mutate(port_in = ifelse(
     # Need to avoid catching 'SUPPORTIVE HOUSING'
-    (str_detect(agency_prog_concat, "PORT") & str_detect(agency_prog_concat, "SUPPORT") == F) |
-      act_type == 4 |
+    prog_type == "PORT" | act_type == 4 |
       (agency_new == "KCHA" & cost_pha != "" & cost_pha != "WA002") |
       (agency_new == "SHA" & cost_pha != "" & cost_pha != "WA001" &
          # SHA seems to point to another billed PHA even when the person has ported out from SHA to another PHA, need to ignore this
@@ -439,12 +498,12 @@ repeat {
                      !((act_type %in% c(1, 4) & !lag(act_type, 1) %in% c(1, 4)) | 
                          (!act_type %in% c(5, 6) & lag(act_type, 1) %in% c(5, 6))) &
                      agency_prog_concat != lag(agency_prog_concat, 1) & agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" &
-                     major_prog == "PH" & lag(major_prog, 1) == "HCV" & max_date - lag(max_date, 1) <= 62) |
+                     prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & max_date - lag(max_date, 1) <= 62) |
                     (pid == lead(pid, 1) & !is.na(lead(pid, 1)) & act_date - lead(act_date, 1) >= -62 & 
                        !((act_type %in% c(1, 4) & !lead(act_type, 1) %in% c(1, 4)) | 
                            (act_type %in% c(5, 6) & !lead(act_type, 1) %in% c(5, 6))) &
                        agency_prog_concat != lead(agency_prog_concat, 1) & agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" &
-                       major_prog == "PH" & lead(major_prog, 1) == "HCV" & max_date - lead(max_date, 1) <= 62),
+                       prog_type == "PH" & lead(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & max_date - lead(max_date, 1) <= 62),
                   6, drop)
   )
   # Pull out drop tracking and merge
@@ -509,10 +568,10 @@ dfsize_head - nrow(pha_cleanadd_sort)
 
 
 #### Save point ####
-saveRDS(pha_cleanadd_sort, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda")
-saveRDS(drop_track, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track_mid-consolidation.Rda")
-# pha_cleanadd_sort <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda")
-# drop_track <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track_mid-consolidation.Rda")
+saveRDS(pha_cleanadd_sort, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
+saveRDS(drop_track, file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
+# pha_cleanadd_sort <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
+# drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
 
 #### Set up KCHA move outs ####
 # In the old KCHA system there was no record of when a household member moved
@@ -805,12 +864,12 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
                            (act_date < "2016-01-01" | (senior == 0 & disability == 0) | homeworks == 1),
                          1, add_yr_temp),
     # SHA HCV
-    add_yr_temp = ifelse(agency_new == "SHA" & prog_type != "PH" & prog_type != "MOD REHAB" & adult == 1 & relcode != "L" &
+    add_yr_temp = ifelse(agency_new == "SHA" & prog_type != "PH" & vouch_type_final != "MOD REHAB" & adult == 1 & relcode != "L" &
                            ((act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 1) |
                               (act_date >= "2013-01-01" & (senior == 1 | disability == 1))),
                          3, add_yr_temp),
     add_yr_temp = ifelse(agency_new == "SHA" & prog_type != "PH" & adult == 1 & relcode != "L" &
-                           (act_date < "2010-01-01" | prog_type == "MOD REHAB" |
+                           (act_date < "2010-01-01" | vouch_type_final == "MOD REHAB" |
                               (act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 0) |
                               (act_date >= "2013-01-01" & senior == 0 & disability == 0)),
                          1, add_yr_temp),
@@ -928,7 +987,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 
 
 #### Rows where startdate = enddate and also startdate = the next row's startdate (often same program) (droptype = 11) ####
-# Use the same logic as droptype 5 to decide which row to keep
+# Use the same logic as droptype 6 to decide which row to keep
 dfsize_head <- nrow(pha_cleanadd_sort)
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   arrange(pid, startdate, enddate, agency_prog_concat) %>%
@@ -953,14 +1012,16 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
       (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
          startdate == enddate & startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
          agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & 
-         ((major_prog == "PH" & lead(major_prog, 1) == "HCV" & abs(max_date - lead(max_date, 1)) <= 62) |
+         ((prog_type == "PH" & lead(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
+             abs(max_date - lead(max_date, 1)) <= 62) |
             max_date - lead(max_date, 1) > 62)) |
         (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
            startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
            agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" & 
-           ((major_prog == "PH" & lag(major_prog, 1) == "HCV" & abs(max_date - lag(max_date, 1) <= 62)) |
+           ((prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
+               abs(max_date - lag(max_date, 1) <= 62)) |
               max_date - lag(max_date, 1) > 62)), 11, drop),
-    # If there are still pairs within  PHA, keep the program that immediately preceded this pair
+    # If there are still pairs within a PHA, keep the program that immediately preceded this pair
     # SHA
     drop = ifelse(
       (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
@@ -973,11 +1034,11 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     # KCHA
     drop = ifelse(
       (drop == 0 & pid == lead(pid, 1) & startdate == enddate & startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
-         agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & major_prog == lead(major_prog, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
+         agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & subsidy_type == lead(subsidy_type, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
          agency_prog_concat != lag(agency_prog_concat, 1)) |
         (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
            startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
-           agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" & major_prog == lag(major_prog, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
+           agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" & subsidy_type == lag(subsidy_type, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
            agency_prog_concat != lag(agency_prog_concat, 2)), 11, drop),
     # If the pairs come from different agencies, keep the PHA that immediately preceded this pair or the one with the latest max date
     drop = ifelse(
@@ -1023,10 +1084,12 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     drop = ifelse(
       (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
          startdate == lead(startdate, 1) & enddate == lead(enddate, 1) & 
-         vouch_type != "" & !is.na(vouch_type) & (lead(vouch_type, 1) == "" | is.na(lead(vouch_type, 1)))) |
+         vouch_type_final != "" & !is.na(vouch_type_final) & 
+         (lead(vouch_type_final, 1) == "" | is.na(lead(vouch_type_final, 1)))) |
         (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
            startdate == lag(startdate, 1) & enddate == lag(enddate, 1) & 
-           vouch_type != "" & !is.na(vouch_type) & (lag(vouch_type, 1) == "" | is.na(lag(vouch_type, 1)))), 12, drop),
+           vouch_type_final != "" & !is.na(vouch_type_final) & 
+           (lag(vouch_type_final, 1) == "" | is.na(lag(vouch_type_final, 1)))), 12, drop),
     # For the remaining ~84 pairs, drop the second row
     drop = ifelse(drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
                     startdate == lag(startdate, 1) & enddate == lag(enddate, 1), 12, drop)
@@ -1092,6 +1155,6 @@ pha_cleanadd_sort_dedup <- pha_cleanadd_sort
 saveRDS(pha_cleanadd_sort_dedup, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rda")
 
 ### Clean up remaining data frames
+rm(pha_cleanadd)
 rm(pha_cleanadd_sort)
-rm(pha_cleanadd_sort_dedup)
 gc()
