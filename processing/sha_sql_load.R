@@ -83,17 +83,67 @@ list2env(df_dedups, .GlobalEnv)
 #### Join PH files ####
 # Get field names to match
 # Bring in variable name mapping table
-fields <- read.xlsx("~/data/OrganizedData/Field name mapping.xlsx")
+fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
+# Clean excel fields
+fields <- fields %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
 
-sha1a <- data.table::setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- data.table::setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- data.table::setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- data.table::setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- data.table::setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- data.table::setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- data.table::setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
-sha3b_new <- data.table::setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- data.table::setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
+  fields <- fields %>% mutate(
+    SHA_old=
+    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+    ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+    ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+    ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
+    SHA_new_ph=
+    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
+    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
+    ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
+    ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
+    ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
+    )
+
+#
+# Change names
+#
+
+  # sha1
+  # "Last Name - 3b (Head)"
+  # "First Name - 3c (Head)"
+  # "Middle Initial - 3d (Head)"
+  # "Unit Address(Number and Street) - 5a"
+  # "Flat Subsidy or Inc. based sub - 21a"
+  # "Ceiling Rent Indicator- 21q"
+
+  # sha2
+  # "Projected Effective Date of Next Re-Exam - 2i"
+  # "Last Name - 3b (Head)"
+  # "First Name - 3c (Head)"
+  # "Middle Initial - 3d (Head)"
+  # "Number of Household Members - 3t (Head)"
+  # "Unit Address(Number and Street) - 5a"
+  # "Flat Subsidy or Inc. based sub - 21a"
+  # "Ceiling Rent Indicator- 21q"
+
+  # sha3
+  # "Projected Effective Date of Next Re-Exam - 2i"
+  # "Last Name - 3b"
+  # "First Name - 3c"
+  # "Middle Initial - 3d"
+  # "Unit Address(Number and Street) - 5a"
+  # "Flat Subsidy or Inc. based sub - 21a"
+  # "Ceiling Rent Indicator- 21q"
+
+sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
+sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
+sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
+sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
+sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
+sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
+sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
+sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
+sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
 
 
 # Clean up mismatching variables
