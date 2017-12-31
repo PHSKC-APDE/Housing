@@ -79,6 +79,28 @@ df_dedups <- lapply(dfs, function(data) {
 # Bring back data frames from list
 list2env(df_dedups, .GlobalEnv)
 
+### Clean shifted columns ###
+# In several data objects, there is an extra column. This is due to
+# an extra tab reading into R from the excel file. In most cases, this
+# is due to a nominal
+
+# Add column for name suffix
+glimpse(sha3a_new)
+glimpse(sha3b_new)
+glimpse(sha5a_new)
+glimpse(sha5b_new) # v9
+glimpse(sha1a) # V56
+glimpse(sha1b)
+glimpse(sha1c) # V5
+glimpse(sha2a) # V57, V58
+glimpse(sha2b)
+glimpse(sha2c) # V5
+glimpse(sha4a)
+
+
+tail(sha5b_new)
+data.frame(table(sha5b_new$v9))
+  ### Not sure what the extra column is here
 
 #### Join PH files ####
 # Get field names to match
@@ -105,6 +127,8 @@ fields <- fields %>%
           ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
             ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
     )
+
+
 
 # Change names of variables in SHA
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
