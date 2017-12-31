@@ -24,7 +24,8 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(max.print = 350, tibble.print_max = 50, scipen = 999)
+options(tibble.print_max = 50, scipen = 999, width = 200)
+  # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(housing) # contains many useful functions for cleaning
@@ -33,10 +34,6 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
 library(tidyverse) # Used to manipulate data
-
-housing_path <- "~/data"
-sha_path <- file.path(housing_path,"SHA")
-# db.apde51 <- odbcConnect("PH_APDEStore51")
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
@@ -83,6 +80,92 @@ df_dedups <- lapply(dfs, function(data) {
 # Bring back data frames from list
 list2env(df_dedups, .GlobalEnv)
 
+#### Join PH files ####
+# Get field names to match
+# Bring in variable name mapping table
+fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
+
+# Clean excel fields
+fields <- fields %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
+        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
+
+fields %>% select(SHA_old, SHA_new_ph, PHSKC)
+
+test <-
+
+fields %>% mutate(
+    SHA_old=
+    ifelse(grepl("Last Name - 3b  Head", SHA_old), "Middle Initial - 3d (Head)",
+    ifelse(grepl("First Name - 3c  Head", SHA_old), "First Name - 3c (Head)",
+    ifelse(grepl("Middle Initial - 3d  Head", SHA_old), "Middle Initial - 3d (Head)",
+    ifelse(grepl("Unit Address Number and Street -  5a", SHA_old), "Unit Address(Number and Street) - 5a",
+    ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_old), "Utility Allowance/monthly allowances - 20d",
+    ifelse(grepl("Ceiling Rent Indicator  21q", SHA_old), "Ceiling Rent Indicator- 21q",
+    ifelse(grepl("Race black african american indicator - 3k2", SHA_old), "Race black/african american indicator - 3k2",
+    ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_old),"Race american indian/alaska native indicator - 3k3",
+    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_old), "Race native hawaiin/other pacific islander indicator - 3k5", SHA_old))))))))),
+    SHA_new_ph=
+    ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), "Projected Effective Date of Next Re-Exam - 2i",
+    ifelse(grepl("Unit Address Number and Street -  5a", SHA_new_ph), "Unit Address(Number and Street) - 5a",
+    ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_new_ph), "Utility Allowance/monthly allowances - 20d",
+    ifelse(grepl("Ceiling Rent Indicator  21q", SHA_new_ph), "Ceiling Rent Indicator- 21q",
+    ifelse(grepl("Race black african american indicator - 3k2", SHA_new_ph), "Race black/african american indicator - 3k2",
+    ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_new_ph), "Race american indian/alaska native indicator - 3k3",
+    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_new_ph), "Race native hawaiin/other pacific islander indicator - 3k5", SHA_new_ph)))))))
+    ) %>%
+select(SHA_old, SHA_new_ph, PHSKC)
+
+#
+# Change names
+#
+
+SHA_old:
+`Last Name - 3b (Head)`
+`First Name - 3c (Head)`
+`Middle Initial - 3d (Head)`
+`Unit Address(Number and Street) - 5a`
+`Utility Allowance/monthly allowances - 20d`
+`Flat Subsidy or Inc. based sub - 21a`
+`Utility Allowance/monthly allowances - 21j`
+`Ceiling Rent Indicator- 21q`
+`Race black/african american indicator - 3k2`
+`Race american indian/alaska native indicator - 3k3`
+`Race native hawaiin/other pacific islander indicator - 3k5`
+
+SHA_new_ph:
+`Projected Effective Date of Next Re-Exam - 2i`
+`Unit Address(Number and Street) - 5a`
+`Utility Allowance/monthly allowances - 20d`
+`Flat Subsidy or Inc. based sub - 21a`
+`Utility Allowance/monthly allowances - 21j`
+`Ceiling Rent Indicator- 21q`
+`Race black/african american indicator - 3k2`
+`Race american indian/alaska native indicator - 3k3`
+`Race native hawaiin/other pacific islander indicator - 3k5`
+
+
+# Change names of variables in SHA
+sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
+sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
+sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
+sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
+sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
+sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
+sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
+sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
+sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
+
+# Clean up mismatching variables
+sha2a <- yesno_f(sha2a, ph_rent_ceiling)
+sha2a <- mutate(sha2a, fhh_ssn = as.character(fhh_ssn))
+sha3a_new <- sha3a_new %>%
+  mutate(property_id = as.character(property_id),
+         act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
+         mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
+         r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
+  )
+
 ### Clean shifted columns ###
 # In several data objects, there is an extra column. This is due to
 # an extra tab reading into R from the excel file. In most cases, this
@@ -105,102 +188,18 @@ glimpse(sha4a)
 tail(sha5b_new)
 data.frame(table(sha5b_new$v9))
   ### Not sure what the extra column is here
+  ### Could be another variable that isn't named
 
-#### Join PH files ####
-# Get field names to match
-# Bring in variable name mapping table
-fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
+# sha1a
+sha1a %>% data.frame %>% head()
 
-# Clean excel fields
-fields <- fields %>%
-        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
-        mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
+sha1a.fix <-
+  sha1a %>% filter(V56!="") %>% mutate(hh_lnamesuf="JR", ))
 
-  fields <- fields %>% mutate(
-    SHA_old=
-    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-    ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-    ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-    ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
-    SHA_new_ph=
-    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-    ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-    ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-    ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-    ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
-    )
+sha1a.good <-
+  sha1a %>% filter(V56="") %>% select(-V56)
+  # Problem:
 
-#
-# Change names
-#
-
-  # sha1
-  # "Last Name - 3b (Head)"
-  # "First Name - 3c (Head)"
-  # "Middle Initial - 3d (Head)"
-  # "Unit Address(Number and Street) - 5a"
-  # "Flat Subsidy or Inc. based sub - 21a"
-  # "Ceiling Rent Indicator- 21q"
-
-  # sha2
-  # "Projected Effective Date of Next Re-Exam - 2i"
-  # "Last Name - 3b (Head)"
-  # "First Name - 3c (Head)"
-  # "Middle Initial - 3d (Head)"
-  # "Number of Household Members - 3t (Head)"
-  # "Unit Address(Number and Street) - 5a"
-  # "Flat Subsidy or Inc. based sub - 21a"
-  # "Ceiling Rent Indicator- 21q"
-
-  # sha3
-  # "Projected Effective Date of Next Re-Exam - 2i"
-  # "Last Name - 3b"
-  # "First Name - 3c"
-  # "Middle Initial - 3d"
-  # "Unit Address(Number and Street) - 5a"
-  # "Flat Subsidy or Inc. based sub - 21a"
-  # "Ceiling Rent Indicator- 21q"
-
-<<<<<<< HEAD
-=======
-   ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
-    SHA_new_ph=
-    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
-    )
-
-
-
-=======
->>>>>>> d8ac83199571ab8fe0bb7995a23bf2c0c315ee03
-# Change names of variables in SHA
-sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
-sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
-
-# Clean up mismatching variables
-sha2a <- yesno_f(sha2a, ph_rent_ceiling)
-sha2a <- mutate(sha2a, fhh_ssn = as.character(fhh_ssn))
-sha3a_new <- sha3a_new %>%
-  mutate(property_id = as.character(property_id),
-         act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
-         mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
-         r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
-  )
 
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
