@@ -23,10 +23,7 @@
 
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
-<<<<<<< HEAD
-=======
 gc()
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -36,13 +33,10 @@ library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(data.table)
 library(tidyverse) # Used to manipulate data
-<<<<<<< HEAD
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
 # db.apde51 <- odbcConnect("PH_APDEStore51")
-=======
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
 
 housing_path <- "~/data"
 sha_path <- file.path(housing_path,"SHA")
@@ -94,11 +88,7 @@ list2env(df_dedups, .GlobalEnv)
 # Get field names to match
 # Bring in variable name mapping table
 fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
-<<<<<<< HEAD
-=======
 
-
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
 # Clean excel fields
 fields <- fields %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
@@ -106,7 +96,6 @@ fields <- fields %>%
 
   fields <- fields %>% mutate(
     SHA_old=
-<<<<<<< HEAD
     ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
     ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
     ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
@@ -151,40 +140,6 @@ fields <- fields %>%
   # "Flat Subsidy or Inc. based sub - 21a"
   # "Ceiling Rent Indicator- 21q"
 
-=======
-   ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old))))),
-    SHA_new_ph=
-    ifelse(endsWith(fields$SHA_old, "20d")==TRUE,"Utility Allowance/monthly allowances - 20d",
-      ifelse(endsWith(fields$SHA_old,"21j")==TRUE, "Utility Allowance/monthly allowances - 21j",
-        ifelse(endsWith(fields$SHA_old, "3k2")==TRUE, "Race black/african american indicator - 3k2",
-          ifelse(endsWith(fields$SHA_old, "3k3")==TRUE, "Race american indian/alaska native indicator - 3k3",
-            ifelse(endsWith(fields$SHA_old, "3k5")==TRUE, "Race native hawaiin/other pacific islander indicator - 3k5", fields$SHA_old)))))
-    )
-
-# Change names of variables in SHA
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
-sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
-sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
-
-<<<<<<< HEAD
-=======
-# fields$SHA_old <- gsub("\\.\\.\\."," - ", fields$SHA_old)
-# fields$SHA_old <- gsub("\\."," ", fields$SHA_old)
-
-
-head(fields)
-
 # Change names of variables in SHA
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
 sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
@@ -195,7 +150,6 @@ sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
 sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
 sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
 sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
 
 # Clean up mismatching variables
 sha2a <- yesno_f(sha2a, ph_rent_ceiling)
@@ -338,9 +292,6 @@ sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
   ungroup() %>%
   select(-inc_fixed_temp)
 
-<<<<<<< HEAD
-=======
-
 #### Fix up SHA member numbers and head-of-household info ####
 # ISSUE 1: Some households seem to have multiple HoHs recorded
 # (hhold defined as the same address, action date, and PHA-generated hhold IDs)
@@ -466,8 +417,6 @@ rm(mbr_miss_join)
 
 #### END SHA HEAD OF HOUSEHOLD FIX ####
 
-
->>>>>>> a67c056a90d04b9b1315e5c23f85f9f9f8f742f4
 # Restrict to relevant fields
 # (can drop specific income and asset fields once fixed income flag is made)
 sha <- sha %>%
