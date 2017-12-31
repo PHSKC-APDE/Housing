@@ -90,11 +90,7 @@ fields <- fields %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
 
-fields %>% select(SHA_old, SHA_new_ph, PHSKC)
-
-test <-
-
-fields %>% mutate(
+fields <- fields %>% mutate(
     SHA_old=
     ifelse(grepl("Last Name - 3b  Head", SHA_old), "Middle Initial - 3d (Head)",
     ifelse(grepl("First Name - 3c  Head", SHA_old), "First Name - 3c (Head)",
@@ -113,37 +109,11 @@ fields %>% mutate(
     ifelse(grepl("Race black african american indicator - 3k2", SHA_new_ph), "Race black/african american indicator - 3k2",
     ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_new_ph), "Race american indian/alaska native indicator - 3k3",
     ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_new_ph), "Race native hawaiin/other pacific islander indicator - 3k5", SHA_new_ph)))))))
-    ) %>%
-select(SHA_old, SHA_new_ph, PHSKC)
+    )
 
 #
 # Change names
 #
-
-SHA_old:
-`Last Name - 3b (Head)`
-`First Name - 3c (Head)`
-`Middle Initial - 3d (Head)`
-`Unit Address(Number and Street) - 5a`
-`Utility Allowance/monthly allowances - 20d`
-`Flat Subsidy or Inc. based sub - 21a`
-`Utility Allowance/monthly allowances - 21j`
-`Ceiling Rent Indicator- 21q`
-`Race black/african american indicator - 3k2`
-`Race american indian/alaska native indicator - 3k3`
-`Race native hawaiin/other pacific islander indicator - 3k5`
-
-SHA_new_ph:
-`Projected Effective Date of Next Re-Exam - 2i`
-`Unit Address(Number and Street) - 5a`
-`Utility Allowance/monthly allowances - 20d`
-`Flat Subsidy or Inc. based sub - 21a`
-`Utility Allowance/monthly allowances - 21j`
-`Ceiling Rent Indicator- 21q`
-`Race black/african american indicator - 3k2`
-`Race american indian/alaska native indicator - 3k3`
-`Race native hawaiin/other pacific islander indicator - 3k5`
-
 
 # Change names of variables in SHA
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
@@ -171,6 +141,10 @@ sha3a_new <- sha3a_new %>%
 # an extra tab reading into R from the excel file. In most cases, this
 # is due to a nominal
 
+
+# ==========================================================================
+# There are still some field names that need to be adjusted...
+# ==========================================================================
 # Add column for name suffix
 glimpse(sha3a_new)
 glimpse(sha3b_new)
