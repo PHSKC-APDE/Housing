@@ -24,7 +24,7 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(tibble.print_max = 50, scipen = 999, width = 200)
+options(tibble.print_max = 50, scipen = 999, width = 80)
   # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -92,7 +92,7 @@ fields <- fields %>%
 
 fields <- fields %>% mutate(
     SHA_old=
-    ifelse(grepl("Last Name - 3b  Head", SHA_old), "Middle Initial - 3d (Head)",
+    ifelse(grepl("Last Name - 3b  Head", SHA_old), "Last Name - 3b (Head)",
     ifelse(grepl("First Name - 3c  Head", SHA_old), "First Name - 3c (Head)",
     ifelse(grepl("Middle Initial - 3d  Head", SHA_old), "Middle Initial - 3d (Head)",
     ifelse(grepl("Unit Address Number and Street -  5a", SHA_old), "Unit Address(Number and Street) - 5a",
@@ -100,7 +100,12 @@ fields <- fields %>% mutate(
     ifelse(grepl("Ceiling Rent Indicator  21q", SHA_old), "Ceiling Rent Indicator- 21q",
     ifelse(grepl("Race black african american indicator - 3k2", SHA_old), "Race black/african american indicator - 3k2",
     ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_old),"Race american indian/alaska native indicator - 3k3",
-    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_old), "Race native hawaiin/other pacific islander indicator - 3k5", SHA_old))))))))),
+    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_old), "Race native hawaiin/other pacific islander indicator - 3k5",
+    ifelse(grepl("Flat Subsidy or Inc  based sub - 21a", SHA_old), "Flat Subsidy or Inc. based sub - 21a",
+    ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_old), "Utility Allowance/monthly allowances - 21j",
+    ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_old), "Projected Effective Date of Next Re-Exam - 2i",
+    ifelse(grepl("Number of Household Members - 3t  Head ", SHA_old), "Number of Household Members - 3t (Head)",
+    	SHA_old))))))))))))),
     SHA_new_ph=
     ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), "Projected Effective Date of Next Re-Exam - 2i",
     ifelse(grepl("Unit Address Number and Street -  5a", SHA_new_ph), "Unit Address(Number and Street) - 5a",
@@ -108,8 +113,13 @@ fields <- fields %>% mutate(
     ifelse(grepl("Ceiling Rent Indicator  21q", SHA_new_ph), "Ceiling Rent Indicator- 21q",
     ifelse(grepl("Race black african american indicator - 3k2", SHA_new_ph), "Race black/african american indicator - 3k2",
     ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_new_ph), "Race american indian/alaska native indicator - 3k3",
-    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_new_ph), "Race native hawaiin/other pacific islander indicator - 3k5", SHA_new_ph)))))))
+    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_new_ph), "Race native hawaiin/other pacific islander indicator - 3k5",
+    ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_new_ph), "Utility Allowance/monthly allowances - 21j",
+    ifelse(grepl("Flat Subsidy or Inc  based sub - 21a", SHA_new_ph), "Flat Subsidy or Inc. based sub - 21a",
+    	SHA_new_ph)))))))))
     )
+
+fields %>% select(SHA_old, SHA_new_ph, PHSKC)
 
 #
 # Change names
@@ -150,6 +160,7 @@ glimpse(sha3a_new)
 glimpse(sha3b_new)
 glimpse(sha5a_new)
 glimpse(sha5b_new) # v9
+
 glimpse(sha1a) # V56
 glimpse(sha1b)
 glimpse(sha1c) # V5
@@ -158,12 +169,11 @@ glimpse(sha2b)
 glimpse(sha2c) # V5
 glimpse(sha4a)
 
+# Adjust rogue column names
 
 tail(sha5b_new)
 data.frame(table(sha5b_new$v9))
-  ### Not sure what the extra column is here
-  ### Could be another variable that isn't named
-
+sha5b_new <- sha5b_new %>% rename(antic_inc=v9) # v9 is "Anticipated income - 18e"
 # sha1a
 sha1a %>% data.frame %>% head()
 
@@ -174,7 +184,9 @@ sha1a.good <-
   sha1a %>% filter(V56="") %>% select(-V56)
   # Problem:
 
-
+# ==========================================================================
+# TT END STUFF
+# ==========================================================================
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
@@ -213,7 +225,16 @@ sha_ph <- mutate(sha_ph,
 # Fix up names
 sha4a <- data.table::setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
 sha5a_new <- data.table::setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA_new_hcv)])
-sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), fields$SHA_new_hcv)])
+sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new),
+# ==========================================================================
+# TT BEGIN FIX: CHECK HERE ABOUT v9 renaming to "Anticipated income - 18e"
+# ==========================================================================
+	fields$SHA_new_hcv)]) %>% rename(antic_inc=v9)
+
+# ==========================================================================
+# TT END FIX
+# ==========================================================================
+
 sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
 sha_prog_codes <- data.table::setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_prog_port_codes)])
 
