@@ -201,9 +201,21 @@ sha3a_new <- sha3a_new %>%
 		select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, lnamesuf, dob:V58)
 	names(sha2a.fix2) <- names(sha2a.good)
 
-	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
-			 mutate(mbr_num=as.integer(mbr_num), ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
-			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
+	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
+  sha2a <- sha2a %>%
+			 mutate(mbr_num=as.integer(mbr_num),
+              ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
+			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling,
+              unit_zip=as.numeric(unit_zip)))
+
+       #
+       # Test start
+       #
+          class(sha2a$unit_zip)
+          sha2a %>% mutate(unit_zip=as.numeric(unit_zip)) %>% glimpse()
+       #
+       # End Test
+       #
 
 # Combine rogue names sha2c
 	sha2c.good <-
@@ -237,6 +249,10 @@ sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 # Append data
+  glimpse(sha1)
+  glimpse(sha2)
+  glimpse(sha3)
+
 sha_ph <- bind_rows(sha1, sha2, sha3)
 # ==========================================================================
 # Change above field types
