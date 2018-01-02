@@ -40,19 +40,19 @@ sha_path <- file.path(housing_path,"SHA")
 # db.apde51 <- odbcConnect("PH_APDEStore51")
 
 #### Bring in data ####
-sha3a_new <- fread(file = file.path(sha_path, "3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha3b_new <- fread(file = file.path(sha_path, "3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha5a_new <- fread(file = file.path(sha_path, "5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha5b_new <- fread(file = file.path(sha_path, "5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
+sha3a_new <- fread(file = file.path(sha_path, "3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha3b_new <- fread(file = file.path(sha_path, "3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha5a_new <- fread(file = file.path(sha_path, "5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha5b_new <- fread(file = file.path(sha_path, "5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
 
 # Bring in suffix corrected SHA data
-sha1a <- fread(file = file.path(sha_path, "1.a_HH PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
-sha1b <- fread(file = file.path(sha_path, "1.b_Income PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha1c <- fread(file = file.path(sha_path, "1.c_Assets PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha2a <- fread(file = file.path(sha_path, "2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
-sha2b <- fread(file = file.path(sha_path, "2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha2c <- fread(file = file.path(sha_path, "2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), stringsAsFactors = FALSE)
+sha1a <- fread(file = file.path(sha_path, "1.a_HH PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-05-11.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha1b <- fread(file = file.path(sha_path, "1.b_Income PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha1c <- fread(file = file.path(sha_path, "1.c_Assets PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha2a <- fread(file = file.path(sha_path, "2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha2b <- fread(file = file.path(sha_path, "2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha2c <- fread(file = file.path(sha_path, "2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV Voucher Type.xlsx"))
@@ -165,7 +165,8 @@ sha3a_new <- sha3a_new %>%
 	  			mutate(hh_lnamesuf="", lnamesuf="") %>%
 	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
 
-	sha1a <- rbind(sha1a.good,sha1a.fix)
+	sha1a <- rbind(sha1a.good,sha1a.fix) %>%
+			 mutate(mbr_num=as.integer(mbr_num))
 
 # Combine rogue names sha1c
 	sha1c.good <- sha1c %>%
@@ -200,7 +201,9 @@ sha3a_new <- sha3a_new %>%
 		select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, lnamesuf, dob:V58)
 	names(sha2a.fix2) <- names(sha2a.good)
 
-	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
+	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
+			 mutate(mbr_num=as.integer(mbr_num), ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
+			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
 
 # Combine rogue names sha2c
 	sha2c.good <-
@@ -235,7 +238,9 @@ sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 # Append data
 sha_ph <- bind_rows(sha1, sha2, sha3)
-
+# ==========================================================================
+# Change above field types
+# ==========================================================================
 # Fix more formats
 sha_ph <- sha_ph %>%
   mutate(property_id = ifelse(as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)), paste0("00", property_id),
