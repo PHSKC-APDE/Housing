@@ -24,7 +24,7 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(tibble.print_max = 50, scipen = 999, width = 100)
+options(tibble.print_max = 50, scipen = 999, width = 150)
   # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -147,79 +147,77 @@ sha3a_new <- sha3a_new %>%
   )
 
 ### Clean shifted columns ###
-# glimpse(sha3a_new)
-# glimpse(sha3b_new)
-# glimpse(sha5a_new)
-# glimpse(sha5b_new)
 
 # rename v9 to "Anticipated income - 18e"
-sha5b_new <- sha5b_new %>% rename(antic_inc=v9)
+	sha5b_new <- sha5b_new %>% rename(antic_inc=v9)
 
-# glimpse(sha1a) # V56
 # Add suffix columns to sha1a
-sha1a.fix <- sha1a %>%
-  	filter(V56!="") %>%
-  	mutate(v57="", hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
-  	select(-hh_fname, -mname)
-names(sha1a.fix) <- names(sha1a)
-sha1a.fix <- sha1a.fix %>%
-	select(incasset_id:hh_lname,hh_lnamesuf=56,hh_fname:lname,lnamesuf=57, fname:55)
+	sha1a.fix <- sha1a %>%
+	  	filter(V56!="") %>%
+	  	mutate(v57="", hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
+	  	select(-hh_fname, -mname)
+	names(sha1a.fix) <- names(sha1a)
+	sha1a.fix <- sha1a.fix %>%
+		select(incasset_id:hh_lname,hh_lnamesuf=56,hh_fname:lname,lnamesuf=57, fname:55)
 
-sha1a.good <-
-  sha1a %>% filter(V56=="") %>%
-  			mutate(hh_lnamesuf="", lnamesuf="") %>%
-  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
+	sha1a.good <-
+	  sha1a %>% filter(V56=="") %>%
+	  			mutate(hh_lnamesuf="", lnamesuf="") %>%
+	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
 
-sha1a <- rbind(sha1a.good,sha1a.fix)
+	sha1a <- rbind(sha1a.good,sha1a.fix)
 
-# glimpse(sha1b)
-# glimpse(sha1c) # V5
-sha1c.good <- sha1c %>%
-	filter(is.na(V5)) %>%
-	select(-V5) %>%
-	mutate(asset_val=as.numeric(asset_val))
-sha1c.fix <- sha1c %>%
-	filter(!is.na(V5)) %>%
-	mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
-	select(-3)
-names(sha1c.fix) <- names(sha1c.good)
+# Combine rogue names sha1c
+	sha1c.good <- sha1c %>%
+		filter(is.na(V5)) %>%
+		select(-V5) %>%
+		mutate(asset_val=as.numeric(asset_val))
+	sha1c.fix <- sha1c %>%
+		filter(!is.na(V5)) %>%
+		mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
+		select(-3)
+	names(sha1c.fix) <- names(sha1c.good)
 
-sha1c <- rbind(sha1c.good,sha1c.fix)
-###
-glimpse(sha2a) # V57, V58
-	data.frame(table(sha2a$V57))
+	sha1c <- rbind(sha1c.good,sha1c.fix)
 
+# Add suffix columns sha2a
 	sha2a.good <- sha2a %>%
 		filter(V57=="") %>%
-		rename(hh_lnamesuf=V57, lnamesuf=V58) %>% head()
+		rename(hh_lnamesuf=V57, lnamesuf=V58) %>%
+		mutate(lnamesuf="") %>%
+		select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, lnamesuf,fname:fhh_ssn)
 
-	sha2a.fix1 <- sha2a %>%
+	sha2a.fix1 <-
+		sha2a %>%
 		filter(V57!="", is.na(V58)) %>%
-		mutate(lnamesuf=fname, hh_lnamesuf=V58)
-	# ==========================================================================
-	# Somthing is not working here... Just need to look at it.
-	# ==========================================================================
-		%>%
-		select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, lnamesuf, fname:fhh_ssn)
+		mutate(lnamesuf=fname, hh_lnamesuf="") %>%
+		select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, lnamesuf, mname:V57)
+	names(sha2a.fix1) <- names(sha2a.good)
 
 	sha2a.fix2 <-
-		sha2a %>% filter(!is.na(V58))
+		sha2a %>% filter(!is.na(V58)) %>%
+		mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
+		select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, lnamesuf, dob:V58)
+	names(sha2a.fix2) <- names(sha2a.good)
+
+	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
+
+# Combine rogue names sha2c
+	sha2c.good <-
+		sha2c %>%
+		filter(is.na(V5)) %>%
+		select(-V5)
+
+	sha2c.fix <-
+		sha2c %>%
+		filter(!is.na(V5)) %>%
+		mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
+		select(-asset_val)
+	names(sha2c.fix) <- names(sha2c.good)
+
+	sha2c <- rbind(sha2c.good,sha2c.fix)
 
 
-glimpse(sha2b)
-glimpse(sha2c) # V5
-glimpse(sha4a)
-
-# Adjust rogue column names
-
-
-
-# sha1a - create suffix variable
-
-
-# ==========================================================================
-# TT END STUFF
-# ==========================================================================
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
