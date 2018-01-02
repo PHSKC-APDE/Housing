@@ -24,7 +24,7 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(tibble.print_max = 50, scipen = 999, width = 150)
+options(tibble.print_max = 50, scipen = 999, width = 100)
   # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -147,7 +147,6 @@ sha3a_new <- sha3a_new %>%
   )
 
 ### Clean shifted columns ###
-
 # rename v9 to "Anticipated income - 18e"
 	sha5b_new <- sha5b_new %>% rename(antic_inc=v9)
 
@@ -204,18 +203,10 @@ sha3a_new <- sha3a_new %>%
 	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
   sha2a <- sha2a %>%
 			 mutate(mbr_num=as.integer(mbr_num),
+              unit_zip=as.numeric(unit_zip),
+              rent_tenant=as.numeric(rent_tenant),
               ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
-			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling,
-              unit_zip=as.numeric(unit_zip)))
-
-       #
-       # Test start
-       #
-          class(sha2a$unit_zip)
-          sha2a %>% mutate(unit_zip=as.numeric(unit_zip)) %>% glimpse()
-       #
-       # End Test
-       #
+			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
 
 # Combine rogue names sha2c
 	sha2c.good <-
@@ -230,7 +221,8 @@ sha3a_new <- sha3a_new %>%
 		select(-asset_val)
 	names(sha2c.fix) <- names(sha2c.good)
 
-	sha2c <- rbind(sha2c.good,sha2c.fix)
+	sha2c <- rbind(sha2c.good,sha2c.fix) %>%
+           mutate(asset_val=as.numeric(asset_val))
 
 
 # Join household, income, and asset tables
@@ -256,6 +248,7 @@ sha3 <- sha3 %>% mutate(sha_source = "sha3")
 sha_ph <- bind_rows(sha1, sha2, sha3)
 # ==========================================================================
 # Change above field types
+# hh_hhold_num and hhold_size might be the same thing, might not... debug
 # ==========================================================================
 # Fix more formats
 sha_ph <- sha_ph %>%
