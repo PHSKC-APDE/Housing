@@ -24,7 +24,7 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(tibble.print_max = 50, scipen = 999, width = 80)
+options(tibble.print_max = 50, scipen = 999, width = 100)
   # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -147,42 +147,75 @@ sha3a_new <- sha3a_new %>%
   )
 
 ### Clean shifted columns ###
-# In several data objects, there is an extra column. This is due to
-# an extra tab reading into R from the excel file. In most cases, this
-# is due to a nominal
+# glimpse(sha3a_new)
+# glimpse(sha3b_new)
+# glimpse(sha5a_new)
+# glimpse(sha5b_new)
 
+# rename v9 to "Anticipated income - 18e"
+sha5b_new <- sha5b_new %>% rename(antic_inc=v9)
 
-# ==========================================================================
-# There are still some field names that need to be adjusted...
-# ==========================================================================
-# Add column for name suffix
-glimpse(sha3a_new)
-glimpse(sha3b_new)
-glimpse(sha5a_new)
-glimpse(sha5b_new) # v9
+# glimpse(sha1a) # V56
+# Add suffix columns to sha1a
+sha1a.fix <- sha1a %>%
+  	filter(V56!="") %>%
+  	mutate(v57="", hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
+  	select(-hh_fname, -mname)
+names(sha1a.fix) <- names(sha1a)
+sha1a.fix <- sha1a.fix %>%
+	select(incasset_id:hh_lname,hh_lnamesuf=56,hh_fname:lname,lnamesuf=57, fname:55)
 
-glimpse(sha1a) # V56
-glimpse(sha1b)
-glimpse(sha1c) # V5
+sha1a.good <-
+  sha1a %>% filter(V56=="") %>%
+  			mutate(hh_lnamesuf="", lnamesuf="") %>%
+  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
+
+sha1a <- rbind(sha1a.good,sha1a.fix)
+
+# glimpse(sha1b)
+# glimpse(sha1c) # V5
+sha1c.good <- sha1c %>%
+	filter(is.na(V5)) %>%
+	select(-V5) %>%
+	mutate(asset_val=as.numeric(asset_val))
+sha1c.fix <- sha1c %>%
+	filter(!is.na(V5)) %>%
+	mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
+	select(-3)
+names(sha1c.fix) <- names(sha1c.good)
+
+sha1c <- rbind(sha1c.good,sha1c.fix)
+###
 glimpse(sha2a) # V57, V58
+	data.frame(table(sha2a$V57))
+
+	sha2a.good <- sha2a %>%
+		filter(V57=="") %>%
+		rename(hh_lnamesuf=V57, lnamesuf=V58) %>% head()
+
+	sha2a.fix1 <- sha2a %>%
+		filter(V57!="", is.na(V58)) %>%
+		mutate(lnamesuf=fname, hh_lnamesuf=V58)
+	# ==========================================================================
+	# Somthing is not working here... Just need to look at it.
+	# ==========================================================================
+		%>%
+		select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, lnamesuf, fname:fhh_ssn)
+
+	sha2a.fix2 <-
+		sha2a %>% filter(!is.na(V58))
+
+
 glimpse(sha2b)
 glimpse(sha2c) # V5
 glimpse(sha4a)
 
 # Adjust rogue column names
 
-tail(sha5b_new)
-data.frame(table(sha5b_new$v9))
-sha5b_new <- sha5b_new %>% rename(antic_inc=v9) # v9 is "Anticipated income - 18e"
-# sha1a
-sha1a %>% data.frame %>% head()
 
-sha1a.fix <-
-  sha1a %>% filter(V56!="") %>% mutate(hh_lnamesuf="JR", ))
 
-sha1a.good <-
-  sha1a %>% filter(V56="") %>% select(-V56)
-  # Problem:
+# sha1a - create suffix variable
+
 
 # ==========================================================================
 # TT END STUFF
