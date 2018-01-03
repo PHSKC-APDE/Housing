@@ -105,7 +105,8 @@ fields <- fields %>% mutate(
     ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_old), "Utility Allowance/monthly allowances - 21j",
     ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_old), "Projected Effective Date of Next Re-Exam - 2i",
     ifelse(grepl("Number of Household Members - 3t  Head ", SHA_old), "Number of Household Members - 3t (Head)",
-    	SHA_old))))))))))))),
+    ifelse(grepl("Increment  The - to the left of the dash", SHA_old), "Increment (The - to the left of the dash)",
+    	SHA_old)))))))))))))),
     SHA_new_ph=
     ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), "Projected Effective Date of Next Re-Exam - 2i",
     ifelse(grepl("Unit Address Number and Street -  5a", SHA_new_ph), "Unit Address(Number and Street) - 5a",
@@ -165,7 +166,10 @@ sha3a_new <- sha3a_new %>%
 	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
 
 	sha1a <- rbind(sha1a.good,sha1a.fix) %>%
-			 mutate(mbr_num=as.integer(mbr_num), hhold_size=as.numeric(hhold_size), inc_adj=as.numeric(inc_adj))
+			 mutate(mbr_num=as.integer(mbr_num),
+              hhold_size=as.numeric(hhold_size),
+              r_hisp=as.numeric(r_hisp),
+              inc_adj=as.numeric(inc_adj))
 
 # Combine rogue names sha1c
 	sha1c.good <- sha1c %>%
@@ -208,9 +212,9 @@ sha3a_new <- sha3a_new %>%
               rent_tenant=as.numeric(rent_tenant),
               hhold_size=as.numeric(hhold_size),
               inc_adj=as.numeric(inc_adj),
+              r_hisp=as.numeric(r_hisp),
               ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
 			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
-
 
 # Combine rogue names sha2c
 	sha2c.good <-
@@ -232,12 +236,9 @@ sha3a_new <- sha3a_new %>%
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
-
 sha2 <- left_join(sha2a, sha2b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
-
 sha3 <- left_join(sha3a_new, sha3b_new, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
-
 
 # Add source field to track where each row came from
 sha1 <- sha1 %>% mutate(sha_source = "sha1")
@@ -245,16 +246,8 @@ sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 # Append data
-  glimpse(sha1)
-  glimpse(sha2)
-  glimpse(sha3)
-
 sha_ph <- bind_rows(sha1, sha2, sha3)
-# ==========================================================================
-# LEFT OFF HERE
-# Change above field types
-# hh_hhold_num and hhold_size might be the same thing, might not... debug
-# ==========================================================================
+
 # Fix more formats
 sha_ph <- sha_ph %>%
   mutate(property_id = ifelse(as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)), paste0("00", property_id),
@@ -274,15 +267,7 @@ sha_ph <- mutate(sha_ph,
 # Fix up names
 sha4a <- data.table::setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
 sha5a_new <- data.table::setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA_new_hcv)])
-sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new),
-# ==========================================================================
-# TT BEGIN FIX: CHECK HERE ABOUT v9 renaming to "Anticipated income - 18e"
-# ==========================================================================
-	fields$SHA_new_hcv)]) %>% rename(antic_inc=v9)
-
-# ==========================================================================
-# TT END FIX
-# ==========================================================================
+sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new),fields$SHA_new_hcv)])
 
 sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
 sha_prog_codes <- data.table::setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_prog_port_codes)])
@@ -295,7 +280,9 @@ sha4a <- sha4a %>%
          increment_old = increment,
          increment = str_sub(increment, 1, 5)
          )
-
+# ==========================================================================
+# Bottom number to the left of the dash
+# ==========================================================================
 
 sha5a_new <- sha5a_new %>%
   mutate(
