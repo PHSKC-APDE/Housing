@@ -24,7 +24,7 @@
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
 gc()
-options(tibble.print_max = 50, scipen = 999, width = 100)
+options(tibble.print_max = 50, scipen = 999, width = 150)
   # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
@@ -165,7 +165,7 @@ sha3a_new <- sha3a_new %>%
 	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
 
 	sha1a <- rbind(sha1a.good,sha1a.fix) %>%
-			 mutate(mbr_num=as.integer(mbr_num))
+			 mutate(mbr_num=as.integer(mbr_num), hhold_size=as.numeric(hhold_size), inc_adj=as.numeric(inc_adj))
 
 # Combine rogue names sha1c
 	sha1c.good <- sha1c %>%
@@ -202,11 +202,15 @@ sha3a_new <- sha3a_new %>%
 
 	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
   sha2a <- sha2a %>%
+       rename(hhold_size=hh_hhold_num) %>%
 			 mutate(mbr_num=as.integer(mbr_num),
               unit_zip=as.numeric(unit_zip),
               rent_tenant=as.numeric(rent_tenant),
+              hhold_size=as.numeric(hhold_size),
+              inc_adj=as.numeric(inc_adj),
               ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
 			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
+
 
 # Combine rogue names sha2c
 	sha2c.good <-
@@ -247,6 +251,7 @@ sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 sha_ph <- bind_rows(sha1, sha2, sha3)
 # ==========================================================================
+# LEFT OFF HERE
 # Change above field types
 # hh_hhold_num and hhold_size might be the same thing, might not... debug
 # ==========================================================================
@@ -264,7 +269,6 @@ sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
 sha_ph <- mutate(sha_ph,
                  portfolio = ifelse(str_detect(portfolio, "Lake City Court"),
                                     "Lake City Court", portfolio))
-
 
 #### Join HCV files
 # Fix up names
