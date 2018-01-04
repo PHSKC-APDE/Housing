@@ -105,7 +105,7 @@ fields <- fields %>% mutate(
     ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_old), "Utility Allowance/monthly allowances - 21j",
     ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_old), "Projected Effective Date of Next Re-Exam - 2i",
     ifelse(grepl("Number of Household Members - 3t  Head ", SHA_old), "Number of Household Members - 3t (Head)",
-    ifelse(grepl("Increment  The - to the left of the dash", SHA_old), "Increment (The - to the left of the dash)",
+    ifelse(grepl("Increment  The - to the left of the dash", SHA_old), "Increment (The # to the left of the dash)",
     	SHA_old)))))))))))))),
     SHA_new_ph=
     ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), "Projected Effective Date of Next Re-Exam - 2i",
@@ -253,7 +253,8 @@ sha_ph <- sha_ph %>%
   mutate(property_id = ifelse(as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)), paste0("00", property_id),
                               ifelse(as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & !is.na(as.numeric(property_id)),
                                      paste0("0", property_id),
-                              property_id)))
+                              property_id)),
+        act_date=as.Date(act_date, "%m/%d/%Y"))
 
 # Join with portfolio data
 sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
@@ -278,11 +279,9 @@ sha4a <- sha4a %>%
   mutate(mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
          # Truncate increment numbers so they match the reference list when joined
          increment_old = increment,
-         increment = str_sub(increment, 1, 5)
-         )
-# ==========================================================================
-# Bottom number to the left of the dash
-# ==========================================================================
+         increment = str_sub(increment, 1, 5),
+         act_date=as.Date(act_date, "%m/%d/%Y")
+         ) %>% glimpse()
 
 sha5a_new <- sha5a_new %>%
   mutate(
@@ -291,7 +290,8 @@ sha5a_new <- sha5a_new %>%
                                        'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
                                        'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
                                        'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA"))
+                                       else = NA")),
+  act_date=as.Date(act_date, "%m/%d/%Y")
     ) %>%
   mutate_at(vars(unit_zip, bed_cnt, cost_month, rent_gross, rent_tenant_owner, rent_mixfam_owner),
             funs(as.numeric(ifelse(. == "NULL", NA, .))))
@@ -306,7 +306,8 @@ sha_vouch_type <- sha_vouch_type %>%
                                        'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
                                        'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
                                        'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA")))
+                                       else = NA")),
+          act_date=as.Date(act_date, origin = "1899-12-30")) # 1899 is needed because of an excel date bug
 
 
 # Join with income and asset files
@@ -515,15 +516,17 @@ sha <- sha %>%
 
 ##### Load to SQL server #####
 # May need to delete table first
-sqlDrop(db.apde51, "dbo.sha_combined")
-sqlSave(db.apde51, sha, tablename = "dbo.sha_combined",
-        varTypes = c(
-          act_date = "Date",
-          admit_date = "Date",
-          dob = "Date"
-        ))
+# sqlDrop(db.apde51, "dbo.sha_combined")
+# sqlSave(db.apde51, sha, tablename = "dbo.sha_combined",
+#         varTypes = c(
+#           act_date = "Date",
+#           admit_date = "Date",
+#           dob = "Date"
+#         ))
 
-
+  # ==========================================================================
+  # Above code is for PHA purposes, not UW
+  # ==========================================================================
 ##### Remove temporary files #####
 rm(list = ls(pattern = "sha1"))
 rm(list = ls(pattern = "sha2"))
