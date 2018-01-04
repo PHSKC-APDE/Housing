@@ -525,7 +525,7 @@ sha <- sha %>%
 #         ))
 
   # ==========================================================================
-  # Above code is for PHA purposes, not UW
+  # Load to SQL server code aboce is for PHA purposes, not UW
   # ==========================================================================
 ##### Remove temporary files #####
 rm(list = ls(pattern = "sha1"))
