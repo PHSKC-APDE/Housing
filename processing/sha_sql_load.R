@@ -513,6 +513,11 @@ sha <- sha %>%
   ungroup()
 
 
+# ==========================================================================
+# Save to UW space
+# ==========================================================================
+
+# save(sha, file = "data/Housing/OrganizedData/SHA.rdata")
 
 ##### Load to SQL server #####
 # May need to delete table first
