@@ -25,6 +25,7 @@
 rm(list=ls()) #reset
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
+library(colorout)
 library(housing) # contains many useful functions for cleaning
 library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
@@ -442,7 +443,7 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property_list_with_project_code.xlsx"))
+kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property_List_with_Project_Code.xlsx"))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
 
 # Join and clean up duplicate variables
@@ -469,7 +470,7 @@ kcha_long <- kcha_long %>%
 
 
 # TEMP SAVE POINT
-dir.create("~/data/Housing/OrganizedData",recursive = T)
+# dir.create("~/data/Housing/OrganizedData",recursive = T)
 saveRDS(kcha_long, file = "~/data/Housing/OrganizedData/kcha_long.Rda")
 kcha_long <- readRDS(file = "~/data/Housing/OrganizedData/kcha_long.Rda")
 # saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")

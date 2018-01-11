@@ -517,7 +517,8 @@ sha <- sha %>%
 # Save to UW space
 # ==========================================================================
 
-# save(sha, file = "data/Housing/OrganizedData/SHA.rdata")
+saveRDS(sha, file = "~/data/Housing/OrganizedData/SHA.Rda")
+
 
 ##### Load to SQL server #####
 # May need to delete table first
