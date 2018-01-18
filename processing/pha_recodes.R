@@ -1,6 +1,6 @@
 ###############################################################################
 # OVERVIEW:
-# Code to create a cleaned person table from the combined 
+# Code to create a cleaned person table from the combined
 # King County Housing Authority and Seattle Housing Authority data sets
 # Aim is to have a single row per contiguous time in a house per person
 #
@@ -18,28 +18,32 @@
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2016-05-13, split into separate files 2017-10
-# 
+#
 ###############################################################################
 
 
 #### Set up global parameter and call in libraries ####
-options(max.print = 350, tibble.print_max = 50, scipen = 999)
+rm(list=ls()) #reset
+options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 100)
+gc()
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
+library(colorout)
 library(stringr) # Used to manipulate string data
 library(dplyr) # Used to manipulate data
 
 
 #### Bring in data ####
-pha_clean <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+# pha_clean <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+load("~/data/Housing/OrganizedData/pha_matched.Rdata")
 
 
 #### Race ####
 # Recode race variables and make numeric
 # Note: Because of typos and other errors, this process will overestimate the number of people with multiple races
 pha_recoded <- pha_clean %>%
-  mutate_at(vars(r_white:r_nhpi), 
-            funs(new = car::recode(., "'Y' = 1; 'N' = 0; 'NULL' = NA; else = NA", 
+  mutate_at(vars(r_white:r_nhpi),
+            funs(new = car::recode(., "'Y' = 1; 'N' = 0; 'NULL' = NA; else = NA",
                                    as.numeric.result = TRUE, as.factor.result = FALSE
                                    ))
             ) %>%
@@ -85,7 +89,8 @@ pha_recoded <- pha_recoded %>%
 #### Add other recodes later ####
 
 #### Save point ####
-saveRDS(pha_recoded, file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+# saveRDS(pha_recoded, file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+save(pha_recoded, file = "~/data/Housing/OrganizedData/pha_recoded.Rdata")
 
 #### Clean up ####
 rm(pha_clean)

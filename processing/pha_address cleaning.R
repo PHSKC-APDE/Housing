@@ -1,6 +1,6 @@
 ###############################################################################
 # OVERVIEW:
-# Code to create a cleaned person table from the combined 
+# Code to create a cleaned person table from the combined
 # King County Housing Authority and Seattle Housing Authority data sets
 # Aim is to have a single row per contiguous time in a house per person
 #
@@ -17,7 +17,7 @@
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2016-08-13, split into separate files 2017-10
-# 
+#
 ###############################################################################
 
 
@@ -30,16 +30,20 @@
 
 
 #### Set up global parameter and call in libraries ####
-options(max.print = 350, tibble.print_max = 50, scipen = 999)
+rm(list=ls()) #reset
+options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 100)
+gc()
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 bounds <- "& bounds=47,-122.7|48,-121"
 
+library(colorout)
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(dplyr) # Used to manipulate data
 library(reticulate) # used to pull in python-based address parser
 library(ggmap) # used to geocode addresses
 library(rgdal) # Used to convert coordinates between ESRI and Google output
+# To install rgdal on ubuntu, first get updates and install gdal and proj.4 sudo apt-get update, sudo apt-get install libgdal-dev, and sudo apt-get install libproj-dev. Then, install.packages("rgdal") in R
 
 
 #### Bring in data #####
@@ -65,7 +69,7 @@ adds_specific <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/
                            na.strings = "")
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
-  
+
 # For some reason there seem to be duplicates in the address data, possible created when cleaning up missing in the line above
 adds_specific <- adds_specific %>% distinct()
 pha_cleanadd <- left_join(pha_cleanadd, adds_specific, by = c("unit_add", "unit_apt", "unit_apt2", "unit_city", "unit_state", "unit_zip")) %>%
@@ -105,22 +109,22 @@ pha_cleanadd <- pha_cleanadd %>%
   mutate(
     unit_add_new = if_else(
       str_detect(unit_apt_new, "^(MEM[:space:]DR|RD[:space:]SE|PKWY[:space:]SW|WAY[:space:]NE)[:space:]+") == TRUE,
-      paste(unit_add_new, str_sub(unit_apt_new, 1, 
-                                  str_locate(unit_apt_new, 
+      paste(unit_add_new, str_sub(unit_apt_new, 1,
+                                  str_locate(unit_apt_new,
                                              "^(MEM[:space:]DR|RD[:space:]SE|PKWY[:space:]SW|WAY[:space:]NE)[:space:]+")[, 2] - 1),
             sep = " "), unit_add_new),
     unit_apt_new = if_else(
       str_detect(unit_apt_new, "^(MEM[:space:]DR|RD[:space:]SE|PKWY[:space:]SW|WAY[:space:]NE)[:space:]+") == TRUE,
-      str_sub(unit_apt_new, 
+      str_sub(unit_apt_new,
               str_locate(unit_apt_new, "^(MEM[:space:]DR|RD[:space:]SE|PKWY[:space:]SW|WAY[:space:]NE)[:space:]+")[, 2],
               str_length(unit_apt_new)), unit_apt_new),
     unit_add_new = if_else(
       str_detect(unit_apt_new, "^(RD|PKWY|WAY|NE|SE)[:space:]+") == TRUE,
-      paste(unit_add_new, str_sub(unit_apt_new, 1, 
+      paste(unit_add_new, str_sub(unit_apt_new, 1,
                                   str_locate(unit_apt_new, "^(RD|PKWY|WAY|NE|SE)[:space:]+")[, 2] - 1),
             sep = " "), unit_add_new),
     unit_apt_new = if_else(str_detect(unit_apt_new, "^(RD|PKWY|WAY|NE|SE)[:space:]+") == TRUE,
-                           str_sub(unit_apt_new, 
+                           str_sub(unit_apt_new,
                                    str_locate(unit_apt_new, "^(RD|PKWY|WAY|NE|SE)[:space:]+")[, 2],
                                    str_length(unit_apt_new)),
                            unit_apt_new)
@@ -129,11 +133,11 @@ pha_cleanadd <- pha_cleanadd %>%
 
 ### Figure out when apartments are in wrong field
 # Set up list of secondary designators
-secondary <- c("#", "\\$", "APT", "APPT", "APARTMENT", "APRT", "ATPT","BOX", "BLDG", "BLD", "BLG", "BUILDING", "DUPLEX", "FL ", 
+secondary <- c("#", "\\$", "APT", "APPT", "APARTMENT", "APRT", "ATPT","BOX", "BLDG", "BLD", "BLG", "BUILDING", "DUPLEX", "FL ",
                "FLOOR", "HOUSE", "LOT", "LOWER", "LOWR", "LWR", "REAR", "RM", "ROOM", "SLIP", "STE", "SUITE", "SPACE", "SPC", "STUDIO",
                "TRAILER", "TRAILOR", "TLR", "TRL", "TRLR", "UNIT", "UPPER", "UPPR", "UPSTAIRS")
-secondary_init <- c("^#", "^\\$", "^APT", "^APPT","^APARTMENT", "^APRT", "^ATPT", "^BOX", "^BLDG", "^BLD", "^BLG", "^BUILDING", "^DUPLEX", "^FL ", 
-                    "^FLOOR", "^HOUSE", "^LOT", "^LOWER", "^LOWR", "^LWR", "^REAR", "^RM", "^ROOM", "^SLIP", "^STE", "^SUITE", "^SPACE", "^SPC", 
+secondary_init <- c("^#", "^\\$", "^APT", "^APPT","^APARTMENT", "^APRT", "^ATPT", "^BOX", "^BLDG", "^BLD", "^BLG", "^BUILDING", "^DUPLEX", "^FL ",
+                    "^FLOOR", "^HOUSE", "^LOT", "^LOWER", "^LOWR", "^LWR", "^REAR", "^RM", "^ROOM", "^SLIP", "^STE", "^SUITE", "^SPACE", "^SPC",
                     "^STUDIO", "^TRAILER", "^TRAILOR", "^TLR", "^TRL", "^TRLR", "^UNIT", "^UPPER", "^UPPR", "^UPSTAIRS")
 
 # Clean up apartments in wrong field
@@ -147,14 +151,14 @@ pha_cleanadd <- pha_cleanadd %>%
                            unit_add_new),
     # Remove duplicates that are a little more complicated (where the secondary designator isn't repeated but the secondary number is)
     unit_add_new = if_else(unit_apt_new != "" & str_detect(unit_apt_new, paste(secondary, collapse = "|")) == TRUE &
-                             str_sub(unit_apt_new, 
-                                     str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1, 
+                             str_sub(unit_apt_new,
+                                     str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1,
                                      str_length(unit_apt_new)) ==
-                             str_sub(unit_add_new, str_length(unit_add_new) - (str_length(unit_apt_new) - 
+                             str_sub(unit_add_new, str_length(unit_add_new) - (str_length(unit_apt_new) -
                                                                                  (str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1)),
                                      str_length(unit_add_new)) &
                              !str_sub(unit_add_new, str_length(unit_add_new) - 1, str_length(unit_add_new)) %in% c("LA", "N", "NE", "NW", "S", "SE", "SW"),
-                           str_sub(unit_add_new, 1, str_length(unit_add_new) - (str_length(unit_apt_new) - 
+                           str_sub(unit_add_new, 1, str_length(unit_add_new) - (str_length(unit_apt_new) -
                                                                                   str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2])),
                            unit_add_new),
     # ID apartment numbers that need to move into the appropriate column (1, 2)
@@ -174,7 +178,7 @@ pha_cleanadd <- pha_cleanadd %>%
                                          )))),
     # Move apartment numbers to unit_apt_new if that field currently blank
     unit_apt_new = if_else(unit_apt_move == 1,
-                           str_sub(unit_add_new, str_locate(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")"))[, 1], 
+                           str_sub(unit_add_new, str_locate(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")"))[, 1],
                                    str_length(unit_add_new)),
                            unit_apt_new),
     unit_apt_new = if_else(unit_apt_move == 3,
@@ -182,16 +186,16 @@ pha_cleanadd <- pha_cleanadd %>%
                            unit_apt_new),
     # Merge apt data from unit_add_new with unit_apt_new if the latter is currently not blank
     unit_apt_new = if_else(unit_apt_move == 2,
-                           paste(str_sub(unit_add_new, str_locate(unit_add_new, paste0("[:space:]*(", paste(secondary, collapse = "|"), ")"))[, 1], 
+                           paste(str_sub(unit_add_new, str_locate(unit_add_new, paste0("[:space:]*(", paste(secondary, collapse = "|"), ")"))[, 1],
                                          str_length(unit_add_new)),
                                  unit_apt_new, sep = " "),
                            unit_apt_new),
     unit_apt_new = if_else(unit_apt_move == 4 & str_detect(unit_apt, "#") == FALSE,
-                           paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1], 
+                           paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1],
                                          str_length(unit_add_new)), unit_apt_new, sep = " "),
                            if_else(unit_apt_move == 4 & str_detect(unit_apt, "#") == TRUE,
-                                   paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1], 
-                                                 str_length(unit_add_new)), 
+                                   paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1],
+                                                 str_length(unit_add_new)),
                                          str_sub(unit_apt_new, str_locate(unit_apt_new, "[:digit:]")[, 1], str_length(unit_apt_new)),
                                          sep = " "),
                                    unit_apt_new)),
@@ -205,15 +209,15 @@ pha_cleanadd <- pha_cleanadd %>%
     # Now pull over any straggler apartments ending in a single letter or letter prefix
     unit_apt_move = if_else(str_detect(unit_add_new, "[:space:]+[A-D|F-M|O-R|T-V|X-Z][-]*[:space:]{0,1}$") == TRUE, 5, unit_apt_move),
     unit_apt_new = if_else(unit_apt_move == 5 & str_detect(unit_apt_new, "#") == FALSE,
-                           paste0(str_sub(unit_add_new, 
+                           paste0(str_sub(unit_add_new,
                                           str_locate(unit_add_new, "[:space:]+[A-D|F-M|O-R|T-V|X-Z][-]*$")[, 1] + 1,
-                                          str_length(unit_add_new)), 
+                                          str_length(unit_add_new)),
                                   unit_apt_new),
                            unit_apt_new),
     unit_apt_new = if_else(unit_apt_move == 5 & str_detect(unit_apt_new, "#") == TRUE,
-                           paste0(str_sub(unit_add_new, 
+                           paste0(str_sub(unit_add_new,
                                           str_locate(unit_add_new, "[:space:]+[A-D|F-M|O-R|T-V|X-Z][-]*[:space:]{0,1}$")[, 1] + 1,
-                                          str_length(unit_add_new)), 
+                                          str_length(unit_add_new)),
                                   str_sub(unit_apt_new, str_locate(unit_apt_new, "#")[, 1] + 1, str_length(unit_apt_new))),
                            unit_apt_new),
     # Remove apt data from the address field (this needs to happen after the above code)
@@ -229,7 +233,7 @@ pha_cleanadd <- pha_cleanadd %>%
 pha_cleanadd <- pha_cleanadd %>%
   mutate(
     # Add in hyphens between apt numbers (when no secondary designator present)
-    unit_apt_new = if_else(str_detect(unit_apt_new, "[:alnum:]+[:space:]+[:digit:]+$") == TRUE & 
+    unit_apt_new = if_else(str_detect(unit_apt_new, "[:alnum:]+[:space:]+[:digit:]+$") == TRUE &
                              str_detect(unit_apt_new, paste0("(", paste(secondary, collapse = "|"), ")")) == FALSE,
                            str_replace_all(unit_apt_new, "[:space:]", "-"), unit_apt_new),
     # Remove the # if in between apartment components
@@ -242,7 +246,7 @@ pha_cleanadd <- pha_cleanadd %>%
     unit_apt_new = str_replace_all(unit_apt_new, "[#|\\$][:space:]*[-]*", "# "),
     # Add in an # prefix if there is no other unit designator
     unit_apt_new = if_else(str_detect(unit_apt_new, "^[:digit:]+$") == TRUE | str_detect(unit_apt_new, "^[:alnum:]{1}$") == TRUE |
-                             (str_detect(unit_apt_new, "^[:alnum:]+[-]*[:digit:]+$") == TRUE & 
+                             (str_detect(unit_apt_new, "^[:alnum:]+[-]*[:digit:]+$") == TRUE &
                                 str_detect(unit_apt_new, paste0("(", paste(secondary, collapse = "|"), ")")) == FALSE),
                            paste0("# ", unit_apt_new), unit_apt_new),
     # Remove spaces between hyphens
@@ -295,27 +299,27 @@ pha_cleanadd <- pha_cleanadd %>%
 # Set up temporary IDs and agency fields for faster comparisons
 pha_cleanadd$pid <- group_indices(pha_cleanadd, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)
 pha_cleanadd <- pha_cleanadd %>%
-  mutate_at(vars(prog_type, vouch_type, property_name, property_type, portfolio), 
-            funs(toupper(.))) %>% 
+  mutate_at(vars(prog_type, vouch_type, property_name, property_type, portfolio),
+            funs(toupper(.))) %>%
   # Make concatenated agency/prog type/subtype/spec voucher type field to make life easier
   mutate(agency_prog_concat = paste(agency_new, major_prog, prog_type, vouch_type, sep = ", "))
 
 pha_cleanadd <- pha_cleanadd %>%
   arrange(pid, act_date, agency_prog_concat) %>%
   mutate_at(vars(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new),
-            funs(ifelse((. == "") & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+            funs(ifelse((. == "") & pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
                           agency_prog_concat == lag(agency_prog_concat, 1) & act_type %in% c(5, 6),
                         lag(., 1), .))) %>%
   # Need to do ZIP separately
-  mutate(unit_zip_new = 
-           ifelse(unit_zip_new %in% c(0, NA) & pid == lag(pid, 1) & !is.na(lag(pid, 1)) & 
+  mutate(unit_zip_new =
+           ifelse(unit_zip_new %in% c(0, NA) & pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
                     agency_prog_concat == lag(agency_prog_concat, 1) & act_type %in% c(5, 6) &
                     unit_add_new == lag(unit_add_new, 1),
                   lag(unit_zip, 1), unit_zip_new)) %>%
   # remove temporary pid and agency
   select(-pid, -agency_prog_concat)
 
-# For some reason there are a bunch of blank ZIPs even though other rows with 
+# For some reason there are a bunch of blank ZIPs even though other rows with
 # the same address have a ZIP. Sort by address and copy over ZIP.
 pha_cleanadd
 
@@ -350,13 +354,13 @@ pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
 # Parse out updated addresses (to come)
 # pha_cleanadd <- pha_cleanadd %>%
 #   mutate(unit_add_new2 = )
-# 
+#
 
 # Remove temp files
 rm(adds_matched)
 
 
-##### Merge KCHA development data now that addresses are clean ##### 
+##### Merge KCHA development data now that addresses are clean #####
 pha_cleanadd <- pha_cleanadd %>%
   mutate(dev_city = paste0(unit_city_new, ", ", unit_state_new, " ", unit_zip_new),
     # Trim any white space

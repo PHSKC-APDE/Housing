@@ -30,6 +30,7 @@ gc()
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
+library(colorout)
 library(housing) # contains many useful functions for cleaning
 library(dplyr) # Used to manipulate data
 library(stringr) # Used to manipulate string data
@@ -40,7 +41,8 @@ library(phonics) # used to extract phonetic version of names
 
 #### Bring in data ####
 # Assumes pha_combining.R has been run at some point
-pha <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_combined.Rda"))
+# pha <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_combined.Rda"))
+load("~/data/Housing/OrganizedData/pha_combined.Rdata")
 
 ### Remove duplicate records in preparation for matching
 pha_dedup <- pha %>%
@@ -740,7 +742,7 @@ pha_new5 <- pha_complete5 %>%
            lnamesuf_new_m5, dob_m5, gender_new_m5, .keep_all = TRUE)
 
 
-
+gc()
 
 #### Match #06 - block on soundex lname, soundex fname, and DOB; match combined SSN/HUD ID, mname, gender, and lname suffix ####
 # Next make combined SSN/HUD ID variable (there are no overlaps between the two initially)
@@ -934,7 +936,7 @@ pha_clean <- pha_complete6 %>%
                             "lname_new", "lnamesuf_new", "fname_new", "mname_new",
                              "lname_rec", "fname_new_cnt", "mname_new_cnt", "lnamesuf_new_cnt", "dob",
                              "dob_y", "dob_mth", "dob_d", "dob_cnt", "gender_new", "gender_new_cnt"))
-
+gc()
 
 #### Trim extraneous variables ####
 # Try to limit to only those that are needed for cleanup or analyses
@@ -1027,7 +1029,8 @@ pha_clean <- pha_clean %>% filter(!(lname_new_m6 == "DUFUS" & fname_new_m6 == "I
 
 
 #### Save point ####
-saveRDS(pha_clean, file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+# saveRDS(pha_clean, file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+save(pha_clean, file = "~/data/Housing/OrganizedData/pha_matched.Rdata")
 
 
 # Remove data frames and values made along the way
