@@ -47,11 +47,12 @@ library(rgdal) # Used to convert coordinates between ESRI and Google output
 
 
 #### Bring in data #####
-pha_recoded <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+# pha_recoded <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+load(file = "~/data/Housing/OrganizedData/pha_recoded.Rdata")
 
 ### Import Python address parser
+# In ubuntu, pip install usaddress
 addparser <- import("usaddress")
-
 
 ##### Addresses #####
 # Remove written NAs and make actually missing
@@ -154,13 +155,11 @@ pha_cleanadd <- pha_cleanadd %>%
                              str_sub(unit_apt_new,
                                      str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1,
                                      str_length(unit_apt_new)) ==
-                             str_sub(unit_add_new, str_length(unit_add_new) - (str_length(unit_apt_new) -
-                                                                                 (str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1)),
+                             str_sub(unit_add_new, str_length(unit_add_new) - (str_length(unit_apt_new) - (str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2] + 1)),
                                      str_length(unit_add_new)) &
                              !str_sub(unit_add_new, str_length(unit_add_new) - 1, str_length(unit_add_new)) %in% c("LA", "N", "NE", "NW", "S", "SE", "SW"),
-                           str_sub(unit_add_new, 1, str_length(unit_add_new) - (str_length(unit_apt_new) -
-                                                                                  str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2])),
-                           unit_add_new),
+                              str_sub(unit_add_new, 1, str_length(unit_add_new) - (str_length(unit_apt_new) -
+                              str_locate(unit_apt_new, paste0(paste(secondary, collapse = "|"), "[:space:]*"))[, 2])), unit_add_new),
     # ID apartment numbers that need to move into the appropriate column (1, 2)
     # Also include addresses that end in a number as many seem to be apartments (3, 4)
     unit_apt_move = if_else(unit_apt_new == "" & is.na(overridden) &
@@ -168,13 +167,8 @@ pha_cleanadd <- pha_cleanadd %>%
                             1, if_else(
                               unit_apt_new != "" & is.na(overridden) &
                                 str_detect(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")")) == TRUE,
-                              2, if_else(unit_apt_new == "" & is.na(overridden) &
-                                           str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
-                                           str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,
-                                         3, if_else(unit_apt_new != "" & is.na(overridden) &
-                                                      str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
-                                                      str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,
-                                                    4, 0
+                            2, if_else(unit_apt_new == "" & is.na(overridden) & str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE & str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,
+                            3, if_else(unit_apt_new != "" & is.na(overridden) & str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE & str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,4, 0
                                          )))),
     # Move apartment numbers to unit_apt_new if that field currently blank
     unit_apt_new = if_else(unit_apt_move == 1,
