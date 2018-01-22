@@ -51,7 +51,7 @@ library(rgdal) # Used to convert coordinates between ESRI and Google output
 load(file = "~/data/Housing/OrganizedData/pha_recoded.Rdata")
 
 ### Import Python address parser
-# In ubuntu, pip install usaddress
+# In ubuntu, pip install usaddress - this is done already
 addparser <- import("usaddress")
 
 ##### Addresses #####
@@ -66,7 +66,7 @@ pha_cleanadd <- pha_recoded %>%
 ### Specific addresses
 # Some addresses have specific issues than cannot be addressed via rules
 # However, these specific addresses should not be shared publically
-adds_specific <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
+adds_specific <- read.xlsx("~/data/KCHA/AUXFILES/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
                            na.strings = "")
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
@@ -326,7 +326,6 @@ rm(adds_specific)
 
 #### STOP HERE IF GEOCODING WILL BE RERUN ####
 #saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
-
 
 #### START HERE IF GEOCODING HAS BEEN COMPLETED
 ### Bring mid-point data back in
