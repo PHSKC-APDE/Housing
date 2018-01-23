@@ -324,6 +324,14 @@ pha_cleanadd <- pha_cleanadd %>%
 
 rm(adds_specific)
 
+# ==========================================================================
+# TT: Avoiding geocodes at this point, saving at this stage, will pick back
+# up later after recieving file "Development Addresses_received_2017-07-21.csv"
+# ==========================================================================
+
+pha_cleanadd_SANSGEOCODE <- pha_cleanadd
+save(pha_cleanadd_SANSGEOCODE,file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE.Rdata")
+
 #### STOP HERE IF GEOCODING WILL BE RERUN ####
 #saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
 
