@@ -821,7 +821,7 @@ dfsize_head - nrow(pha_cleanadd_sort)
 age_temp <- pha_cleanadd_sort %>%
   distinct(pid, dob_m6, act_date, mbr_num) %>%
   filter(!(is.na(dob_m6) | is.na(act_date))) %>%
-  mutate(dob_m6 = as.Date(dob_m6, format = "%m%d%Y", origin = "1899-12-30"))
+  mutate(dob_m6 = as.Date(dob_m6, format = "%m%d%Y", origin = "1899-12-30")) %>% 
   mutate(age = interval(start = dob_m6, end = act_date) / years(1), 1,
          # Fix up wonky birthdates and recalculate age
          # Negative ages mostly due to incorrect century
