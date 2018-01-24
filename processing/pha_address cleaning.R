@@ -66,7 +66,7 @@ pha_cleanadd <- pha_recoded %>%
 ### Specific addresses
 # Some addresses have specific issues than cannot be addressed via rules
 # However, these specific addresses should not be shared publically
-adds_specific <- read.xlsx("~/data/KCHA/AUXFILES/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
+adds_specific <- read.xlsx("~/data/Housing/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
                            na.strings = "")
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
@@ -327,10 +327,11 @@ rm(adds_specific)
 # ==========================================================================
 # TT: Avoiding geocodes at this point, saving at this stage, will pick back
 # up later after recieving file "Development Addresses_received_2017-07-21.csv"
+# revcieved the data but there's still some strange thing on this, need to check this. Still skipping for now.
 # ==========================================================================
 
-pha_cleanadd_SANSGEOCODE <- pha_cleanadd
-save(pha_cleanadd_SANSGEOCODE,file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE.Rdata")
+pha_cleanadd_SANSGEOCODE_TTtemp <- pha_cleanadd
+save(pha_cleanadd_SANSGEOCODE_TTtemp,file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE_TTtemp.Rdata")
 
 #### STOP HERE IF GEOCODING WILL BE RERUN ####
 #saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
