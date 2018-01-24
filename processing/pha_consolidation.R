@@ -45,7 +45,7 @@ library(tidyr) # More data manipulation
 # pha_cleanadd <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
 load(file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE_TTtemp.Rdata")
 
-pha_cleanadd_sort <- pha_cleanadd_SANSGEOCODE %>% # pha_cleanadd %>%
+pha_cleanadd_sort <- pha_cleanadd_SANSGEOCODE_TTtemp %>% # pha_cleanadd %>%
   arrange(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, act_date, agency_new, prog_type)
 
 #### Create key variables ####
@@ -108,7 +108,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 #### Merge with KCHA EOP data - TEMPORARY MEASURE ####
 # Some of the KCHA end of participation data is missing from the original extract
 # Bring it in here and append. Eventually, move this step to the KCHA SQL load.
-kcha_eop <- read.xlsx("~/data/KCHA/AUXFILES/EOP Certifications_received_2017-10-05.xlsx")
+kcha_eop <- read.xlsx("~/data/KCHA/EOP Certifications_received_2017-10-05.xlsx")
 # Bring in variable name mapping table
 # (file is also here: https://github.com/PHSKC-APDE/Housing/blob/master/processing/Field%20name%20mapping.xlsx)
 fields <- read.xlsx("data/KCHA/Field_name_mapping.xlsx")
@@ -821,7 +821,8 @@ dfsize_head - nrow(pha_cleanadd_sort)
 age_temp <- pha_cleanadd_sort %>%
   distinct(pid, dob_m6, act_date, mbr_num) %>%
   filter(!(is.na(dob_m6) | is.na(act_date))) %>%
-  mutate(age = round(interval(start = dob_m6, end = act_date) / years(1), 1),
+  mutate(dob_m6 = as.Date(dob_m6, format = "%m%d%Y", origin = "1899-12-30"))
+  mutate(age = interval(start = dob_m6, end = act_date) / years(1), 1,
          # Fix up wonky birthdates and recalculate age
          # Negative ages mostly due to incorrect century
          dob_m6 = as.Date(ifelse(age < -10, format(dob_m6, "19%y-%m-%d"), format(dob_m6)), origin = "1970-01-01"),
