@@ -1,6 +1,6 @@
 ###############################################################################
 # OVERVIEW:
-# Code to create a cleaned person table from the combined 
+# Code to create a cleaned person table from the combined
 # King County Housing Authority and Seattle Housing Authority data sets
 # Aim is to have a single row per contiguous time in a house per person
 #
@@ -18,33 +18,37 @@
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2016-08-13, split into separate files 2017-10
-# 
+#
 ###############################################################################
 
-
+rm(list=ls()) #reset
+options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 100)
+gc()
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
+library(colorout)
+library(housing)
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
-library(tidyr) # More data manipulation
-
+library(tidyverse)
 
 #### Bring in data ####
-pha_cleanadd_sort_dedup <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rda")
+# pha_cleanadd_sort_dedup <- readRDS(file = "~/data/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rdata")
+load(file = "~/data/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rdata")
 
 
 
-### Strip out some variables that no longer have meaning 
+### Strip out some variables that no longer have meaning
 # (e.g., act_date, act_type, income data, household size (this will need to be remade))
 pha_longitudinal <- pha_cleanadd_sort_dedup %>%
-  select(-(hhold_inc_fixed:hhold_inc_vary), -(act_type:correction_date), -(reexam_date:agency), 
-         -(portability:cost_pha), -inc_fixed, -(sha_source), 
+  select(-(hhold_inc_fixed:hhold_inc_vary), -(act_type:correction_date), -(reexam_date:agency),
+         -(portability:cost_pha), -inc_fixed, -(sha_source),
          -(r_white_new_tot:r_hisp_new_tot), -add_num, -drop, -next_hh_act, -add_yr)
 
+glimpse(pha_longitudinal)
 ### Fix date format
 pha_longitudinal <- pha_longitudinal %>% mutate(dob_m6 = as.Date(dob_m6, origin = "1970-01-01"))
 
@@ -56,13 +60,13 @@ pha_longitudinal <- pha_longitudinal %>% mutate(dob_m6 = as.Date(dob_m6, origin 
 
 
 ### Set up time in housing for each row and note when there was a gap in coverage
-pha_longitudinal <- pha_longitudinal %>% 
+pha_longitudinal <- pha_longitudinal %>%
   mutate(cov_time = interval(start = startdate, end = enddate) / ddays(1) + 1,
          gap = ifelse(is.na(lag(pid, 1)) | pid != lag(pid, 1), 0,
                       ifelse(startdate - lag(enddate, 1) > 62, 1, NA))) %>%
   # Find the number of unique periods a person was in housing
   group_by(pid, gap) %>%
-  mutate(period = row_number() * gap + 1) %>% 
+  mutate(period = row_number() * gap + 1) %>%
   ungroup() %>%
   # Fill in missing data
   tidyr::fill(., period) %>%
@@ -105,16 +109,23 @@ pha_longitudinal <- pha_longitudinal %>%
 
 
 ### ZIPs to restrict to KC
-zips <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/ZIP filter for KC.xlsx")
-pha_longitudinal <- pha_longitudinal %>%
+# zips <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/ZIP filter for KC.xlsx")
+
+# ==========================================================================
+# Zip file not provided, alternative method below
+# ==========================================================================
+zips <- c(98126,98133,98136,98134,98138,98144,98146,98148,98155,98154,98158,98164,98166,98168,98177,98178,98190,98188,98198,98195,98199,98224,98251,98288,98354,98001,98003,98002,98005,98004,98007,98006,98009,98008,98011,98010,98014,98019,98022,98024,98023,98025,98028,98027,98030,98029,98032,98031,98034,98033,98038,98040,98039,98042,98045,98047,98051,98050,98053,98052,98055,98057,98056,98059,98058,98068,98065,98070,98072,98075,98074,98077,98083,98092,98101,98103,98102,98105,98104,98107,98106,98109,98108,98112,98115,98114,98117,98116,98119,98118,98122,98121,98125)
+
+pha_longitudinal_kc <- pha_longitudinal %>%
   mutate(unit_zip_new = as.numeric(unit_zip_new)) %>%
-  left_join(., zips, by = c("unit_zip_new" = "zip"))
+  filter(unit_zip_new %in% zips)
+  # left_join(., zips, by = c("unit_zip_new" = "zip"))
 rm(zips)
 
 
-
 #### Save point ####
-saveRDS(pha_longitudinal, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_longitudinal.Rda")
+save(pha_longitudinal_kc, file = "~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
+save(pha_longitudinal, file = "~/data/Housing/OrganizedData/pha_longitudinal.Rdata")
 
 
 ### Clean up remaining data frames

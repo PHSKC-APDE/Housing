@@ -821,7 +821,7 @@ dfsize_head - nrow(pha_cleanadd_sort)
 age_temp <- pha_cleanadd_sort %>%
   distinct(pid, dob_m6, act_date, mbr_num) %>%
   filter(!(is.na(dob_m6) | is.na(act_date))) %>%
-  mutate(dob_m6 = as.Date(dob_m6, format = "%m%d%Y", origin = "1899-12-30")) %>% 
+  mutate(dob_m6 = as.Date(dob_m6, format = "%m%d%Y", origin = "1899-12-30")) %>%
   mutate(age = interval(start = dob_m6, end = act_date) / years(1), 1,
          # Fix up wonky birthdates and recalculate age
          # Negative ages mostly due to incorrect century
@@ -1154,14 +1154,14 @@ sum(pha_cleanadd_sort$truncated, na.rm = T)
 
 
 #### Export drop tracking data ####
-saveRDS(drop_track, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track.Rda")
+save(drop_track, file = "~/data/Housing/OrganizedData/drop_track.Rdata")
 #drop_track <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track.Rda")
 rm(drop_temp)
 rm(drop_track)
 
 #### Save point ####
 pha_cleanadd_sort_dedup <- pha_cleanadd_sort
-saveRDS(pha_cleanadd_sort_dedup, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rda")
+save(pha_cleanadd_sort_dedup, file = "~/data/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rdata")
 
 ### Clean up remaining data frames
 rm(pha_cleanadd)
