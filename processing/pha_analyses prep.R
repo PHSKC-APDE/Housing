@@ -127,6 +127,9 @@ rm(zips)
 save(pha_longitudinal_kc, file = "~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
 save(pha_longitudinal, file = "~/data/Housing/OrganizedData/pha_longitudinal.Rdata")
 
+write.csv(pha_longitudinal_kc, "~/data/Housing/OrganizedData/pha_longitudinal_kc.csv")
+write.csv(pha_longitudinal, "~/data/Housing/OrganizedData/pha_longitudinal.csv")
+
 
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)
