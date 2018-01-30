@@ -30,6 +30,7 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(colorout)
 library(housing)
+library(rgdal)
 library(openxlsx) # Used to import/export Excel files
 library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
@@ -107,42 +108,22 @@ pha_longitudinal <- pha_longitudinal %>%
   mutate(gender2 = car::recode(gender_new_m6, "'1' = 'Female'; '2' = 'Male'; else = NA"),
          disability2 = car::recode(disability, "'1' = 'Disabled'; '0' = 'Not disabled'; else = NA"))
 
+### Subset cases in King County
+  ### load King County shapefile
+  king <- readOGR("data/Housing/OrganizedData/Shapefiles", "KingCounty2010_4601")
+  pha_longitudinal_sp <- pha_longitudinal %>% filter(!is.na(X))
+  coordinates(pha_longitudinal_sp) <- ~X+Y
+  proj4string(pha_longitudinal_sp) <- "+proj=longlat +datum=WGS84"
+  king <- spTransform(king, proj4string(pha_longitudinal_sp))
+  pha_longitudinal_kc <- pha_longitudinal_sp[king,] # select points inside King County boundary - takes a long time.
+save(pha_longitudinal_kc, file = "data/Housing/OrganizedData/pha_longitudinal_kc_mid.RData") # midpoint save
 
-### ZIPs to restrict to KC
-# zips <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/ZIP filter for KC.xlsx")
-
-# ==========================================================================
-# Zip file not provided, alternative method below
-# ==========================================================================
-zips <- c(98126,98133,98136,98134,98138,98144,98146,98148,98155,98154,98158,98164,98166,98168,98177,98178,98190,98188,98198,98195,98199,98224,98251,98288,98354,98001,98003,98002,98005,98004,98007,98006,98009,98008,98011,98010,98014,98019,98022,98024,98023,98025,98028,98027,98030,98029,98032,98031,98034,98033,98038,98040,98039,98042,98045,98047,98051,98050,98053,98052,98055,98057,98056,98059,98058,98068,98065,98070,98072,98075,98074,98077,98083,98092,98101,98103,98102,98105,98104,98107,98106,98109,98108,98112,98115,98114,98117,98116,98119,98118,98122,98121,98125)
-
-zip2 <- c(98001,98001,98001,98002,98003,98003,98004,98004,98004,98004,98004,98005,98006,98007,98008,98009,98010,98011,98013,98013,98014,98015,98019,98022,98023,98023,98024,98025,98027,98028,98028,98029,98030,98031,98032,98033,98034,98035,98038,98039,98040,98041,98042,98042,98045,98047,98047,98050,98051,98052,98053,98054,98055,98056,98056,98057,98058,98059,98059,98062,98063,98063,98064,98065,98068,98068,98070,98071,98072,98073,98074,98074,98075,98075,98083,98092,98093,98093,98101,98102,98103,98104,98105,98106,98107,98108,98108,98109,98111,98112,98114,98115,98116,98117,98118,98119,98121,98122,98124,98125,98126,98131,98132,98133,98134,98136,98138,98144,98145,98146,98148,98148,98148,98148,98148,98154,98155,98155,98155,98155,98155,98158,98158,98160,98161,98164,98166,98166,98166,98168,98168,98168,98168,98171,98174,98177,98177,98178,98178,98188,98188,98188,98198,98198,98198,98198,98199,98224,98288) %>% unique()
-
-# ==========================================================================
-# Zip codes cross king county boundaires... need to find a better way to do this
-# Begin fix
-# install sf to pull in King County shapefile to spatially locate points within
-# King County - Need to put in County Shapefile into S3
-# ==========================================================================
-
-    ### install help: https://stackoverflow.com/questions/42287164/install-udunits2-package-for-r3-3
-    library(sf)
-    library(tidycensus)
-    library(tidyverse)
-    options(tigris_use_chache = TRUE) # to cache shapefiles
-
-      racevars <- c(White = "B03002_003",
-                  Black = "B03002_004",
-                  Asian = "B03002_005",
-                Hispanic = "B03002_012")
-
-      king <- get_acs(geography = "county", variables = racevars, survey = "acs5", state = "WA", county = "King County", geometry = TRUE, summary_var = "B03002_001")
-
-pha_longitudinal_kc <- pha_longitudinal %>%
-  mutate(unit_zip_new = as.numeric(unit_zip_new)) %>%
-  filter(unit_zip_new %in% zips)
+# zip <- c(98001,98001,98001,98002,98003,98003,98004,98004,98004,98004,98004,98005,98006,98007,98008,98009,98010,98011,98013,98013,98014,98015,98019,98022,98023,98023,98024,98025,98027,98028,98028,98029,98030,98031,98032,98033,98034,98035,98038,98039,98040,98041,98042,98042,98045,98047,98047,98050,98051,98052,98053,98054,98055,98056,98056,98057,98058,98059,98059,98062,98063,98063,98064,98065,98068,98068,98070,98071,98072,98073,98074,98074,98075,98075,98083,98092,98093,98093,98101,98102,98103,98104,98105,98106,98107,98108,98108,98109,98111,98112,98114,98115,98116,98117,98118,98119,98121,98122,98124,98125,98126,98131,98132,98133,98134,98136,98138,98144,98145,98146,98148,98148,98148,98148,98148,98154,98155,98155,98155,98155,98155,98158,98158,98160,98161,98164,98166,98166,98166,98168,98168,98168,98168,98171,98174,98177,98177,98178,98178,98188,98188,98188,98198,98198,98198,98198,98199,98224,98288) %>% unique()
+  # pha_longitudinal_kc <- pha_longitudinal %>%
+  #   mutate(unit_zip_new = as.numeric(unit_zip_new)) %>%
+  #   filter(unit_zip_new %in% zips)
   # left_join(., zips, by = c("unit_zip_new" = "zip"))
-rm(zips)
+  # rm(zips)
 
 
 #### Save point ####
