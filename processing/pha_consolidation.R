@@ -43,9 +43,10 @@ library(tidyr) # More data manipulation
 # TT Note: (180122) we are going around the geocoding for now
 # ==========================================================================
 # pha_cleanadd <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
-load(file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE_TTtemp.Rdata")
+# load(file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE_TTtemp.Rdata")
+load(file = "data/Housing/OrganizedData/pha_cleanadd_final.Rdata")
 
-pha_cleanadd_sort <- pha_cleanadd_SANSGEOCODE_TTtemp %>% # pha_cleanadd %>%
+pha_cleanadd_sort <- pha_cleanadd %>% # pha_cleanadd %>%
   arrange(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, act_date, agency_new, prog_type)
 
 #### Create key variables ####
