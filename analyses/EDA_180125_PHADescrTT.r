@@ -17,8 +17,9 @@
 	library(tidyverse)
 
 	load("~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
-	pha <- pha_longitudinal_kc %>%
-			mutate(age = )
+	pha <- pha_longitudinal_kc
+	# %>%
+	# 		mutate(age = )
 
 # ==========================================================================
 # Descriptives
