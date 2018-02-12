@@ -17,7 +17,8 @@
 	library(tidyverse)
 
 	load("~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
-	pha <- pha_longitudinal_kc
+	load("~/data/Housing/OrganizedData/pha_longitudinal.Rdata")
+	pha_kc <- pha_longitudinal_kc
 	# %>%
 	# 		mutate(age = )
 
@@ -29,14 +30,14 @@
 	# Notes:
 	# Individuals are distinct by ssn and
 	#
-	glimpse(pha)
+	glimpse(pha_kc)
 
 	### Number of persons, households
-	pha %>% summarise(individuals = n_distinct(pid),
+	pha_kc %>% summarise(individuals = n_distinct(pid),
 					Households = n_distinct(hhold_id_new))
 
 	## by org
-	pha %>% group_by(agency_new) %>% summarise(individuals = n_distinct(pid),
+	pha_kc %>% group_by(agency_new) %>% summarise(individuals = n_distinct(pid),
 					Households = n_distinct(hhold_id_new))
 
 			# 		  Agency individuals Households
@@ -47,13 +48,13 @@
 			# 4		  Both       10382		 3634
 
 	### Mean number of persons in households
-	pha %>% group_by(hhold_id_new) %>% summarise(meanHHsize = mean(hhold_size)) %>% ungroup() %>% summarise(mean(meanHHsize))
+	pha_kc %>% group_by(hhold_id_new) %>% summarise(meanHHsize = mean(hhold_size)) %>% ungroup() %>% summarise(mean(meanHHsize))
 		# 2.3
 
 	###
-	pha %>% select(max_date) %>% arrange(max_date)
+	pha_kc %>% select(max_date) %>% arrange(max_date)
 
-	pha %>%
+	pha_kc %>%
 		ggplot(aes(x="time_pha")) +
 		geom_histogram(stat = "count")
 
@@ -61,7 +62,7 @@
 		30207 + 30634 - 57207
 
 	# sex and race
-		pha %>% group_by(gender2) %>% summarise(n_distinct(pid))
+		pha_kc %>% group_by(gender2) %>% summarise(n_distinct(pid))
 
 			# 		  gender2 `n_distinct(pid)`
 			#     <chr>             <int>
@@ -69,7 +70,7 @@
 			# 2    Male             49192
 			# 3    <NA>             14224
 
-		pha %>% group_by(race2) %>% summarise(n_distinct(pid))
+		pha_kc %>% group_by(race2) %>% summarise(n_distinct(pid))
 
 			# 		          race2 `n_distinct(pid)`
 			#           <chr>             <int>
@@ -81,11 +82,11 @@
 			# 7          <NA>               215
 
 	# Number of children in 2016
-		pha %>% filter(age12<18) %>% summarise(n_distinct(pid)) #48483
-		pha %>% filter(age13<18) %>% summarise(n_distinct(pid)) #46027
-		pha %>% filter(age14<18) %>% summarise(n_distinct(pid)) #43495
-		pha %>% filter(age15<18) %>% summarise(n_distinct(pid)) #40929
-		pha %>% group_by(agency_new) %>% filter(age16<18) %>% summarise(n_distinct(pid)) #38190
+		pha_kc %>% filter(age12<18) %>% summarise(n_distinct(pid)) #48483
+		pha_kc %>% filter(age13<18) %>% summarise(n_distinct(pid)) #46027
+		pha_kc %>% filter(age14<18) %>% summarise(n_distinct(pid)) #43495
+		pha_kc %>% filter(age15<18) %>% summarise(n_distinct(pid)) #40929
+		pha_kc %>% group_by(agency_new) %>% filter(age16<18) %>% summarise(n_distinct(pid)) #38190
 		# 			Agency 			Count
 		# 1       	KCHA             24902
 		# 2           SHA             16597
