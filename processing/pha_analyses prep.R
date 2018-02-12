@@ -22,7 +22,7 @@
 ###############################################################################
 
 rm(list=ls()) #reset
-options(max.print = 900, tibble.print_max = 50, scipen = 999, width = 100)
+options(max.print = 9000, tibble.print_max = 50, scipen = 999, width = 100)
 gc()
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
@@ -109,28 +109,15 @@ pha_longitudinal <- pha_longitudinal %>%
          disability2 = car::recode(disability, "'1' = 'Disabled'; '0' = 'Not disabled'; else = NA"))
 
 ### Subset cases in King County
-  ### load King County shapefile
-  king <- readOGR("data/Housing/OrganizedData/Shapefiles", "KingCounty2010_4601")
-  pha_longitudinal_sp <- pha_longitudinal %>% filter(!is.na(X))
-  coordinates(pha_longitudinal_sp) <- ~X+Y
-  proj4string(pha_longitudinal_sp) <- "+proj=longlat +datum=WGS84"
-  king <- spTransform(king, proj4string(pha_longitudinal_sp))
-  pha_longitudinal_kc <- pha_longitudinal_sp[king,] # select points inside King County boundary - takes a long time.
+  # Note: the following zipcodes are from the US census and overlapping King County.
+  # Some of the zipcodes fall outside of King County proper, but I'm choosing to use
+  # this method as spatial subsets also leave some points outside, meaning a
+  # somewhat unreliable geocoding process.
 
-# save(pha_longitudinal_kc, file = "data/Housing/OrganizedData/pha_longitudinal_kc_mid.RData") # midpoint save
-# load(file = "data/Housing/OrganizedData/pha_longitudinal_kc_mid.RData")
+  zip <- c(98001,98002,98003,98004,98005,98006,98007,98008,98010,98011,98014,98019,98022,98023,98024,98027,98028,98029,98030,98031,98032,98033,98034,98038,98039,98040,98042,98045,98047,98050,98051,98052,98053,98055,98056,98057,98058,98059,98065,98068,98070,98072,98074,98075,98077,98092,98101,98102,98103,98104,98105,98106,98107,98108,98109,98112,98115,98116,98117,98118,98119,98121,98224,98122,98125,98126,98133,98134,98136,98144,98146,98148,98154,98288,98155,98158,98164,98166,98168,98174,98177,98178,98188,98195,98198,98199)
 
-pha_longitudinal_kc <- pha_longitudinal_kc@data
-
-
-zip <- c(98001,98001,98001,98002,98003,98003,98004,98004,98004,98004,98004,98005,98006,98007,98008,98009,98010,98011,98013,98013,98014,98015,98019,98022,98023,98023,98024,98025,98027,98028,98028,98029,98030,98031,98032,98033,98034,98035,98038,98039,98040,98041,98042,98042,98045,98047,98047,98050,98051,98052,98053,98054,98055,98056,98056,98057,98058,98059,98059,98062,98063,98063,98064,98065,98068,98068,98070,98071,98072,98073,98074,98074,98075,98075,98083,98092,98093,98093,98101,98102,98103,98104,98105,98106,98107,98108,98108,98109,98111,98112,98114,98115,98116,98117,98118,98119,98121,98122,98124,98125,98126,98131,98132,98133,98134,98136,98138,98144,98145,98146,98148,98148,98148,98148,98148,98154,98155,98155,98155,98155,98155,98158,98158,98160,98161,98164,98166,98166,98166,98168,98168,98168,98168,98171,98174,98177,98177,98178,98178,98188,98188,98188,98198,98198,98198,98198,98199,98224,98288) %>% unique()
-  pha_longitudinal_kc2 <- pha_longitudinal %>%
-    mutate(unit_zip_new = as.numeric(unit_zip_new)) %>%
-    filter(unit_zip_new %in% zip) %>%
-  left_join(., zip, by = c("unit_zip_new" = "zip"))
-  rm(zips)
-
-### Check differences
+  pha_longitudinal_kc <- pha_longitudinal %>%
+    filter(unit_zip_new %in% zip) #%>% filter(!is.na(X))
 
 #### Save point ####
 save(pha_longitudinal_kc, file = "~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
