@@ -120,7 +120,7 @@ pha_longitudinal <- pha_longitudinal %>%
     filter(unit_zip_new %in% zip) #%>% filter(!is.na(X))
 
 #### Save point ####
-save(pha_longitudinal_kc, pha_longitudinal, file = "~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
+save(pha_longitudinal_kc, file = "~/data/Housing/OrganizedData/pha_longitudinal_kc.Rdata")
 save(pha_longitudinal, file = "~/data/Housing/OrganizedData/pha_longitudinal.Rdata")
 
 write.csv(pha_longitudinal_kc, "~/data/Housing/OrganizedData/pha_longitudinal_kc.csv")
