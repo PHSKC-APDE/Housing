@@ -6,7 +6,7 @@
 # ==========================================================================
 
 	rm(list=ls()) #reset
-	options(max.print = 500, tibble.print_max = 50, scipen = 999, width = 170)
+	options(max.print = 500, tibble.print_max = 50, scipen = 999, width = 100)
 	gc()
 
 # ==========================================================================
