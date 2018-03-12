@@ -25,7 +25,7 @@
 
 #### Set up global parameter and call in libraries ####
 rm(list=ls()) #reset
-options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 100)
+options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 90)
 gc()
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
@@ -190,7 +190,6 @@ pha_new <- pha_complete %>%
   distinct(ssn_new, ssn_c, lname_new_m1, fname_new_m1, mname_new_m1,
            lnamesuf_new_m1, dob_m1, gender_new_m1, .keep_all = TRUE)
 
-
 #### Match #02 - Repeat match 01 but block on HUD ID instead of SSN ####
 match2 <- compare.dedup(
   pha_new, blockfld = c("ssn_c", "lname_trim_m1", "dob_y_m1"),
@@ -326,7 +325,6 @@ match3_tmp <- epiWeights(match3)
 classify3 <- epiClassify(match3_tmp, threshold.upper = 0.38)
 summary(classify3)
 pairs3 <- getPairs(classify3, single.rows = FALSE)
-
 
 # Fix formattings
 pairs3 <- pairs3 %>%
