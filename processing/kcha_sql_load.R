@@ -46,13 +46,6 @@ new_panel_1_fname = "kcha_panel_01_2016.csv"
 new_panel_2_fname = "kcha_panel_02_2016.csv"
 new_panel_3_fname = "kcha_panel_03_2016.csv"
 
-#old_panel_1_fname = "kcha_panel_01_2004-2015_received_2017-03-07.csv"
-#old_panel_2_fname = "kcha_panel_02_2004-2015_received_2017-03-07.csv"
-#old_panel_3_fname = "kcha_panel_03_2004-2015_received_2017-03-07.csv"
-#new_panel_1_fname = "kcha_panel_01_2016_received_2017-05-04.csv"
-#new_panel_2_fname = "kcha_panel_02_2016_received_2017-05-04.csv"
-#new_panel_3_fname = "kcha_panel_03_2016_received_2017-05-04.csv"
-
 
 #####################################
 #### PART 1: RAW DATA PROCESSING ####
@@ -61,16 +54,11 @@ new_panel_3_fname = "kcha_panel_03_2016.csv"
 #### Bring in raw data and combine ####
 ### Bring in data
 kcha_old_p1 <- fread(file=file.path(kcha_path, old_panel_1_fname), stringsAsFactors = FALSE)
-
 kcha_old_p2 <- fread(file=file.path(kcha_path, old_panel_2_fname), stringsAsFactors = FALSE)
-
 kcha_old_p3 <- fread(file=file.path(kcha_path, old_panel_3_fname), stringsAsFactors = FALSE)
-
 kcha_new_p1 <- fread(file=file.path(kcha_path, new_panel_1_fname), stringsAsFactors = FALSE)
-
 kcha_new_p2 <- fread(file=file.path(kcha_path, new_panel_2_fname), stringsAsFactors = FALSE)
-
-kcha_new_p3 <- fread(file=file.path(kcha_path,new_panel_3_fname), stringsAsFactors = FALSE)
+kcha_new_p3 <- fread(file=file.path(kcha_path, new_panel_3_fname), stringsAsFactors = FALSE)
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
 kcha_old_p1 <- kcha_old_p1 %>% distinct()
@@ -126,18 +114,6 @@ kcha_new_full <- kcha_new_full %>%
 kcha <- bind_rows(kcha_old_full, kcha_new_full)
 
 
-#### Load to SQL server ####
-# May need to delete table first
-#sqlDrop(db.apde51, "dbo.kcha_combined_raw")
-#sqlSave(db.apde51, kcha, tablename = "dbo.kcha_combined_raw",
-#        varTypes = c(
-#          h2b = "Date",
-#          h2h = "Date",
-#          h3e01 = "Date", h3e02 = "Date", h3e03 = "Date", h3e04 = "Date", h3e05 = "Date", h3e06 = "Date",
-#          h3e07 = "Date", h3e08 = "Date", h3e09 = "Date", h3e10 = "Date", h3e11 = "Date", h3e12 = "Date"
-#        ))
-
-
 #### Remove temporary files ####
 rm(list = ls(pattern = "kcha_old"))
 rm(list = ls(pattern = "kcha_new"))
@@ -169,7 +145,8 @@ kcha <- kcha %>% distinct()
 kcha <- mutate_at(kcha, vars(starts_with("h19b")), funs(str_trim(.)))
 
 # Next take most complete income data
-# (sometimes h19h is missing when h19g is not, unclear if this is always true for h19d and h19f, which add up to h19g and h19h, respectively)
+# (sometimes h19h is missing when h19g is not, unclear if this is
+# always true for h19d and h19f, which add up to h19g and h19h, respectively)
 kcha <- kcha %>%
   mutate(
     h19f01 = ifelse(is.na(h19f01) & !is.na(h19d01), h19d01, h19f01),
@@ -455,40 +432,11 @@ kcha_long <- kcha_long %>%
   select(-property_name.x, -property_name.y)
 
 
-### HCV (currently being done after join with SHA and address cleanup)
-# Bring in data and rename variables
-# kcha_dev_adds <- fread(file = paste0(path, "/Original data/Development Addresses_received_2017-07-21.csv"), stringsAsFactors = FALSE)
-# kcha_dev_adds <- setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
-#
-# # Drop spare rows and deduplicate
-# # Note that only three rows (plus rows used for merging) are being kept for now.
-# # If all rows are used later, deduplication is still required.
-# kcha_dev_adds <- kcha_dev_adds %>% select(dev_add_apt, dev_city, property_name, portfolio, property_type)
-# kcha_dev_adds <- kcha_dev_adds %>% distinct()
-#
-# kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
-
-
-# TEMP SAVE POINT
-# dir.create("~/data/Housing/OrganizedData",recursive = T)
-save(kcha_long, file = "~/data/Housing/OrganizedData/kcha_long.Rdata")
-load(file = "~/data/Housing/OrganizedData/kcha_long.Rdata")
-# saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
-# kcha_long <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
-
-##### WRITE RESHAPED DATA TO SQL #####
-#sqlDrop(db.apde51, "dbo.kcha_reshaped")
-#sqlSave(
-#  db.apde51,
-#  kcha_long,
-#  tablename = "dbo.kcha_reshaped",
-#  varTypes = c(
-#    act_date = "Date",
-#    admit_date = "Date",
-#    dob = "Date",
-#    hh_dob = "Date"
-#  )
-#)
+# Create the directory if it does not yet exist:
+dir.create("~/data/Housing/OrganizedData", recursive = T)
+# Save output
+save(kcha_long, file = "~/data/Housing/OrganizedData/kcha_long.RData")
+load(file = "~/data/Housing/OrganizedData/kcha_long.RData")
 
 
 ##### Remove temporary files #####
