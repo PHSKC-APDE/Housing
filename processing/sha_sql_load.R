@@ -36,7 +36,8 @@ library(data.table)
 library(tidyverse) # Used to manipulate data
 
 housing_path <- "~/data"
-sha_path <- file.path(housing_path,"SHA")
+sha_path <- file.path(housing_path, "SHA")
+kcha_path <- file.path(housing_path, "KCHA")
 # db.apde51 <- odbcConnect("PH_APDEStore51")
 
 #### Bring in data ####
@@ -55,12 +56,12 @@ sha2c <- fread(file = file.path(sha_path, "2.c_Assets PublicHousing 2007 to 2012
 sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
 
 # Bring in voucher data
-sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV Voucher Type.xlsx"))
+sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV_Voucher_Type.xlsx"))
 
-sha_prog_codes <- read.xlsx(file.path(sha_path, "Program Codes & Portfolios_November_Updates.xlsx"), 2)
+sha_prog_codes <- read.xlsx(file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(file.path(sha_path, "Program Codes & Portfolios_November_Updates.xlsx"), 1)
+sha_portfolio_codes  <- read.xlsx(file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 1)
 
 
 #### Join data sets together ####
@@ -83,7 +84,7 @@ list2env(df_dedups, .GlobalEnv)
 #### Join PH files ####
 # Get field names to match
 # Bring in variable name mapping table
-fields <- read.xlsx(file.path(sha_path, "Field name mapping.xlsx"),1)
+fields <- read.xlsx(file.path(kcha_path, "Field_name_mapping.xlsx"), 1)
 
 # Clean excel fields
 fields <- fields %>%
