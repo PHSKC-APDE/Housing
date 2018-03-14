@@ -518,19 +518,8 @@ sha <- sha %>%
 # Save to UW space
 # ==========================================================================
 
-# saveRDS(sha, file = "~/data/Housing/OrganizedData/SHA.Rda")
-save(sha, file = "~/data/Housing/OrganizedData/SHA.Rdata")
+save(sha, file = "~/data/Housing/OrganizedData/SHA.RData")
 
-
-##### Load to SQL server #####
-# May need to delete table first
-# sqlDrop(db.apde51, "dbo.sha_combined")
-# sqlSave(db.apde51, sha, tablename = "dbo.sha_combined",
-#         varTypes = c(
-#           act_date = "Date",
-#           admit_date = "Date",
-#           dob = "Date"
-#         ))
 
   # ==========================================================================
   # Load to SQL server code above is for PHA purposes, not UW
