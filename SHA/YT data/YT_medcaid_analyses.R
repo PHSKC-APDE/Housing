@@ -39,10 +39,11 @@ db.apde51 <- odbcConnect("PH_APDEStore51")
 # 16-18) Only time in SHA (+/- YT and SS) and no Medicaid
 # 19) Only time in KCHA and no Medicaid
 
+# This function applies a code to each housing/Medicaid period
 popcode_yt_f <- function(df, year) {
-  pt <- rlang::sym(paste0("pt", quo_name(year)))  
+  pt <- rlang::sym(paste0("pt", quo_name(year)))
   
-  output <- df %>%
+  coded <- df %>%
     filter(!is.na((!!pt))) %>%
     mutate(
       pop_code = case_when(
@@ -65,8 +66,19 @@ popcode_yt_f <- function(df, year) {
         ss == 1 & agency_new == "SHA" & enroll_type == "h" ~ 17,
         yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "h" ~ 18,
         agency_new == "KCHA" & enroll_type == "h" ~ 19
-      )) %>%
-    group_by(mid, pid2) %>%
+      ),
+      year_code = as.numeric(paste0(20, year)))
+  
+  return(coded)
+}
+
+# This function takes the minimum code for a given year, prioritizing YT residence
+# Requires that popcode_yt_f has been run
+popcode_min_f <- function(df, year) {
+  
+  mincode <- df %>%
+    filter(year_code == as.numeric(paste0(20, year))) %>%
+    group_by(pid2) %>%
     mutate(pop_type = min(pop_code)) %>%
     ungroup() %>%
     mutate(
@@ -93,17 +105,51 @@ popcode_yt_f <- function(df, year) {
         pop_type %in% c(2, 7, 12, 17) ~ 1,
         pop_type %in% c(1, 3:6, 8:11, 12:16, 18:19) ~ 0
       )
-    ) %>%
-    distinct(year, mid, pid2, agency, enroll_type, dual, yt, ss) %>%
-    select(year, mid, pid2, agency, enroll_type, dual, yt, ss)
+    )
+  
+    return(mincode)
+}
+
+# This function keeps one code per person per year
+popcode_sum_f <- function(df, year, demogs = F) {
+  pt <- rlang::sym(paste0("pt", quo_name(year)))  
+  
+  coded <- popcode_yt_f(df, year)
+  output <- popcode_min_f(coded, year)
+  
+  if (demogs == F) {
+    output <- output %>%
+      distinct(year, mid, pid2, agency, enroll_type, dual, yt, ss) %>%
+      # Adding select to get the right order
+      select(year, mid, pid2, agency, enroll_type, dual, yt, ss)
+  } else if (demogs == T) {
+    output <- output %>%
+      # Keep demographics associated with enrollment type
+      filter(pop_type == pop_code) %>%
+      distinct(year, mid, pid2, agency, enroll_type, dual, yt, ss,
+               gender_c, race_c, hisp_c, 
+               age12, age13, age14, age15, age16, age17,
+               length12, length13, length14, length15, length16, length17) %>%
+      # Adding select to get the right order
+      select(year, mid, pid2, agency, enroll_type, dual, yt, ss,
+             gender_c, race_c, hisp_c, 
+             age12, age13, age14, age15, age16, age17,
+             length12, length13, length14, length15, length16, length17) %>%
+      # Keep first row if >1 different demographics for that year
+      group_by(pid2, year) %>%
+      slice(1) %>%
+      ungroup()
+  }
   
   return(output)
   
 }
 
+# This function counts the population in each PHA/Medicaid grouping
 popcount_all_yt_f <- function(df, year) {
   pt <- rlang::sym(paste0("pt", quo_name(year)))                
   
+  # Make person-time denominator for each grouping
   pt_output <- df %>%
     filter(!is.na((!!pt))) %>%
     group_by(agency_new, enroll_type, dual_elig_m, yt, ss) %>%
@@ -125,58 +171,11 @@ popcount_all_yt_f <- function(df, year) {
         enroll_type == "m" ~ "Medicaid only")
     )
   
-  pop_output <- df %>%
-    filter(!is.na((!!pt))) %>%
-    mutate(
-      pop_code = case_when(
-        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 1,
-        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 2,
-        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 3,
-        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 4,
-        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "N" ~ 5,
-        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 6,
-        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 7,
-        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 8,
-        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 9,
-        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "Y" ~ 10,
-        yt == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 11,
-        ss == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 12,
-        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 13,
-        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 14,
-        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & is.na(dual_elig_m) ~ 15,
-        yt == 1 & agency_new == "SHA" & enroll_type == "h" ~ 16,
-        ss == 1 & agency_new == "SHA" & enroll_type == "h" ~ 17,
-        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "h" ~ 18,
-        agency_new == "KCHA" & enroll_type == "h" ~ 19
-      )) %>%
-    group_by(pid2) %>%
-    mutate(pop_type = min(pop_code)) %>%
-    ungroup() %>%
-    mutate(
-      year = paste0(20, year),
-      agency = case_when(
-        pop_type %in% c(1:3, 6:8, 11:13, 16:18) ~ "SHA",
-        pop_type %in% c(4, 9, 14, 19) ~ "KCHA",
-        pop_type %in% c(5, 10, 15) ~ "Non-PHA"
-      ),
-      enroll_type = case_when(
-        pop_type %in% c(1:4, 6:9, 11:14) ~ "Both",
-        pop_type %in% c(5, 10, 15) ~ "Medicaid only",
-        pop_type %in% c(16:19) ~ "Housing only"
-      ),
-      dual = case_when(
-        pop_type %in% c(1:5) ~ "N",
-        pop_type %in% c(6:10) ~ "Y"
-      ),
-      yt = case_when(
-        pop_type %in% c(1, 6, 11, 16) ~ 1,
-        pop_type %in% c(2:5, 7:10, 12:15, 17:19) ~ 0
-      ),
-      ss = case_when(
-        pop_type %in% c(2, 7, 12, 17) ~ 1,
-        pop_type %in% c(1, 3:6, 8:11, 12:16, 18:19) ~ 0
-      )
-    ) %>%
+  # 
+  coded <- popcode_yt_f(df, year)
+  pop_output <- popcode_min_f(coded, year)
+  
+  pop_output <- pop_output %>%
     distinct(year, pid2, agency, enroll_type, dual, yt, ss) %>%
     group_by(year, agency, enroll_type, dual, yt, ss) %>%
     summarise(pop = n_distinct(pid2)) %>%
@@ -277,7 +276,18 @@ conditions_lin_nomerge_f <- function(year) {
 ### Bring in linked housing/Medicaid elig data with YT already designated
 yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
 
-### Bring in all predefined conditions
+
+### Acute events
+# ED visits (using broad definition)
+ptm01 <- proc.time() # Times how long this query takes
+ed <- sqlQuery(db.claims51,
+               "SELECT DISTINCT id, from_date from PHClaims.dbo.v_ed_eli
+               WHERE edvisit = 1",
+               stringsAsFactors = F)
+proc.time() - ptm01
+
+### Chronic conditions
+# Bring in all predefined conditions
 ptm01 <- proc.time() # Times how long this query takes (~115 secs)
 conditions <- sqlQuery(db.apde51,
                        "SELECT * FROM PH_APDEStore.dbo.vcond_all",
@@ -290,7 +300,7 @@ conditions <- lapply(seq(2012, 2016), conditions_lin_nomerge_f)
 proc.time() - ptm01
 conditions <- as.data.frame(data.table::rbindlist(conditions))
 
-### Just injuries
+# Just injuries
 inj <- sqlQuery(db.apde51,
                 "SELECT * FROM PH_APDEStore.dbo.vcond_all
                 WHERE INJ = 1",
@@ -349,6 +359,11 @@ yt_pop_enroll <- lapply(seq(12, 16), popcount_all_yt_f, df = yt_elig_final)
 yt_pop_enroll <- as.data.frame(data.table::rbindlist(yt_pop_enroll))
 
 
+# Make simplified version of enrollment
+yt_elig_simple <- lapply(seq(12, 16), popcode_sum_f, df = yt_elig_final, demogs = T)
+yt_elig_simple <- as.data.frame(data.table::rbindlist(yt_elig_simple))
+
+
 #### ACUTE EVENTS ####
 ### Join demographics and hospitalization events
 yt_elig_hosp <- left_join(yt_elig_final, hosp,
@@ -368,6 +383,15 @@ yt_hosp_cnt <- as.data.frame(data.table::rbindlist(yt_hosp_cnt)) %>%
 yt_elig_ed <- left_join(yt_elig_final, ed,
                          by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
   mutate_at(vars(ed_cnt, ed_pers, ed_avoid), funs(ifelse(is.na(.), 0, .)))
+
+
+yt_elig_ed <- left_join(yt_elig_final, ed, by = c("mid" = "id")) %>%
+  mutate(from_date = ifelse(from_date < startdate_c | from_date > enddate_o, NA, from_date),
+         from_date = as.Date(from_date, origin = "1970-01-01")) %>%
+  filter(is.na(from_date) | (from_date >= startdate_c & from_date <= enddate_o)) %>%
+  distinct()
+yt_elig_ed <- yt_elig_ed %>% mutate(ed_year = year(from_date))
+
 
 # Run numbers for ED
 yt_ed_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_pers)
