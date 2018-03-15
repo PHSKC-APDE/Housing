@@ -20,10 +20,14 @@ library(ggplot2) # Used to plot data
 ##### Connect to the SQL servers #####
 db.claims51 <- odbcConnect("PHClaims51")
 
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+
 
 ##### BRING IN DATA #####
+pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))
+
 ### Bring in linked housing/Medicaid elig data with YT already designated
-yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
+#yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
 
 
 ### Bring in asthma visit data

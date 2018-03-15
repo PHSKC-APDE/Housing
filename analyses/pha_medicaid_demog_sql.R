@@ -73,10 +73,10 @@ agecode_f <- function(df, x) {
   df %>%
     mutate(!!varname := case_when(
       (!!col) < 18 ~ 11,
-      between((!!col), 18, 24) ~ 12,
-      between((!!col), 25, 44) ~ 13,
-      between((!!col), 45, 61) ~ 14,
-      between((!!col), 62, 64) ~ 15,
+      between((!!col), 18, 24.99) ~ 12,
+      between((!!col), 25, 44.99) ~ 13,
+      between((!!col), 45, 61.99) ~ 14,
+      between((!!col), 62, 64.99) ~ 15,
       (!!col) >= 65 ~ 16,
       is.na((!!col)) ~ 99
     )
@@ -97,9 +97,9 @@ lencode_f <- function(df, x) {
   varname <- paste(quo_name(col), "num", sep = "_")
   df %>%
     mutate(!!varname := case_when(
-      (!!col) <= 5 ~ 81,
-      between((!!col), 6, 10) ~ 82,
-      (!!col) > 10 ~ 83,
+      (!!col) < 3 ~ 81,
+      between((!!col), 3, 5.99) ~ 82,
+      (!!col) >= 6 ~ 83,
       is.na((!!col)) ~ 99
     )
     )
@@ -195,7 +195,7 @@ pha_elig_sql <- pha_elig_sql %>%
 #### Reorganize data ####
 ### Restrict to just the columns needed
 pha_elig_sql <- pha_elig_sql %>%
-  select(mid, pid2, enroll_type, dual_elig_m, agency_new, 
+  select(mid, pid2, startdate_c, enddate_c, enroll_type, dual_elig_m, agency_new, 
          age12:age17, length12:length17, race_c, hisp_c,
          gender_c, dob_c, disability_h, 
          vouch_type_final, portfolio_final, subsidy_type, operator_type,
@@ -206,15 +206,26 @@ pha_elig_sql <- pha_elig_sql %>%
          pt12:pt16) %>%
   # Need to remove some rows that only have 2017 data (as pt17 not curerently calculated)
   # Remove this filter once pt17 is made
-  filter(!(is.na(pt12) & is.na(pt13) & is.na(pt14) & is.na(pt14) & is.na(pt16))) %>%
+  filter(!(is.na(pt12) & is.na(pt13) & is.na(pt14) & is.na(pt15) & is.na(pt16))) %>%
   distinct()
+
+### Recode a few things that need to be fixed up
+pha_elig_sql <- pha_elig_sql %>%
+  mutate(ethn_num = ifelse(is.na(ethn_num), 48, ethn_num),
+         portfolio_num = ifelse(is.na(portfolio_num), 99, portfolio_num)) %>%
+  mutate_at(vars(age12_num, age13_num, age14_num, age15_num, age16_num, age17_num,
+                 length12_num, length13_num, length14_num, length15_num,
+                 length16_num, length17_num),
+            funs(ifelse(is.na(.), 99, .)))
 
 
 #### Load to SQL ####
 # May need to delete table first
-#sqlDrop(db.apde51, "dbo.pha_mcaid_demogs")
+sqlDrop(db.apde51, "dbo.pha_mcaid_demogs")
 ptm01 <- proc.time() # Times how long this query takes
 sqlSave(db.apde51, pha_elig_sql, tablename = "dbo.pha_mcaid_demogs",
-        varTypes = c(dob_c = "Date"))
+        varTypes = c(startdate_c = "Date",
+                     enddate_c = "Date",
+                     dob_c = "Date"))
 proc.time() - ptm01
 

@@ -12,6 +12,7 @@
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
 library(RODBC) # Used to connect to SQL server
+library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(dplyr) # Used to manipulate data
 library(reshape2) # Used to reshape data
@@ -20,15 +21,289 @@ library(epiR) # Used to calculate rates and other statistical measures
 
 #### Connect to the SQL servers ####
 db.claims51 <- odbcConnect("PHClaims51")
+db.apde51 <- odbcConnect("PH_APDEStore51")
 
 
-##### BRING IN DATA #####
+#### FUNCTIONS ####
+# Function to count population and person-time by agency and YT/SS
+# Person-time counted where the person was
+# Population counted with the following priorities 
+# (#1-5 assume simultaneous Medicaid enrollment and not dual eligible):
+# 1) At least 30 days at YT that year = YT
+# 2) No YT but 30+ days at SS that year = SS
+# 3) No YT or SS but in SHA for 30+ days = SHA
+# 4) Not YT/SS/SHA but in KCHA for 30+ days = KCHA
+# 5) No 30+ days in any PHA = non-PHA Medicaid
+# 6-10) Same as #1-5 but only dual eligible
+# 11-15) Same as #1-5 but dual eligible is NA
+# 16-18) Only time in SHA (+/- YT and SS) and no Medicaid
+# 19) Only time in KCHA and no Medicaid
+
+popcode_yt_f <- function(df, year) {
+  pt <- rlang::sym(paste0("pt", quo_name(year)))  
+  
+  output <- df %>%
+    filter(!is.na((!!pt))) %>%
+    mutate(
+      pop_code = case_when(
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 1,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 2,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 3,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 4,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "N" ~ 5,
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 6,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 7,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 8,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 9,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "Y" ~ 10,
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 11,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 12,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 13,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 14,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & is.na(dual_elig_m) ~ 15,
+        yt == 1 & agency_new == "SHA" & enroll_type == "h" ~ 16,
+        ss == 1 & agency_new == "SHA" & enroll_type == "h" ~ 17,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "h" ~ 18,
+        agency_new == "KCHA" & enroll_type == "h" ~ 19
+      )) %>%
+    group_by(mid, pid2) %>%
+    mutate(pop_type = min(pop_code)) %>%
+    ungroup() %>%
+    mutate(
+      year = as.numeric(paste0(20, year)),
+      agency = case_when(
+        pop_type %in% c(1:3, 6:8, 11:13, 16:18) ~ "SHA",
+        pop_type %in% c(4, 9, 14, 19) ~ "KCHA",
+        pop_type %in% c(5, 10, 15) ~ "Non-PHA"
+      ),
+      enroll_type = case_when(
+        pop_type %in% c(1:4, 6:9, 11:14) ~ "Both",
+        pop_type %in% c(5, 10, 15) ~ "Medicaid only",
+        pop_type %in% c(16:19) ~ "Housing only"
+      ),
+      dual = case_when(
+        pop_type %in% c(1:5) ~ "N",
+        pop_type %in% c(6:10) ~ "Y"
+      ),
+      yt = case_when(
+        pop_type %in% c(1, 6, 11, 16) ~ 1,
+        pop_type %in% c(2:5, 7:10, 12:15, 17:19) ~ 0
+      ),
+      ss = case_when(
+        pop_type %in% c(2, 7, 12, 17) ~ 1,
+        pop_type %in% c(1, 3:6, 8:11, 12:16, 18:19) ~ 0
+      )
+    ) %>%
+    distinct(year, mid, pid2, agency, enroll_type, dual, yt, ss) %>%
+    select(year, mid, pid2, agency, enroll_type, dual, yt, ss)
+  
+  return(output)
+  
+}
+
+popcount_all_yt_f <- function(df, year) {
+  pt <- rlang::sym(paste0("pt", quo_name(year)))                
+  
+  pt_output <- df %>%
+    filter(!is.na((!!pt))) %>%
+    group_by(agency_new, enroll_type, dual_elig_m, yt, ss) %>%
+    summarise(pt = sum((!!pt))) %>%
+    ungroup() %>%
+    mutate(year = as.numeric(paste0(20, year)),
+           pt = case_when(
+             year %in% c(2012, 2016) ~ pt/366,
+             year %in% c(2013:2015) ~ pt/365
+           )
+           ) %>%
+    rename(agency = agency_new, dual = dual_elig_m) %>%
+    select(year, agency, enroll_type, dual, yt, ss, pt) %>%
+    mutate(
+      agency = ifelse(is.na(agency), "Non-PHA", agency),
+      enroll_type = case_when(
+        enroll_type == "b" ~ "Both",
+        enroll_type == "h" ~ "Housing only",
+        enroll_type == "m" ~ "Medicaid only")
+    )
+  
+  pop_output <- df %>%
+    filter(!is.na((!!pt))) %>%
+    mutate(
+      pop_code = case_when(
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 1,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 2,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 3,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "N" ~ 4,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "N" ~ 5,
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 6,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 7,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 8,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & dual_elig_m == "Y" ~ 9,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & dual_elig_m == "Y" ~ 10,
+        yt == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 11,
+        ss == 1 & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 12,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 13,
+        yt == 0 & ss == 0 & agency_new == "KCHA" & enroll_type == "b" & !!pt >= 30 & is.na(dual_elig_m) ~ 14,
+        yt == 0 & ss == 0 & is.na(agency_new) & enroll_type == "m" & is.na(dual_elig_m) ~ 15,
+        yt == 1 & agency_new == "SHA" & enroll_type == "h" ~ 16,
+        ss == 1 & agency_new == "SHA" & enroll_type == "h" ~ 17,
+        yt == 0 & ss == 0 & agency_new == "SHA" & enroll_type == "h" ~ 18,
+        agency_new == "KCHA" & enroll_type == "h" ~ 19
+      )) %>%
+    group_by(pid2) %>%
+    mutate(pop_type = min(pop_code)) %>%
+    ungroup() %>%
+    mutate(
+      year = paste0(20, year),
+      agency = case_when(
+        pop_type %in% c(1:3, 6:8, 11:13, 16:18) ~ "SHA",
+        pop_type %in% c(4, 9, 14, 19) ~ "KCHA",
+        pop_type %in% c(5, 10, 15) ~ "Non-PHA"
+      ),
+      enroll_type = case_when(
+        pop_type %in% c(1:4, 6:9, 11:14) ~ "Both",
+        pop_type %in% c(5, 10, 15) ~ "Medicaid only",
+        pop_type %in% c(16:19) ~ "Housing only"
+      ),
+      dual = case_when(
+        pop_type %in% c(1:5) ~ "N",
+        pop_type %in% c(6:10) ~ "Y"
+      ),
+      yt = case_when(
+        pop_type %in% c(1, 6, 11, 16) ~ 1,
+        pop_type %in% c(2:5, 7:10, 12:15, 17:19) ~ 0
+      ),
+      ss = case_when(
+        pop_type %in% c(2, 7, 12, 17) ~ 1,
+        pop_type %in% c(1, 3:6, 8:11, 12:16, 18:19) ~ 0
+      )
+    ) %>%
+    distinct(year, pid2, agency, enroll_type, dual, yt, ss) %>%
+    group_by(year, agency, enroll_type, dual, yt, ss) %>%
+    summarise(pop = n_distinct(pid2)) %>%
+    ungroup()
+
+  output <- left_join(pt_output, pop_output, 
+                      by = c("year", "agency", "enroll_type",
+                             "dual", "yt", "ss"))
+  
+  return(output)
+}
+
+
+### Function to summarize acute events by YT/not YT
+eventcount_yt_f <- function(df, event = NULL, year) {
+  
+  event_quo <- enquo(event)
+  
+  if (str_detect(quo_name(event_quo), "hosp")) {
+    event_year <- quo(hosp_year)
+  } else if (str_detect(quo_name(event_quo), "ed")) {
+    event_year <- quo(ed_year)
+  } else if (str_detect(quo_name(event_quo), "inj")) {
+    event_year <- quo(inj_year)
+  }
+  
+  output <- df %>%
+    filter((!!event_year) == as.numeric(paste0(20, year)) | is.na((!!event_year)))  %>%
+    group_by(agency_new, enroll_type, dual_elig_m, yt, ss) %>%
+    summarise(count = sum(!!event_quo)) %>%
+    ungroup() %>%
+    mutate(year = as.numeric(paste0(20, year))) %>%
+    select(year, agency_new, enroll_type, dual_elig_m, yt, ss, count) %>%
+    rename(agency = agency_new, dual = dual_elig_m) %>%
+    mutate(agency = ifelse(is.na(agency), "Non-PHA", agency),
+           enroll_type = case_when(
+             enroll_type == "b" ~ "Both",
+             enroll_type == "h" ~ "Housing only",
+             enroll_type == "m" ~ "Medicaid only")
+    )
+  return(output)
+}
+
+### Lin's definition of chronic diseases
+# Does not merge with pop data in SQL but brings everything in per ID
+conditions_lin_nomerge_f <- function(year) {
+  
+  query <- paste0(
+    "SELECT ID,
+    CASE WHEN HTN1 > 0 OR HTN2 > 1 THEN 1 ELSE 0 END AS HTN,
+    CASE WHEN DIA1 > 0 OR DIA2 > 1 THEN 1 ELSE 0 END AS DIA,
+    CASE WHEN AST1 > 0 OR AST2 > 1 THEN 1 ELSE 0 END AS AST,
+    CASE WHEN COP1 > 0 OR COP2 > 1 THEN 1 ELSE 0 END AS COP,
+    CASE WHEN IHD1 > 0 OR IHD2 > 1 THEN 1 ELSE 0 END AS IHD,
+    CASE WHEN DEP > 0 THEN 1 ELSE 0 END AS DEP,
+    CASE WHEN MEN > 0 THEN 1 ELSE 0 END AS MEN
+    FROM 
+    (SELECT DISTINCT ID, SUM(HTN1) AS HTN1, SUM(HTN2) AS HTN2,
+    SUM(DIA1) AS DIA1, SUM(DIA2) AS DIA2, SUM(DEP) AS DEP,
+    SUM(AST1) AS AST1, SUM(AST2) AS AST2, SUM(MEN) AS MEN,
+    SUM(COP1) AS COP1, SUM(COP2) AS COP2
+    FROM
+    (SELECT ID,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND HTN>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS HTN1,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND HTN>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS HTN2,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND AST>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS AST1,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND AST>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS AST2,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND COP>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS COP1,
+    CASE WHEN YEAR(FR_SDT) = ", year, 
+    " AND COP>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS COP2,
+    CASE WHEN YEAR(FR_SDT) = ", year, " AND DEP>0 THEN 1 ELSE 0 END AS DEP,
+    CASE WHEN YEAR(FR_SDT) = ", year, " AND MEN>0 THEN 1 ELSE 0 END AS MEN,
+    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
+    AND DIA > 0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS DIA1,
+    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
+    AND DIA > 0 AND CLMT IN(3,26,27,28,34)  THEN 1 ELSE 0 END AS DIA2,
+    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
+    AND IHD > 0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS IHD1,
+    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
+    AND IHD > 0 AND CLMT IN(3,26,27,28,34)  THEN 1 ELSE 0 END AS IHD2
+    FROM [PH\\SONGL].[tCond_all]
+    WHERE YEAR(FR_SDT) <= ", year, ") a
+    GROUP BY ID) b
+    ")
+  
+  output <- sqlQuery(db.apde51, query, stringsAsFactors = FALSE)
+  output <- mutate(output, cond_year = as.numeric(year))
+  return(output)
+}
+
+
+#### BRING IN DATA ####
 ### Bring in linked housing/Medicaid elig data with YT already designated
 yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
 
+### Bring in all predefined conditions
+ptm01 <- proc.time() # Times how long this query takes (~115 secs)
+conditions <- sqlQuery(db.apde51,
+                       "SELECT * FROM PH_APDEStore.dbo.vcond_all",
+                       stringsAsFactors = FALSE)
+proc.time() - ptm01
+conditions <- conditions %>% mutate(FR_SDT = as.Date(FR_SDT, origin = "1970-01-01"))
+
+ptm01 <- proc.time() # Times how long this query takes (~125 secs)
+conditions <- lapply(seq(2012, 2016), conditions_lin_nomerge_f)
+proc.time() - ptm01
+conditions <- as.data.frame(data.table::rbindlist(conditions))
+
+### Just injuries
+inj <- sqlQuery(db.apde51,
+                "SELECT * FROM PH_APDEStore.dbo.vcond_all
+                WHERE INJ = 1",
+                stringsAsFactors = FALSE)
+inj <- inj %>%
+  select(ID, FR_SDT, INJ) %>%
+  rename(mid = ID, fr_sdt = FR_SDT, inj = INJ) %>%
+  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
 
 
 
+
+#### OLD MEDICAID CODE ####
 ### Bring in ED visit data
 ptm01 <- proc.time() # Times how long this query takes (~65 secs)
 ed <- sqlQuery(db.claims51,
@@ -63,9 +338,205 @@ asthma <- sqlQuery(db.claims51,
                stringsAsFactors = FALSE)
 proc.time() - ptm01
 asthma <- asthma %>%  mutate_at(vars(ast_from, ast_to), funs(as.Date(., origin = "1970-01-01")))
-
+#### END OLD MEDICAID CODE ####
 
 #### END BRING IN DATA SECITON ####
+
+
+#### POPULATION DATA ####
+# Need to count up person time by agency, yt and ss
+yt_pop_enroll <- lapply(seq(12, 16), popcount_all_yt_f, df = yt_elig_final)
+yt_pop_enroll <- as.data.frame(data.table::rbindlist(yt_pop_enroll))
+
+
+#### ACUTE EVENTS ####
+### Join demographics and hospitalization events
+yt_elig_hosp <- left_join(yt_elig_final, hosp,
+                           by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
+  mutate_at(vars(hosp_cnt, hosp_pers), funs(ifelse(is.na(.), 0, .)))
+
+# Run numbers for hospitalizations
+yt_hosp_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_hosp, event = hosp_pers)
+yt_hosp_pers <- as.data.frame(data.table::rbindlist(yt_hosp_pers)) %>%
+  mutate(indicator = "Persons with hospitalization")
+yt_hosp_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_hosp, event = hosp_cnt)
+yt_hosp_cnt <- as.data.frame(data.table::rbindlist(yt_hosp_cnt)) %>%
+  mutate(indicator = "Hospitalizations")
+
+
+### Join demographics and ED events
+yt_elig_ed <- left_join(yt_elig_final, ed,
+                         by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
+  mutate_at(vars(ed_cnt, ed_pers, ed_avoid), funs(ifelse(is.na(.), 0, .)))
+
+# Run numbers for ED
+yt_ed_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_pers)
+yt_ed_pers <- as.data.frame(data.table::rbindlist(yt_ed_pers)) %>%
+  mutate(indicator = "Persons with ED visits")
+yt_ed_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_cnt)
+yt_ed_cnt <- as.data.frame(data.table::rbindlist(yt_ed_cnt)) %>%
+  mutate(indicator = "ED visits")
+yt_ed_avoid <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_avoid)
+yt_ed_avoid <- as.data.frame(data.table::rbindlist(yt_ed_avoid)) %>%
+  mutate(indicator = "Avoidable ED visits")
+
+
+### Join demographics and injury events
+yt_elig_inj <- left_join(yt_elig_final, inj, by = "mid") %>%
+  filter(is.na(fr_sdt) | (fr_sdt >= startdate_c & fr_sdt <= enddate_c))
+# Set things up to count by demographics
+yt_elig_inj <- yt_elig_inj %>%
+  mutate(inj_year = year(fr_sdt),
+         inj = ifelse(is.na(inj), 0, inj))
+yt_elig_inj <- yt_elig_inj %>%
+  group_by(mid, pid2, startdate_c, enddate_c, inj_year) %>%
+  mutate(inj_cnt = sum(inj)) %>%
+  ungroup() %>%
+  select(-fr_sdt) %>%
+  distinct()
+
+# Run numbers for injuries
+yt_inj_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_inj, event = inj_cnt)
+yt_inj_cnt <- as.data.frame(data.table::rbindlist(yt_inj_cnt)) %>%
+  mutate(indicator = "Unintentional injuries")
+
+
+### Clean up files to save memory
+rm(yt_elig_hosp)
+rm(yt_elig_ed)
+rm(yt_elig_inj)
+gc()
+
+
+#### CHRONIC CONDITIONS ####
+# Allocate each person for each year
+yt_elig_pop <- lapply(seq(12, 16), popcode_yt_f, df = yt_elig_final)
+yt_elig_pop <- as.data.frame(data.table::rbindlist(yt_elig_pop))
+
+yt_conditions_elig <- left_join(yt_elig_pop, conditions, 
+                             by = c("year" = "cond_year", "mid" = "ID")) %>%
+  mutate_at(vars(HTN, DIA, AST, COP, IHD, DEP, MEN, INJ),
+            funs(ifelse(is.na(.), 0, .)))
+
+# Reshape to get indicator in a single column
+yt_conditions_elig <- melt(yt_conditions_elig,
+                       id.vars = c("year", "mid", "pid2", "agency", 
+                                   "enroll_type", "dual", "yt", "ss"),
+                       variable.name = "indicator", value.name = "count")
+
+# Relabel with text descriptions
+yt_conditions_elig <- yt_conditions_elig %>%
+  mutate(
+    indicator = case_when(
+      indicator == "HTN" ~ "Hypertension",
+      indicator == "AST" ~ "Asthma",
+      indicator == "DIA" ~ "Diabetes",
+      indicator == "DEP" ~ "Depression",
+      indicator == "MEN" ~ "Mental health conditions",
+      indicator == "COP" ~ "COPD",
+      indicator == "IHD" ~ "IHD"
+    )
+  )
+
+# Summarise data
+yt_conditions <- conditions_elig %>%
+  group_by(year, agency, enroll_type, dual, yt, ss, indicator) %>%
+  summarise(count = sum(count)) %>%
+  ungroup()
+
+
+#### COMBINE DATA AND EXPORT ####
+yt_health_events <- bind_rows(yt_hosp_pers, yt_hosp_cnt, yt_ed_pers, 
+                              yt_ed_cnt, yt_ed_avoid, yt_inj_cnt, yt_conditions) %>%
+  select(year, indicator, agency, enroll_type, dual, yt, ss, count)
+
+
+list_dfs <- list("pop" = yt_pop_enroll, "tabdata" = yt_health_events)
+write.xlsx(list_dfs, paste0(housing_path, "/OrganizedData/Summaries/YT/yt_claims_tableau_", Sys.Date(), ".xlsx"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### DEFINE CONDITIONS ####
+# Line level filter
+ast <- conditions %>% filter(AST == 1) %>% 
+  select(ID, FR_SDT, AST) %>%
+  rename(mid = ID, fr_sdt = FR_SDT, ast = AST) %>%
+  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
+
+inj <- conditions %>% filter(INJ == 1) %>% 
+  select(ID, FR_SDT, INJ) %>%
+  rename(mid = ID, fr_sdt = FR_SDT, inj = INJ) %>%
+  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
+
+htn <- conditions %>% filter(HTN == 1) %>% 
+  select(ID, FR_SDT, HTN) %>%
+  rename(mid = ID, fr_sdt = FR_SDT, htn = HTN) %>%
+  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
+
+ptm01 <- proc.time() # Times how long this query takes (~115 secs)
+ed <- sqlQuery(db.claims51,
+               "SELECT * FROM
+               (SELECT DISTINCT a.ID, a.FR_SDT, a.DX1, SUM(DTH) AS DTH, SUM(MEN) AS MEN
+                 FROM
+                 (SELECT MEDICAID_RECIPIENT_ID AS ID 
+                   ,CLM_TYPE_CID
+                   ,CONVERT(DECIMAL(12,2), PAID_AMT_H) AS PAID_AMT
+                   ,FR_SDT=convert(varchar(10), FROM_SRVC_DATE,1)
+                   ,PRIMARY_DIAGNOSIS_CODE AS DX1
+                   ,CASE WHEN PATIENT_STATUS_DESC LIKE '%hospital%' THEN 1 ELSE 0 END AS DTH
+                   ,CASE WHEN PRIMARY_DIAGNOSIS_CODE BETWEEN '290' AND '316' 
+                   OR PRIMARY_DIAGNOSIS_CODE LIKE 'F03' 
+                   OR PRIMARY_DIAGNOSIS_CODE BETWEEN 'F10' AND 'F69'
+                   OR PRIMARY_DIAGNOSIS_CODE BETWEEN 'F80' AND 'F99' THEN 1 ELSE 0 END AS MEN
+                   FROM PHClaims.dbo.NewClaims
+                   WHERE CLM_TYPE_CID IN(3,26,34) AND
+                   (REVENUE_CODE LIKE '045[01269]' OR REVENUE_CODE LIKE '0981' OR LINE_PRCDR_CODE LIKE '9928[1-5]' 
+                     OR (PLACE_OF_SERVICE LIKE '%23%' AND LINE_PRCDR_CODE BETWEEN '10021' AND '69990'))) a
+                 GROUP BY ID, FR_SDT, DX1) b
+               WHERE DTH=0 AND MEN=0
+               GROUP BY ID, FR_SDT, DX1, DTH, MEN
+               ORDER BY ID",
+               stringsAsFactors = FALSE)
+proc.time() - ptm01
+
+ed <- ed %>%
+  rename(mid = ID, ed_from = FR_SDT) %>%
+  mutate(ed = 1) %>%
+  select(mid, ed_from, ed)
+
+
+# Sum by year
+ast_yr <- conditions %>% filter(AST == 1) %>%
+  mutate(year = year(as.Date(FR_SDT, origin = "1970-01-01"))) %>%
+  group_by(ID, year) %>%
+  summarise(count = sum(AST, na.rm = T)) %>%
+  ungroup()
+
+inj_yr <- conditions %>% filter(INJ == 1) %>%
+  mutate(year = year(as.Date(FR_SDT, origin = "1970-01-01"))) %>%
+  group_by(ID, year) %>%
+  summarise(count = sum(INJ, na.rm = T)) %>%
+  ungroup()
+
+htn_yr <- conditions %>% filter(HTN == 1) %>%
+  mutate(year = year(as.Date(FR_SDT, origin = "1970-01-01"))) %>%
+  group_by(ID, year) %>%
+  summarise(count = sum(HTN, na.rm = T)) %>%
+  ungroup()
 
 #### SET UP A YT/SCATTERED SITES ONLY FILE ####
 # This section is used to created a specific dataset of people who have lived in Yesler Terrace or a scattered site
@@ -122,9 +593,42 @@ yt_ss_joined <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedD
 
 
 #### JOIN PHA/ELIG TABLE WITH CLAIMS ####
+# Set up interval for enrollment
+yt_elig_final <- yt_elig_final %>%
+  mutate(int_c = interval(startdate_c, enddate_c))
+
+pha_ast <- left_join(yt_elig_final, ast, by = "mid") %>%
+  # Remove visits that fall outside of enrollment period
+  filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
+  #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
+  distinct()
+
+pha_inj <- left_join(yt_elig_final, inj, by = "mid") %>%
+  # Remove visits that fall outside of enrollment period
+  filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
+  #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
+  distinct()
+
+pha_htn <- left_join(yt_elig_final, htn, by = "mid") %>%
+  # Remove visits that fall outside of enrollment period
+  filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
+  #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
+  distinct()
+
 yt_claims_ed <- left_join(yt_elig_final, ed, by = "mid") %>%
+  # Remove visits that fall outside of enrollment period
+  mutate_at(vars(ed_from, ed), funs(ifelse(ed_from >= startdate_c & ed_from <= enddate_c, ., NA))) %>%
   # Make year of service var
-  mutate(ed_year = year(ed_from))
+  mutate(ed_year = year(ed_from)) %>%
+  distinct()
+
+
+
+
+
+
+
+
 
 
 yt_claims_asthma <- left_join(yt_elig_final, asthma, by = "mid") %>%
@@ -166,13 +670,14 @@ yt_claims <- yt_claims %>%
 
 
 # Collapse to count of the number of ED visits per period of overlapping housing/Medicaid coverage
-ed_sum_tmp <- yt_claims %>%
+ed_sum_tmp <- yt_claims_ed %>%
   filter(!is.na(ed_from)) %>%
   distinct(pid2, startdate_c, ed_year, dual_elig_m, ed_from) %>%
   group_by(pid2, startdate_c, ed_year, dual_elig_m) %>%
   summarise(ed_count = n())
 
-yt_claims <- left_join(yt_claims, ed_sum_tmp, by = c("pid2", "startdate_c", "ed_year", "dual_elig_m"))
+yt_claims_ed <- left_join(yt_claims_ed, ed_sum_tmp, by = c("pid2", "startdate_c", "ed_year", "dual_elig_m"))
+rm(ed_sum_tmp)
 
 
 ### ED visits

@@ -28,12 +28,8 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 
 #### Bring in combined PHA/Medicaid data with some demographics already run ####
-pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))
+yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
 
-
-#### Set up key variables ####
-### Yesler Terrace and scattered sites indicators
-yt_elig_final <- yesler(pha_elig_final)
 
 ### Movements within data
 # Use simplified system for describing movement
@@ -50,42 +46,6 @@ yt_elig_final <- yesler(pha_elig_final)
 #   S = SHA scattered site
 #   U = unknown (i.e., new into SHA system, mostly people who only had Medicaid but not PHA coverage)
 #   Y = YT address (old unit)
-
-
-yt_elig_final <- yt_elig_final %>%
-  arrange(pid2, startdate_c, enddate_c) %>%
-  mutate(
-    # First ID the place for that row
-    place = ifelse(is.na(agency_new), "U", 
-                   ifelse(agency_new == "KCHA" & !is.na(agency_new), "K",
-                          ifelse(agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 0, "O",
-                                 ifelse(agency_new == "SHA" & !is.na(agency_new) & yt_old == 1, "Y",
-                                        ifelse(agency_new == "SHA" & !is.na(agency_new) & yt_new == 1, "N",
-                                               ifelse(agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 1, "S", NA)))))),
-    start_type = NA,
-    start_type = ifelse(pid2 != lag(pid2, 1) | is.na(lag(pid2, 1)), paste0("U", place),
-                        ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)), paste0(lag(place, 1), place), start_type)),
-    end_type = NA,
-    end_type = ifelse((pid2 != lead(pid2, 1) | is.na(lead(pid2, 1))) & enddate_c < as.Date("2017-09-15"), paste0(place, "U"),
-                      ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)), paste0(place, lead(place, 1)), end_type))
-  )
-
-
-
-
-#### Output to Excel for use in Tableau ####
-# temp <- yt_elig_final
-# # Strip out identifying variables
-# temp <- temp %>% select(pid, gender_new_m6, race2, adult, senior, disability, DUAL_ELIG, COVERAGE_TYPE_IND, agency_new, 
-#                         startdate_h:enddate_o, startdate_c:enroll_type, yt:age16) %>%
-#   arrange(pid, startdate_c, enddate_c)
-# 
-# 
-# write.xlsx(temp, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/yt_elig_demogs.xlsx")
-
-### Save point
-#saveRDS(yt_elig_final, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
-#yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
 
 
 
@@ -211,7 +171,7 @@ f_phacount(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "rac
 
 
 
-### Summarize for Tableau
+#### Summarize for Tableau ####
 # Monthly
 race_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
 agegrp_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
@@ -256,6 +216,243 @@ rm(list = ls(pattern = "^gender"))
 gc()
 
 
+#### Look at drop off by year ####
+
+# Pull out person time for each year (eventually fold into function below)
+yt12 <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt12) & enroll_type == "b") %>%
+  select(pid2, startdate_c, enddate_c, pt12, yt, enroll_type) %>%
+  # Sum up time in that year
+  group_by(pid2, yt) %>% mutate(pt_t = sum(pt12)) %>% ungroup() %>%
+  select(-startdate_c, -enddate_c, -pt12) %>% distinct()
+
+yt13 <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt13) & enroll_type == "b") %>%
+  select(pid2, startdate_c, enddate_c, pt13, yt, enroll_type) %>%
+  # Sum up time in that year
+  group_by(pid2, yt) %>% mutate(pt_t = sum(pt13)) %>% ungroup() %>%
+  select(-startdate_c, -enddate_c, -pt13) %>% distinct()
+
+yt14 <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt14) & enroll_type == "b" & dual_elig_m == "N") %>%
+  select(pid2, startdate_c, enddate_c, pt14, yt, enroll_type) %>%
+  # Sum up time in that year
+  group_by(pid2, yt) %>% mutate(pt_t = sum(pt14)) %>% ungroup() %>%
+  select(-startdate_c, -enddate_c, -pt14) %>% distinct()
+
+yt15 <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt15) & enroll_type == "b") %>%
+  select(pid2, startdate_c, enddate_c, pt15, yt, enroll_type) %>%
+  # Sum up time in that year
+  group_by(pid2, yt) %>% mutate(pt_t = sum(pt15)) %>% ungroup() %>%
+  select(-startdate_c, -enddate_c, -pt15) %>% distinct()
+
+yt16 <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt16) & enroll_type == "b" & dual_elig_m == "N") %>%
+  select(pid2, startdate_c, enddate_c, pt16, yt, enroll_type) %>%
+  # Sum up time in that year
+  group_by(pid2, yt) %>% mutate(pt_t = sum(pt16)) %>% ungroup() %>%
+  select(-startdate_c, -enddate_c, -pt16) %>% distinct()
+
+
+
+# Make function to show the proportion of people still enrolled after x days
+# Group results by YT (yt = 1) or SS (yt = 0)
+surv_f <- function(df, x) {
+  df %>%
+    group_by(yt) %>%
+    mutate(num = ifelse(pt_t >= x, 1, 0)) %>%
+    summarise(prop = sum(num)/n())
+}
+
+# Set up number of days in a year
+yr_leap <- data.frame(days = rep(1:366, each = 2))
+yr <- data.frame(days = rep(1:365, each = 2))
+
+# Apply function to all years
+surv12 <- cbind(yr_leap, bind_rows(lapply(1:366, surv_f, df = yt12)), year = 2012)
+surv13 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt13)), year = 2013)
+surv14 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt14)), year = 2014)
+surv15 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt15)), year = 2015)
+surv16 <- cbind(yr_leap, bind_rows(lapply(1:366, surv_f, df = yt16)), year = 2016)
+
+# Merge into single df
+surv <- bind_rows(surv12, surv13, surv14, surv15, surv16) %>%
+  mutate(year = as.factor(year),
+         yt = factor(yt, levels = c(0, 1), labels = c("SS", "YT")))
+
+# Plot survival curve
+ggplot(surv, aes(x = days, y = prop)) +
+  geom_line(aes(color = year, group = year)) +
+  scale_colour_brewer(type = "qual") +
+  geom_hline(yintercept = 0.9, linetype = "dashed", color = "#767F8B") +
+  geom_vline(xintercept = 300, linetype = "dashed", color = "#767F8B") +
+  facet_wrap( ~ yt, ncol = 1)
+
+
+### Compare demographics by different cutoff groups
+## 2012
+# Make cutoffs
+yt12 <- yt12 %>%
+  mutate(gt300 = ifelse(pt_t >= 300, 1, 0),
+         gt330 = ifelse(pt_t >= 330, 1, 0))
+yt12_demog <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt12) & enroll_type == "b") %>%
+  select(pid2, yt, race_c, hisp_c, gender_c, age12_h, start_housing) %>%
+  distinct() %>%
+  right_join(., yt12, by = c("pid2", "yt"))
+
+# Counts
+yt12_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(count = n_distinct(pid2))
+yt12_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(count = n_distinct(pid2))
+
+# Age
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 1 & yt12_demog$gt300 == 0], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 1 & yt12_demog$gt300 == 1], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 0 & yt12_demog$gt300 == 0], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 0 & yt12_demog$gt300 == 1], basic = F)
+
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 1 & yt12_demog$gt330 == 0], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 1 & yt12_demog$gt330 == 1], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 0 & yt12_demog$gt330 == 0], basic = F)
+stat.desc(yt12_demog$age12_h[yt12_demog$yt == 0 & yt12_demog$gt330 == 1], basic = F)
+
+# Gender
+yt12_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+yt12_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+
+# Race
+temp <- yt12_demog %>% 
+  group_by(yt, gt300, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+temp <- yt12_demog %>% 
+  group_by(yt, gt330, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+rm(temp)
+
+
+## 2014
+# Make cutoffs
+yt14 <- yt14 %>%
+  mutate(gt300 = ifelse(pt_t >= 300, 1, 0),
+         gt330 = ifelse(pt_t >= 330, 1, 0))
+yt14_demog <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt14) & enroll_type == "b") %>%
+  select(pid2, yt, race_c, hisp_c, gender_c, age14_h, start_housing) %>%
+  distinct() %>%
+  right_join(., yt14, by = c("pid2", "yt"))
+
+# Counts
+yt14_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(count = n_distinct(pid2))
+yt14_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(count = n_distinct(pid2))
+
+# Age
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 1 & yt14_demog$gt300 == 0], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 1 & yt14_demog$gt300 == 1], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 0 & yt14_demog$gt300 == 0], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 0 & yt14_demog$gt300 == 1], basic = F)
+
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 1 & yt14_demog$gt330 == 0], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 1 & yt14_demog$gt330 == 1], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 0 & yt14_demog$gt330 == 0], basic = F)
+stat.desc(yt14_demog$age14_h[yt14_demog$yt == 0 & yt14_demog$gt330 == 1], basic = F)
+
+# Gender
+yt14_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+yt14_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+
+# Race
+temp <- yt14_demog %>% 
+  group_by(yt, gt300, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+temp <- yt14_demog %>% 
+  group_by(yt, gt330, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+rm(temp)
+
+
+## 2016
+# Make cutoffs
+yt16 <- yt16 %>%
+  mutate(gt300 = ifelse(pt_t >= 300, 1, 0),
+         gt330 = ifelse(pt_t >= 330, 1, 0))
+yt16_demog <- yt_elig_final %>%
+  filter((yt == 1 | ss == 1) & !is.na(pt16) & enroll_type == "b") %>%
+  select(pid2, yt, race_c, hisp_c, gender_c, age16_h, start_housing) %>%
+  distinct() %>%
+  right_join(., yt16, by = c("pid2", "yt"))
+
+# Counts
+yt16_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(count = n_distinct(pid2))
+yt16_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(count = n_distinct(pid2))
+
+# Age
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 1 & yt16_demog$gt300 == 0], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 1 & yt16_demog$gt300 == 1], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 0 & yt16_demog$gt300 == 0], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 0 & yt16_demog$gt300 == 1], basic = F)
+
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 1 & yt16_demog$gt330 == 0], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 1 & yt16_demog$gt330 == 1], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 0 & yt16_demog$gt330 == 0], basic = F)
+stat.desc(yt16_demog$age16_h[yt16_demog$yt == 0 & yt16_demog$gt330 == 1], basic = F)
+
+# Gender
+yt16_demog %>% 
+  group_by(yt, gt300) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+yt16_demog %>% 
+  group_by(yt, gt330) %>%
+  summarise(female = 2 - mean(gender_c, na.rm = T))
+
+# Race
+temp <- yt16_demog %>% 
+  group_by(yt, gt300, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+temp <- yt16_demog %>% 
+  group_by(yt, gt330, race_c) %>%
+  summarise(count = n_distinct(pid2)) %>%
+  mutate(total = sum(count, na.rm = T),
+         pct = count / total)
+rm(temp)
+
+
+
+
+
+
+
+#### Mapping ####
 ### Look at location to make geocoding looks ok
 yt_mapdata <- yt_elig_final %>% filter(dec12_h == 1 & yt == 1 & !is.na(X) & !is.na(Y)) %>% mutate(northing = X, easting = Y)
 yt_mapdata2 <- yt_mapdata %>% filter(str_detect(unit_concat, "110 8TH")) %>% select(unit_concat, X, Y) %>% mutate(northing = X, easting = Y)
@@ -271,5 +468,5 @@ mean(yt_mapdata$northing, na.rm = T)
 yt_map <- get_map(location = c(lon = mean(yt_mapdata$easting, na.rm = T), lat = mean(yt_mapdata$northing, na.rm = T)), zoom = 16, crop = T)
 
 ggmap(yt_map) + geom_point(data = as.data.frame(coordinates(yt_mapdata)), aes(x = easting, y = northing))
-  
+
 
