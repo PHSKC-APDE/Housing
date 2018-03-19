@@ -670,9 +670,10 @@ sha <- sha %>%
 save(sha, file = "~/data/Housing/OrganizedData/SHA.RData")
 
 
-  # ==========================================================================
-  # Load to SQL server code above is for PHA purposes, not UW
-  # ==========================================================================
+# ==========================================================================
+# Load to SQL server code above is for PHA purposes, not UW
+# ==========================================================================
+
 ##### Remove temporary files #####
 rm(list = ls(pattern = "sha1"))
 rm(list = ls(pattern = "sha2"))
