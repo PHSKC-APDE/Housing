@@ -37,7 +37,6 @@ library(tidyverse) # Used to manipulate data
 housing_path <- "~/data"
 
 kcha_path = file.path(housing_path, "KCHA")
-db.apde51 <- odbcConnect("PH_APDEStore51")
 
 old_panel_1_fname = "kcha_panel_01.csv"
 old_panel_2_fname = "kcha_panel_02.csv"
@@ -53,12 +52,18 @@ new_panel_3_fname = "kcha_panel_03_2016.csv"
 
 #### Bring in raw data and combine ####
 ### Bring in data
-kcha_old_p1 <- fread(file=file.path(kcha_path, old_panel_1_fname), stringsAsFactors = FALSE)
-kcha_old_p2 <- fread(file=file.path(kcha_path, old_panel_2_fname), stringsAsFactors = FALSE)
-kcha_old_p3 <- fread(file=file.path(kcha_path, old_panel_3_fname), stringsAsFactors = FALSE)
-kcha_new_p1 <- fread(file=file.path(kcha_path, new_panel_1_fname), stringsAsFactors = FALSE)
-kcha_new_p2 <- fread(file=file.path(kcha_path, new_panel_2_fname), stringsAsFactors = FALSE)
-kcha_new_p3 <- fread(file=file.path(kcha_path, new_panel_3_fname), stringsAsFactors = FALSE)
+kcha_old_p1 <- fread(file=file.path(kcha_path, old_panel_1_fname), 
+                     stringsAsFactors = FALSE)
+kcha_old_p2 <- fread(file=file.path(kcha_path, old_panel_2_fname), 
+                     stringsAsFactors = FALSE)
+kcha_old_p3 <- fread(file=file.path(kcha_path, old_panel_3_fname), 
+                     stringsAsFactors = FALSE)
+kcha_new_p1 <- fread(file=file.path(kcha_path, new_panel_1_fname), 
+                     stringsAsFactors = FALSE)
+kcha_new_p2 <- fread(file=file.path(kcha_path, new_panel_2_fname), 
+                     stringsAsFactors = FALSE)
+kcha_new_p3 <- fread(file=file.path(kcha_path, new_panel_3_fname), 
+                     stringsAsFactors = FALSE)
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
 kcha_old_p1 <- kcha_old_p1 %>% distinct()
@@ -68,18 +73,21 @@ kcha_old_p3 <- kcha_old_p3 %>% distinct()
 
 ### Join into a single file for each extract
 kcha_old_full <- list(kcha_old_p1, kcha_old_p2, kcha_old_p3) %>%
-  Reduce(function(dtf1, dtf2) full_join(dtf1, dtf2, by = c("subsidy_id", "h2a", "h2b")), .)
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("subsidy_id", "h2a", "h2b")), .)
 
 kcha_new_full <- list(kcha_new_p1, kcha_new_p2, kcha_new_p3) %>%
-  Reduce(function(dtf1, dtf2) full_join(dtf1, dtf2, by = c("householdid", "certificationid", "h2a", "h2b")), .)
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("householdid", "certificationid", "h2a", "h2b")), .)
 
 
 ### Rename and reformat a few variables to make for easier appending
 # Dates in older data come as integers with dropped leading zeros (and sometimes dropped second zero before the days)
 kcha_old_full <- kcha_old_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
-            funs(as.Date(ifelse(nchar(as.character(.)) == 7, paste0("0", as.character(.)),
-                                ifelse(nchar(as.character(.)) == 6,
+            funs(as.Date(ifelse(nchar(as.character(.)) == 7, 
+            paste0("0", as.character(.)),
+                         ifelse(nchar(as.character(.)) == 6,
                                        paste0("0", str_sub(., 1, 1), "0", str_sub(., 2, 6)),
                                        as.character(.))), "%m%d%Y")))
 
@@ -219,18 +227,26 @@ names <- as.data.frame(names(kcha), stringsAsFactors = FALSE)
 colnames(names) <- c("varname")
 names <- names %>%
   mutate(
-    varname = ifelse(str_detect(varname, "h3k[:digit:]*a"), str_replace(varname, "h3k", "h3k1"), varname),
-    varname = ifelse(str_detect(varname, "h3k[:digit:]*b"), str_replace(varname, "h3k", "h3k2"), varname),
-    varname = ifelse(str_detect(varname, "h3k[:digit:]*c"), str_replace(varname, "h3k", "h3k3"), varname),
-    varname = ifelse(str_detect(varname, "h3k[:digit:]*d"), str_replace(varname, "h3k", "h3k4"), varname),
-    varname = ifelse(str_detect(varname, "h3k[:digit:]*e"), str_replace(varname, "h3k", "h3k5"), varname),
-    varname = ifelse(str_detect(varname, "h19a[1]{1}[ab]+"), str_replace(varname, "h19a", "h19a0"), varname),
-    varname = ifelse(str_detect(varname, "h19a[2-9]+[ab]+"), str_replace(varname, "h19a", "h19a0"), varname),
+    varname = ifelse(str_detect(varname, "h3k[:digit:]*a"), 
+                     str_replace(varname, "h3k", "h3k1"), varname),
+    varname = ifelse(str_detect(varname, "h3k[:digit:]*b"), 
+                     str_replace(varname, "h3k", "h3k2"), varname),
+    varname = ifelse(str_detect(varname, "h3k[:digit:]*c"), 
+                     str_replace(varname, "h3k", "h3k3"), varname),
+    varname = ifelse(str_detect(varname, "h3k[:digit:]*d"), 
+                     str_replace(varname, "h3k", "h3k4"), varname),
+    varname = ifelse(str_detect(varname, "h3k[:digit:]*e"), 
+                     str_replace(varname, "h3k", "h3k5"), varname),
+    varname = ifelse(str_detect(varname, "h19a[1]{1}[ab]+"), 
+                     str_replace(varname, "h19a", "h19a0"), varname),
+    varname = ifelse(str_detect(varname, "h19a[2-9]+[ab]+"), 
+                     str_replace(varname, "h19a", "h19a0"), varname),
     # Trim the final letter
-    varname = ifelse(str_detect(varname, "h3k") | str_detect(varname, "h19a"), str_sub(varname, 1, -2), varname)
+    varname = ifelse(str_detect(varname, "h3k") | str_detect(varname, "h19a"),
+                     str_sub(varname, 1, -2), varname)
   )
-colnames(kcha) <- names[,1]
 
+colnames(kcha) <- names[,1]
 
 # Using an apply process over reshape due to memory issues
 # Make function to save space
@@ -260,18 +276,20 @@ reshape_f <- function(x) {
     mutate(mbr_num = x)
 }
 
-
 # Make empty list and run reshaping function
 sublong <- list()
-members <- c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
+members <- c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", 
+             "11", "12")
 kcha_long <- lapply(members, reshape_f)
 kcha_long <- bind_rows(kcha_long)
 
-# Get rid of white space (focus on variables used to filter first to save memory)
+# Get rid of white space (focus on variables used to filter first to 
+# save memory)
 kcha_long <- kcha_long %>%
   mutate_at(vars(h3a, h3b, h3c, h3n, starts_with("h5a")), funs(str_trim(.)))
 
-# Get rid of empty rows (note: some rows have a SSN but no name or address, others have an address but no name or other details)
+# Get rid of empty rows (note: some rows have a SSN but no name or address, 
+# others have an address but no name or other details)
 kcha_long <- kcha_long %>%
   filter(!((is.na(h3a) |  h3a == 0) & h3b == "" & h3c == "" & h3n == ""))
 
@@ -299,9 +317,9 @@ inc_temp <- kcha_long %>%
 
 # Reshape limited dataset
 inc_temp <- inc_temp %>%
-  gather(key, value, -hhold_id_temp, -mbr_num, -h19b01, -h19b02, -h19b03, -h19b04, -h19b05, -h19b06,
-         -h19b07, -h19b08, -h19b09, -h19b10, -h19b11, -h19b12, -h19b13, -h19b14, -h19b15, -h19b16) %>%
-  filter(!is.na(value))
+  gather(key, value, -hhold_id_temp, -mbr_num, -h19b01, -h19b02, -h19b03, 
+        -h19b04, -h19b05, -h19b06, -h19b07, -h19b08, -h19b09, -h19b10, -h19b11, 
+        -h19b12, -h19b13, -h19b14, -h19b15, -h19b16) %>% filter(!is.na(value))
 
 inc_temp <- inc_temp %>%
   # Filter out NA rows and rows that don't match the member number
@@ -359,7 +377,11 @@ inc_check <- bind_rows(inc_check)
 inc_check <- select(inc_check, hhold_id_temp, mbr_num, grprownum, income00)
 
 ### Merge back with main data
-inc_temp2 <- left_join(inc_temp2, inc_check, by = c("hhold_id_temp", "mbr_num", "grprownum"))
+inc_temp2 <- left_join(inc_temp2, 
+                       inc_check, 
+                       by = c("hhold_id_temp", 
+                              "mbr_num", 
+                              "grprownum"))
 # Set income up and restrict columns
 inc_temp2 <- inc_temp2 %>%
   mutate(
@@ -388,9 +410,10 @@ inc_temp2 <- inc_temp2 %>%
 kcha_long <- left_join(kcha_long, inc_temp2, by = c("hhold_id_temp", "mbr_num"))
 
 ### Remove extraneous columns
-kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificationid, subsidy_id,
-                    h1a:h2h, mbr_num, h3a:h3n, h5a1a:h5a5, developmentname, h5e:h5d, income1:income6,
-                    h20b:h21q, hh_lname:hh_dob, hhold_inc_fixed, hhold_inc_vary, hhold_size)
+kcha_long <- select(kcha_long, program_type, spec_vouch, householdid,
+                    certificationid, subsidy_id,h1a:h2h, mbr_num, h3a:h3n, 
+                    h5a1a:h5a5, developmentname, h5e:h5d, income1:income6, 
+                    h20b:h21q, hh_lname:hh_dob, hhold_inc_fixed, hhold_inc_vary,hhold_size)
 
 
 #### END INCOME REORGANIZATION ####
@@ -402,7 +425,9 @@ kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificat
 # Bring in variable name mapping table
 fields <- read.xlsx(file.path(kcha_path, "Field_name_mapping.xlsx"))
 # Change names
-kcha_long <- data.table::setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- data.table::setnames(kcha_long, 
+                                  fields$PHSKC[match(names(kcha_long), 
+                                  fields$KCHA_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
@@ -410,8 +435,8 @@ kcha_long <- kcha_long %>%
   mutate(
     prog_type = ifelse(prog_type == "P", "PH",
                        ifelse(prog_type == "PR", "PBS8",
-                              ifelse(prog_type %in% c("T", "VO"), "TBS8",
-                                     prog_type))),
+                              ifelse(prog_type %in% c("T", "VO"), 
+                                     "TBS8", prog_type))),
     major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
     property_id = as.numeric(ifelse(str_detect(subsidy_id, "^[0-9]-") == T, str_sub(subsidy_id, 3, 5), NA))
   )
@@ -420,24 +445,29 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property_List_with_Project_Code.xlsx"))
+kcha_portfolio_codes <- read.xlsx(file.path(
+                          kcha_path, "Property_List_with_Project_Code.xlsx"))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
 kcha_long <- kcha_long %>%
-  # There shouldn't be any rows with values in both property_name columns (checked and seems to be the case)
-  mutate(property_name = ifelse(is.na(property_name.y) & !is.na(property_name.x) & property_name.x != "", property_name.x,
-                                ifelse(!is.na(property_name.y), property_name.y, NA))) %>%
+# There shouldn't be any rows with values in both property_name columns 
+# (checked and seems to be the case)
+mutate(property_name = ifelse(is.na(property_name.y) & 
+                              !is.na(property_name.x) & 
+                              property_name.x != "", 
+                              property_name.x, ifelse(!is.na(property_name.y), 
+                                                      property_name.y, NA))) %>%
   select(-property_name.x, -property_name.y)
 
 
 # Create the directory if it does not yet exist:
 dir.create("~/data/Housing/OrganizedData", recursive = T)
+
 # Save output
 save(kcha_long, file = "~/data/Housing/OrganizedData/kcha_long.RData")
 load(file = "~/data/Housing/OrganizedData/kcha_long.RData")
-
 
 ##### Remove temporary files #####
 rm(list = ls(pattern = "inc_"))
