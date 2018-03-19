@@ -353,8 +353,8 @@ rm(adds_specific)
 # # master/processing/pha_geocoding.R
 # # ==========================================================================
 
-#   adds_matched_esri <- read.xlsx("data/Housing/OrganizedData/PHA_addresses_matched_ESRI.xlsx")
-#   adds_matched_goog <- readRDS("data/Housing/OrganizedData/PHA_addresses_matched_google.rds")
+#   adds_matched_esri <- read.xlsx("~/data/Housing/OrganizedData/PHA_addresses_matched_ESRI.xlsx")
+#   adds_matched_goog <- readRDS("~/data/Housing/OrganizedData/PHA_addresses_matched_google.rds")
 
 #   # Join
 #   adds_matched <- left_join(adds_matched_esri, adds_matched_goog, by = c("FID" = "index"))
@@ -392,7 +392,7 @@ rm(adds_specific)
 
 
 #   # Save data for now
-#   save(adds_matched, file= "data/Housing/OrganizedData/PHA_addresses_matched_combined.Rdata")
+#   save(adds_matched, file= "~/data/Housing/OrganizedData/PHA_addresses_matched_combined.RData")
 
 # # ==========================================================================
 # # End Code Addition
@@ -429,7 +429,7 @@ pha_cleanadd <- pha_cleanadd %>%
 
 # HCV
 # Bring in data
-kcha_dev_adds <- read.csv(file = "data/KCHA/Development Addresses_received_2017-07-21.csv", stringsAsFactors = FALSE)
+kcha_dev_adds <- read.csv(file = "~/data/KCHA/Development Addresses_received_2017-07-21.csv", stringsAsFactors = FALSE)
 # Bring in variable name mapping table and rename variables
 fields <- read.xlsx("data/KCHA/Field_name_mapping.xlsx")
 kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
