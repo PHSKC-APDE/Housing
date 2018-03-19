@@ -22,10 +22,7 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
-rm(list=ls()) #reset
-gc()
-options(tibble.print_max = 50, scipen = 999, width = 150)
-  # width adjusts terminal size output, change as needed
+options(tibble.print_max = 50, scipen = 999, width = 150) # width adjusts terminal size output, change as needed
 
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(housing) # contains many useful functions for cleaning
@@ -35,42 +32,125 @@ library(stringr) # Used to manipulate string data
 library(data.table)
 library(tidyverse) # Used to manipulate data
 
-housing_path <- "~/data"
-sha_path <- file.path(housing_path, "SHA")
-kcha_path <- file.path(housing_path, "KCHA")
-# db.apde51 <- odbcConnect("PH_APDEStore51")
-
 #### Bring in data ####
-sha3a_new <- fread(file = file.path(sha_path, "3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha3b_new <- fread(file = file.path(sha_path, "3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha5a_new <- fread(file = file.path(sha_path, "5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha5b_new <- fread(file = file.path(sha_path, "5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha3a_new <- fread(file = 
+  file.path(
+    sha_path, 
+    "3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"),
+  header = T, 
+  strip.white = T, 
+  na.strings = c("NA", " ", ""), 
+  stringsAsFactors = F)
+
+sha3b_new <- fread(file = 
+  file.path(
+    sha_path, "3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), 
+  header = T,
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+
+sha5a_new <- fread(file = 
+  file.path(
+    sha_path,
+     "5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), 
+  header = T,
+  strip.white = T, 
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+
+sha5b_new <- fread(file = 
+  file.path(
+    sha_path, 
+    "5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"),
+  header = T,
+  strip.white = T, 
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
 
 # Bring in suffix corrected SHA data
-sha1a <- fread(file = file.path(sha_path, "1.a_HH PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-05-11.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha1b <- fread(file = file.path(sha_path, "1.b_Income PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha1c <- fread(file = file.path(sha_path, "1.c_Assets PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha2a <- fread(file = file.path(sha_path, "2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha2b <- fread(file = file.path(sha_path, "2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha2c <- fread(file = file.path(sha_path, "2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
-sha4a <- fread(file = file.path(sha_path, "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), header=T,strip.white=T,na.strings= c("NA", " ", ""),stringsAsFactors=F)
+sha1a <- fread(file = 
+  file.path(
+    sha_path,
+    "1.a_HH PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-05-11.csv"),
+  header = T,
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+  
+sha1b <- fread(file = 
+  file.path(
+    sha_path, 
+    "1.b_Income PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), 
+  header = T, 
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+
+sha1c <- fread(file = 
+  file.path(
+    sha_path, 
+    "1.c_Assets PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"),
+  header = T,
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+
+sha2a <- fread(file = 
+  file.path(
+    sha_path, 
+    "2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), 
+  header = T, 
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
+
+sha2b <- fread(file = 
+  file.path(
+    sha_path, 
+    "2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"),
+    header = T,
+    strip.white = T,
+    na.strings = c("NA", " ", ""),
+    stringsAsFactors = F)
+
+sha2c <- fread(file = 
+  file.path(
+    sha_path, 
+    "2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"),
+  header = T,
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors=F)
+
+sha4a <- fread(file = 
+  file.path(
+    sha_path,
+    "4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), 
+  header = T,
+  strip.white = T,
+  na.strings = c("NA", " ", ""),
+  stringsAsFactors = F)
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(file.path(sha_path, "HCV_Voucher_Type.xlsx"))
 
-sha_prog_codes <- read.xlsx(file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 2)
+sha_prog_codes <- read.xlsx(
+  file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 1)
+sha_portfolio_codes  <- read.xlsx(
+  file.path(sha_path, "Program_Codes_AND_Portfolios_November_Updates.xlsx"), 1)
 
 
 #### Join data sets together ####
 
 ### First deduplicate data to avoid extra rows being made when joined
 # Make list of data frames to deduplicate
-dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, sha2b = sha2b, sha2c = sha2c,
-            sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4a = sha4a, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, sha_portfolio_codes = sha_portfolio_codes)
+dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, 
+            sha2b = sha2b, sha2c = sha2c, sha3a_new = sha3a_new, 
+            sha3b_new = sha3b_new, sha4a = sha4a, sha5a_new = sha5a_new, sha5b_new = sha5b_new, sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, 
+            sha_portfolio_codes = sha_portfolio_codes)
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -91,36 +171,88 @@ fields <- fields %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\.\\.\\."," - ",.))) %>%
         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("\\."," ",.)))
 
-fields <- fields %>% mutate(
-    SHA_old=
-    ifelse(grepl("Last Name - 3b  Head", SHA_old), "Last Name - 3b (Head)",
-    ifelse(grepl("First Name - 3c  Head", SHA_old), "First Name - 3c (Head)",
-    ifelse(grepl("Middle Initial - 3d  Head", SHA_old), "Middle Initial - 3d (Head)",
-    ifelse(grepl("Unit Address Number and Street -  5a", SHA_old), "Unit Address(Number and Street) - 5a",
-    ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_old), "Utility Allowance/monthly allowances - 20d",
-    ifelse(grepl("Ceiling Rent Indicator  21q", SHA_old), "Ceiling Rent Indicator- 21q",
-    ifelse(grepl("Race black african american indicator - 3k2", SHA_old), "Race black/african american indicator - 3k2",
-    ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_old),"Race american indian/alaska native indicator - 3k3",
-    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_old), "Race native hawaiin/other pacific islander indicator - 3k5",
-    ifelse(grepl("Flat Subsidy or Inc  based sub - 21a", SHA_old), "Flat Subsidy or Inc. based sub - 21a",
-    ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_old), "Utility Allowance/monthly allowances - 21j",
-    ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_old), "Projected Effective Date of Next Re-Exam - 2i",
-    ifelse(grepl("Number of Household Members - 3t  Head ", SHA_old), "Number of Household Members - 3t (Head)",
-    ifelse(grepl("Increment  The - to the left of the dash", SHA_old), "Increment (The # to the left of the dash)",
-    	SHA_old)))))))))))))),
-    SHA_new_ph=
-    ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), "Projected Effective Date of Next Re-Exam - 2i",
-    ifelse(grepl("Unit Address Number and Street -  5a", SHA_new_ph), "Unit Address(Number and Street) - 5a",
-    ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_new_ph), "Utility Allowance/monthly allowances - 20d",
-    ifelse(grepl("Ceiling Rent Indicator  21q", SHA_new_ph), "Ceiling Rent Indicator- 21q",
-    ifelse(grepl("Race black african american indicator - 3k2", SHA_new_ph), "Race black/african american indicator - 3k2",
-    ifelse(grepl("Race american indian alaska native indicator - 3k3", SHA_new_ph), "Race american indian/alaska native indicator - 3k3",
-    ifelse(grepl("Race native hawaiin other pacific islander indicator - 3k5", SHA_new_ph), "Race native hawaiin/other pacific islander indicator - 3k5",
-    ifelse(grepl("Utility Allowance monthly allowances - 21j", SHA_new_ph), "Utility Allowance/monthly allowances - 21j",
-    ifelse(grepl("Flat Subsidy or Inc  based sub - 21a", SHA_new_ph), "Flat Subsidy or Inc. based sub - 21a",
-    	SHA_new_ph)))))))))
+fields <- fields %>% mutate(SHA_old =
+    ifelse(grepl("Last Name - 3b  Head", SHA_old),  "Last Name - 3b (Head)",
+      ifelse(grepl("First Name - 3c  Head", SHA_old), "First Name - 3c (Head)",
+        ifelse(grepl("Middle Initial - 3d  Head", SHA_old), 
+               "Middle Initial - 3d (Head)",
+          ifelse(grepl("Unit Address Number and Street -  5a", SHA_old),
+                  "Unit Address(Number and Street) - 5a",
+           ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_old), 
+                  "Utility Allowance/monthly allowances - 20d",
+            ifelse(grepl("Ceiling Rent Indicator  21q", SHA_old), 
+                   "Ceiling Rent Indicator- 21q",
+              ifelse(grepl("Race black african american indicator - 3k2", 
+                           SHA_old),
+                    "Race black/african american indicator - 3k2",
+                ifelse(
+                  grepl("Race american indian alaska native indicator - 3k3",
+                       SHA_old),
+                  "Race american indian/alaska native indicator - 3k3",
+                ifelse(
+                  grepl(
+        "Race native hawaiin other pacific islander indicator - 3k5", SHA_old), "Race native hawaiin/other pacific islander indicator - 3k5",
+                  ifelse(grepl("Flat Subsidy or Inc  based sub - 21a", SHA_old),
+                         "Flat Subsidy or Inc. based sub - 21a",
+                    ifelse(grepl("Utility Allowance monthly allowances - 21j", 
+                                 SHA_old), 
+                                 "Utility Allowance/monthly allowances - 21j",
+                   ifelse(grepl(
+                     "Projected Effective Date of Next Re Exam - 2i", SHA_old), "Projected Effective Date of Next Re-Exam - 2i",
+                    ifelse(
+                      grepl("Number of Household Members - 3t  Head ", SHA_old), "Number of Household Members - 3t (Head)",
+                      ifelse(
+                        grepl("Increment  The - to the left of the dash",
+                              SHA_old), 
+                              "Increment (The # to the left of the dash)",
+          	                SHA_old)
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+            SHA_new_ph=
+    ifelse(grepl("Projected Effective Date of Next Re Exam - 2i", SHA_new_ph), 
+           "Projected Effective Date of Next Re-Exam - 2i",
+      ifelse(grepl("Unit Address Number and Street -  5a", SHA_new_ph), 
+             "Unit Address(Number and Street) - 5a",
+        ifelse(grepl("Utility Allowance monthly allowances - 20d", SHA_new_ph), 
+               "Utility Allowance/monthly allowances - 20d",
+          ifelse(grepl("Ceiling Rent Indicator  21q", SHA_new_ph), 
+                "Ceiling Rent Indicator- 21q",
+            ifelse(grepl("Race black african american indicator - 3k2",
+                         SHA_new_ph), 
+                   "Race black/african american indicator - 3k2",
+              ifelse(grepl("Race american indian alaska native indicator - 3k3",
+                           SHA_new_ph), 
+                    "Race american indian/alaska native indicator - 3k3",
+                ifelse(
+          grepl("Race native hawaiin other pacific islander indicator - 3k5", 
+                SHA_new_ph), 
+          "Race native hawaiin/other pacific islander indicator - 3k5",
+                ifelse(
+          grepl("Utility Allowance monthly allowances - 21j", SHA_new_ph),
+          "Utility Allowance/monthly allowances - 21j",
+                ifelse(
+          grepl("Flat Subsidy or Inc  based sub - 21a", SHA_new_ph), 
+          "Flat Subsidy or Inc. based sub - 21a", SHA_new_ph)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     )
-
 fields %>% select(SHA_old, SHA_new_ph, PHSKC)
 
 #
@@ -145,8 +277,7 @@ sha3a_new <- sha3a_new %>%
   mutate(property_id = as.character(property_id),
          act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
          mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
-         r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
-  )
+         r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp)))
 
 ### Clean shifted columns ###
 # rename v9 to "Anticipated income - 18e"
@@ -154,17 +285,20 @@ sha3a_new <- sha3a_new %>%
 
 # Add suffix columns to sha1a
 	sha1a.fix <- sha1a %>%
-	  	filter(V56!="") %>%
-	  	mutate(v57="", hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
-	  	select(-hh_fname, -mname)
-	names(sha1a.fix) <- names(sha1a)
-	sha1a.fix <- sha1a.fix %>%
-		select(incasset_id:hh_lname,hh_lnamesuf=56,hh_fname:lname,lnamesuf=57, fname:55)
+    filter(V56!="") %>%
+      mutate(v57="", hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
+  	  	select(-hh_fname, -mname)
+	
+  names(sha1a.fix) <- names(sha1a)
+	  sha1a.fix <- sha1a.fix %>%
+		  select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, 
+            lnamesuf = 57, fname:55)
 
 	sha1a.good <-
 	  sha1a %>% filter(V56=="") %>%
 	  			mutate(hh_lnamesuf="", lnamesuf="") %>%
-	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf, fname:fhh_ssn, -V56)
+  	  			select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf,
+                   fname:fhh_ssn, -V56)
 
 	sha1a <- rbind(sha1a.good,sha1a.fix) %>%
 			 mutate(mbr_num=as.integer(mbr_num),
@@ -175,12 +309,14 @@ sha3a_new <- sha3a_new %>%
 # Combine rogue names sha1c
 	sha1c.good <- sha1c %>%
 		filter(is.na(V5)) %>%
-		select(-V5) %>%
-		mutate(asset_val=as.numeric(asset_val))
-	sha1c.fix <- sha1c %>%
+  		select(-V5) %>%
+	    	mutate(asset_val=as.numeric(asset_val))
+	
+  sha1c.fix <- sha1c %>%
 		filter(!is.na(V5)) %>%
-		mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
-		select(-3)
+	  	mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
+		    select(-3)
+
 	names(sha1c.fix) <- names(sha1c.good)
 
 	sha1c <- rbind(sha1c.good,sha1c.fix)
@@ -188,58 +324,71 @@ sha3a_new <- sha3a_new %>%
 # Add suffix columns sha2a
 	sha2a.good <- sha2a %>%
 		filter(V57=="") %>%
-		rename(hh_lnamesuf=V57, lnamesuf=V58) %>%
-		mutate(lnamesuf="") %>%
-		select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, lnamesuf,fname:fhh_ssn)
+	  	rename(hh_lnamesuf=V57, lnamesuf=V58) %>%
+    		mutate(lnamesuf="") %>%
+    		select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, 
+               lnamesuf,fname:fhh_ssn)
 
 	sha2a.fix1 <-
 		sha2a %>%
-		filter(V57!="", is.na(V58)) %>%
-		mutate(lnamesuf=fname, hh_lnamesuf="") %>%
-		select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, lnamesuf, mname:V57)
+  		filter(V57!="", is.na(V58)) %>%
+	    	mutate(lnamesuf=fname, hh_lnamesuf="") %>%
+    		select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, 
+               lnamesuf, mname:V57)
+
 	names(sha2a.fix1) <- names(sha2a.good)
 
 	sha2a.fix2 <-
 		sha2a %>% filter(!is.na(V58)) %>%
-		mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
-		select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, lnamesuf, dob:V58)
+  		mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
+	    	select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, 
+               lnamesuf, dob:V58)
+
 	names(sha2a.fix2) <- names(sha2a.good)
 
 	sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2)
   sha2a <- sha2a %>%
        rename(hhold_size=hh_hhold_num) %>%
-			 mutate(mbr_num=as.integer(mbr_num),
-              unit_zip=as.numeric(unit_zip),
-              rent_tenant=as.numeric(rent_tenant),
-              hhold_size=as.numeric(hhold_size),
-              inc_adj=as.numeric(inc_adj),
-              r_hisp=as.numeric(r_hisp),
-              ph_rent_ceiling=ifelse(ph_rent_ceiling=="N", NA, ph_rent_ceiling)) %>%
-			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
+  			 mutate(mbr_num=as.integer(mbr_num),
+                unit_zip=as.numeric(unit_zip),
+                rent_tenant=as.numeric(rent_tenant),
+                hhold_size=as.numeric(hhold_size),
+                inc_adj=as.numeric(inc_adj),
+                r_hisp=as.numeric(r_hisp),
+                ph_rent_ceiling=ifelse(ph_rent_ceiling=="N",
+                                       NA, ph_rent_ceiling)) %>%
+    			 mutate(ph_rent_ceiling=as.integer(ph_rent_ceiling))
 
 # Combine rogue names sha2c
 	sha2c.good <-
 		sha2c %>%
-		filter(is.na(V5)) %>%
-		select(-V5)
+		  filter(is.na(V5)) %>%
+    		select(-V5)
 
 	sha2c.fix <-
 		sha2c %>%
-		filter(!is.na(V5)) %>%
-		mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
-		select(-asset_val)
+		  filter(!is.na(V5)) %>%
+		    mutate(asset_type=paste(asset_type,asset_val,sep=" ")) %>%
+      		select(-asset_val)
+
 	names(sha2c.fix) <- names(sha2c.good)
 
 	sha2c <- rbind(sha2c.good,sha2c.fix) %>%
-           mutate(asset_val=as.numeric(asset_val))
+             mutate(asset_val=as.numeric(asset_val))
 
 
 # Join household, income, and asset tables
-sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha1 <- left_join(sha1a, sha1b, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+
 sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
-sha2 <- left_join(sha2a, sha2b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha2 <- left_join(sha2a, sha2b, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+
 sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
-sha3 <- left_join(sha3a_new, sha3b_new, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+
+sha3 <- left_join(sha3a_new, sha3b_new, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 
 # Add source field to track where each row came from
 sha1 <- sha1 %>% mutate(sha_source = "sha1")

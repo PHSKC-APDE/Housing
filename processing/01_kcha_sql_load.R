@@ -22,8 +22,6 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
-rm(list=ls()) #reset
-options(max.print = 350, tibble.print_max = 50, scipen = 999, width = 100)
 
 library(colorout)
 library(housing) # contains many useful functions for cleaning
@@ -33,10 +31,6 @@ library(stringr) # Used to manipulate string data
 library(data.table)
 library(colorout) # for colorizing output in Mac terminal devtools::install_github("jalvesaq/colorout")
 library(tidyverse) # Used to manipulate data
-
-housing_path <- "~/data"
-
-kcha_path = file.path(housing_path, "KCHA")
 
 old_panel_1_fname = "kcha_panel_01.csv"
 old_panel_2_fname = "kcha_panel_02.csv"
