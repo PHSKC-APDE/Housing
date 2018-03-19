@@ -66,8 +66,9 @@ pha_cleanadd <- pha_recoded %>%
 ### Specific addresses
 # Some addresses have specific issues than cannot be addressed via rules
 # However, these specific addresses should not be shared publically
-adds_specific <- read.xlsx("~/data/Housing/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
-                           na.strings = "")
+adds_specific <- read.xlsx(
+	      "~/data/Housing/OrganizedData/PHA_specific_addresses_fix.xlsx",
+              na.strings = "")
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
 
@@ -486,7 +487,7 @@ pha_cleanadd <- pha_cleanadd %>%
 
 
 #### Save point ####
-save(pha_cleanadd, file = "data/Housing/OrganizedData/pha_cleanadd_final.Rdata")
+save(pha_cleanadd, file = "data/Housing/OrganizedData/pha_cleanadd_final.RData")
 
 rm(fields)
 rm(secondary)
