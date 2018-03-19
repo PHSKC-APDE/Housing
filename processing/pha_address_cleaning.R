@@ -403,7 +403,7 @@ rm(adds_specific)
 # ==========================================================================
 
 # Bring in data
-load("data/Housing/OrganizedData/PHA_addresses_matched_combined.Rdata")
+load("~/data/Housing/OrganizedData/PHA_addresses_matched_combined.RData")
 adds_matched <- adds_matched %>% mutate(unit_zip_new = as.numeric(unit_zip_new))
 
 # Merge data
