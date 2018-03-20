@@ -42,9 +42,7 @@ library(tidyr) # More data manipulation
 # ==========================================================================
 # TT Note: (180122) we are going around the geocoding for now
 # ==========================================================================
-# pha_cleanadd <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
-# load(file = "data/Housing/OrganizedData/pha_cleanadd_SANSGEOCODE_TTtemp.Rdata")
-load(file = "data/Housing/OrganizedData/pha_cleanadd_final.Rdata")
+load(file = "~/data/Housing/OrganizedData/pha_cleanadd_final.RData")
 
 pha_cleanadd_sort <- pha_cleanadd %>% # pha_cleanadd %>%
   arrange(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, act_date, agency_new, prog_type)
@@ -109,10 +107,10 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 #### Merge with KCHA EOP data - TEMPORARY MEASURE ####
 # Some of the KCHA end of participation data is missing from the original extract
 # Bring it in here and append. Eventually, move this step to the KCHA SQL load.
-kcha_eop <- read.xlsx("~/data/KCHA/EOP Certifications_received_2017-10-05.xlsx")
+kcha_eop <- read.xlsx("~/data/KCHA/EOP_Certifications_received_2017-10-05.xlsx")
 # Bring in variable name mapping table
 # (file is also here: https://github.com/PHSKC-APDE/Housing/blob/master/processing/Field%20name%20mapping.xlsx)
-fields <- read.xlsx("data/KCHA/Field_name_mapping.xlsx")
+fields <- read.xlsx("~/data/KCHA/Field_name_mapping.xlsx")
 kcha_eop <- data.table::setnames(kcha_eop, fields$PHSKC[match(names(kcha_eop), fields$KCHA_eop)])
 # Fix up variable types
 kcha_eop <- kcha_eop %>%
@@ -577,8 +575,8 @@ dfsize_head - nrow(pha_cleanadd_sort)
 
 
 #### Save point ####
-save(pha_cleanadd_sort, file = "data/Housing/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rdata")
-save(drop_track, file = "data/Housing/OrganizedData/drop_track_mid-consolidation.Rda")
+save(pha_cleanadd_sort, file = "~/data/Housing/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rdata")
+save(drop_track, file = "~/data/Housing/OrganizedData/drop_track_mid-consolidation.Rda")
 # pha_cleanadd_sort <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
 # drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
 

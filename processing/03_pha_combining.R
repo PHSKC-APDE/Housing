@@ -47,8 +47,8 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 #                       stringsAsFactors = FALSE)
 
 #### Fix up variable formats ####
-load(file = "~/data/Housing/OrganizedData/kcha_long.Rdata")
-load(file = "~/data/Housing/OrganizedData/SHA.Rdata")
+load(file = "~/data/Housing/OrganizedData/kcha_long.RData")
+load(file = "~/data/Housing/OrganizedData/SHA.RData")
 
 sha <- date_ymd_f(sha, act_date, admit_date, dob) # mutate dates
 
