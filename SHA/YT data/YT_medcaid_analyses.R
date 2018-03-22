@@ -380,17 +380,31 @@ yt_hosp_cnt <- as.data.frame(data.table::rbindlist(yt_hosp_cnt)) %>%
 
 
 ### Join demographics and ED events
-yt_elig_ed <- left_join(yt_elig_final, ed,
-                         by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
-  mutate_at(vars(ed_cnt, ed_pers, ed_avoid), funs(ifelse(is.na(.), 0, .)))
+# yt_elig_ed <- left_join(yt_elig_final, ed,
+#                          by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
+#   mutate_at(vars(ed_cnt, ed_pers, ed_avoid), funs(ifelse(is.na(.), 0, .)))
 
 
 yt_elig_ed <- left_join(yt_elig_final, ed, by = c("mid" = "id")) %>%
-  mutate(from_date = ifelse(from_date < startdate_c | from_date > enddate_o, NA, from_date),
-         from_date = as.Date(from_date, origin = "1970-01-01")) %>%
-  filter(is.na(from_date) | (from_date >= startdate_c & from_date <= enddate_o)) %>%
+  mutate(
+    from_date = ifelse(from_date < startdate_c | from_date > enddate_c, NA, from_date),
+    from_date = as.Date(from_date, origin = "1970-01-01")
+    ) %>%
+  filter(is.na(from_date) | (from_date >= startdate_c & from_date <= enddate_c)) %>%
   distinct()
+
 yt_elig_ed <- yt_elig_ed %>% mutate(ed_year = year(from_date))
+
+# The code above creates rows with NA in the same period when there are ED visits
+# Need to strip out the NAs
+yt_ed_cnt <- yt_elig_ed %>%
+  filter(!is.na(ed_year)) %>%
+  group_by(pid2, startdate_c, ed_year) %>%
+  summarise(ed_cnt = n()) %>%
+  ungroup()
+
+yt_elig_ed <- left_join(yt_elig_ed, yt_ed_cnt, by = c("pid2", "startdate_c", "ed_year")) %>%
+  filter(!(is.na(ed_year) & ed_cnt > 0) | (is.na(ed_year) & is.na(ed_cnt)))
 
 
 # Run numbers for ED
