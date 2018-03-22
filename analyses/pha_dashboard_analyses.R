@@ -156,38 +156,146 @@ popcount_f <- function(df, demog, year) {
 }
 
 # Function to count up populations by ZIP code
-# Currently not grouping on agency but only keeping people in both housing
-# and Medicaid (not dual eligible)
-popcount_zip_f <- function(df, year) {
+# Currently only grouping on agency, non-PHA Medicaid ZIPs are not available
+popcount_zip_f <- function(df, year, agency = TRUE) {
   pt <- rlang::sym(paste0("pt", quo_name(year)))
   
-  output <- df %>%
-    filter(!is.na((!!pt)) & dual_elig_m == "N" & enroll_type == "b") %>%
-    group_by(unit_zip_h) %>%
-    summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
-    mutate(year = paste0(20, year),
-           group = "General pop") %>%
-    rename(zipcode = unit_zip_h) %>%
-    select (year, group, zipcode, pop, pt)
+  if (agency == TRUE) {
+    output <- df %>%
+      filter(!is.na((!!pt)) & dual_elig_m == "N" & enroll_type == "b") %>%
+      group_by(agency_new, unit_zip_h) %>%
+      summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
+      mutate(year = paste0(20, year),
+             group = "General pop") %>%
+      rename(zipcode = unit_zip_h,
+             agency = agency_new) %>%
+      select (year, agency, group, zipcode, pop, pt)
+    }
+  
+  if (agency == FALSE) {
+    output <- df %>%
+      filter(!is.na((!!pt)) & dual_elig_m == "N" & enroll_type == "b") %>%
+      group_by(unit_zip_h) %>%
+      summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
+      mutate(year = paste0(20, year),
+             group = "General pop",
+             agency_new = "KCHA and SHA combined") %>%
+      rename(zipcode = unit_zip_h,
+             agency = agency_new) %>%
+      select (year, agency, group, zipcode, pop, pt)
+    }
   
   return(output)
 }
-popcount_zip_wc_f <- function(df, year) {
+
+popcount_zip_wc_f <- function(df, year, agency = TRUE) {
   pt <- rlang::sym(paste0("pt", quo_name(year)))
   agex <- rlang::sym(paste0("age", quo_name(year)))
   
-  output <- df %>%
-    mutate(agegp = ifelse((!!agex) >= 3 & (!!agex) <= 6, 1, 0)) %>%
-    filter(!is.na((!!pt)) & agegp == 1 & dual_elig_m == "N" & enroll_type == "b") %>%
-    group_by(unit_zip_h) %>%
-    summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
-    mutate(year = paste0(20, year),
-           group = "Well child") %>%
-    rename(zipcode = unit_zip_h) %>%
-    select (year, group, zipcode, pop, pt)
+  if (agency == TRUE) {
+    output <- df %>%
+      mutate(agegp = ifelse((!!agex) >= 3 & (!!agex) <= 6, 1, 0)) %>%
+      filter(!is.na((!!pt)) & agegp == 1 & dual_elig_m == "N" & enroll_type == "b") %>%
+      group_by(agency_new, unit_zip_h) %>%
+      summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
+      mutate(year = paste0(20, year),
+             group = "Well child") %>%
+      rename(zipcode = unit_zip_h,
+             agency = agency_new) %>%
+      select (year, agency, group, zipcode, pop, pt)
+    }
+  
+  if (agency == FALSE) {
+    output <- df %>%
+      mutate(agegp = ifelse((!!agex) >= 3 & (!!agex) <= 6, 1, 0)) %>%
+      filter(!is.na((!!pt)) & agegp == 1 & dual_elig_m == "N" & enroll_type == "b") %>%
+      group_by(unit_zip_h) %>%
+      summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
+      mutate(year = paste0(20, year),
+             group = "Well child",
+             agency_new = "KCHA and SHA combined") %>%
+      rename(zipcode = unit_zip_h,
+             agency = agency_new) %>%
+      select (year, agency, group, zipcode, pop, pt)
+    }
   
   return(output)
 }
+
+popcount_zip_lin_f <- function(year, agency = TRUE) {
+  
+  if (agency == TRUE) {
+    query <- paste0(
+      "SELECT HZIP, AGENCY, COUNT(*) AS pop_lin
+      FROM dbo.tmp_hapop_", year, "
+      WHERE DUAL = 12 AND ENRTYPE = 'b 
+      GROUP BY HZIP, AGENCY"
+      )
+    
+    output <- sqlQuery(db.apde51, query, stringsAsFactors = FALSE)
+    output <- output %>%
+      mutate(year = year,
+             group = "General pop") %>%
+      rename(agency = AGENCY,
+             zipcode = HZIP) %>%
+      select(year, agency, group, zipcode, pop_lin)
+  }
+  
+  if (agency == FALSE) {
+    query <- paste0(
+      "SELECT HZIP, COUNT(*) AS pop_lin
+      FROM dbo.tmp_hapop_", year, "
+      WHERE DUAL = 12 AND ENRTYPE = 'b 
+      GROUP BY HZIP"
+    )
+    
+  output <- sqlQuery(db.apde51, query, stringsAsFactors = FALSE)
+  output <- output %>%
+    mutate(year = year,
+           group = "General pop",
+           agency = "KCHA and SHA combined") %>%
+    rename(zipcode = HZIP) %>%
+    select(year, agency, group, zipcode, pop_lin)
+  }
+ 
+  return(output) 
+}
+
+# Function to suppress combined population/numerator count if the one of the two
+# groups is below the threshold and could be deduced
+# Needs to be applied to df that has both combined and agency-specific data
+pop_suppress_f <- function(df,
+                           agency = agency,
+                           combined = "KCHA and SHA combined",
+                           group_var = c("year", "group", "zipcode"),
+                           pop = pop,
+                           threshold = 5) {
+  
+  # Convert the variable to quosures etc.
+  pop_quo <- enquo(pop)
+  pop_name <- quo_name(pop_quo)
+  agency_quo <- enquo(agency)
+  grouping_vars <- rlang::syms(group_var)
+
+  # First flag any rows that should be suppressed
+  output <- df %>%
+    mutate(suppress = ifelse((!!pop_quo) > 0 & (!!pop_quo) < threshold, 1, 0)) %>%
+    # Then apply to the entire group
+    group_by(!!!grouping_vars) %>%
+    mutate(suppress2 = max(suppress, na.rm = T)) %>%
+    ungroup() %>%
+    # Suppress agency and combined data if one agency is suppressed
+    mutate(!!pop_name := case_when(
+      (!!agency_quo) == combined & suppress2 == 1 ~ NA_integer_,
+      suppress == 1 ~ NA_integer_,
+      TRUE ~ as.integer(!!pop_quo)
+    )) %>%
+    arrange(year, group, zipcode, agency, pop) %>%
+    select(-suppress2)
+  
+  return(output)
+}
+
 
 ### Lin's version of hospitalizations and ED visits ###
 hosp_lin_f <- function(year) {
@@ -331,8 +439,7 @@ eventcount_f <- function(df, event = NULL, number = TRUE, year) {
 }
 
 # Count number of events by ZIP code
-# Currently not grouping on agency but only keeping people in both housing
-# and Medicaid (not dual eligible)
+# Currently only grouping on agency, non-PHA Medicaid ZIPs are not available
 eventcount_zip_f <- function(df, event = NULL, year) {
   
   event_quo <- enquo(event)
@@ -348,11 +455,11 @@ eventcount_zip_f <- function(df, event = NULL, year) {
   output <- df %>%
     filter(((!!event_year) == as.numeric(paste0(20, year)) | is.na((!!event_year))) &
              dual_elig_m == "N" & enroll_type == "b")  %>%
-    group_by(unit_zip_h) %>%
+    group_by(agency_new, unit_zip_h) %>%
     summarise(count = sum(!!event_quo)) %>%
     ungroup() %>%
     mutate(year = as.numeric(paste0(20, year))) %>%
-    select(year, unit_zip_h, count) %>%
+    select(year, agency_new, unit_zip_h, count) %>%
     rename(zipcode = unit_zip_h)
   return(output)
 }
@@ -364,6 +471,10 @@ pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_f
 pha_elig_sql <- sqlQuery(db.apde51,
                          "SELECT * FROM dbo.pha_mcaid_demogs",
                          stringsAsFactors = FALSE)
+# Fix up date formats
+pha_elig_sql <- pha_elig_sql %>%
+  mutate(startdate_c = as.Date(startdate_c, origin = "1970-01-01"),
+         enddate_c = as.Date(enddate_c, origin = "1970-01-01"))
 
 # Bring in code that accompanies the demographics
 code <- read.xlsx(paste0(housing_path, "/OrganizedData/Summaries/claims_Tableau_v9_recodes.xlsx"))
@@ -382,9 +493,9 @@ inj <- sqlQuery(db.apde51,
 inj <- inj %>%
   select(ID, FR_SDT, INJ) %>%
   rename(mid = ID, fr_sdt = FR_SDT, inj = INJ) %>%
-  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
+  mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"),
+         inj_year = year(fr_sdt))
 
-  
 
 #### Bring in acute events (ED visits, hospitalizations) ####
 #### Hospitalizations (takes ~90 secs to run all years at once) ####
@@ -512,8 +623,6 @@ ed <- ed %>%
   distinct(mid, pid2, startdate_c, enddate_c, ed_year, ed_cnt, ed_avoid, ed_pers)
 
 
-#### DEFINE CONDITIONS ####
-
 
 #### POPULATION ####
 ### Enrollment population
@@ -526,6 +635,8 @@ pop_enroll_wc <- lapply(seq(12, 16), popcount_wc_f, df = pha_elig_sql)
 pop_enroll_wc <- as.data.frame(data.table::rbindlist(pop_enroll_wc))
 # Combine into a single df
 pop_enroll_all <- bind_rows(pop_enroll_all, pop_enroll_wc)
+
+
 
 # Format for matching with Lin's numbers
 pop_enroll_all <- pop_enroll_all %>%
@@ -626,19 +737,48 @@ rm(pop_enroll_race)
 gc()
 
 
-### Run function for ZIPs
-pop_enroll_zip <- lapply(seq(12, 16), popcount_zip_f, df = pha_elig_sql)
-pop_enroll_zip <- as.data.frame(data.table::rbindlist(pop_enroll_zip))
+### Run function for ZIPs (with agency breakout (_a) and combined (_c))
+pop_enroll_zip_a <- lapply(seq(12, 16), popcount_zip_f, df = pha_elig_sql, agency = TRUE)
+pop_enroll_zip_a <- as.data.frame(data.table::rbindlist(pop_enroll_zip_a))
+pop_enroll_zip_c <- lapply(seq(12, 16), popcount_zip_f, df = pha_elig_sql, agency = FALSE)
+pop_enroll_zip_c <- as.data.frame(data.table::rbindlist(pop_enroll_zip_c))
 # Then run for ZIP and well child pop (ages 3-6)
-pop_enroll_zip_wc <- lapply(seq(12, 16), popcount_zip_wc_f, df = pha_elig_sql)
-pop_enroll_zip_wc <- as.data.frame(data.table::rbindlist(pop_enroll_zip_wc))
-# Combine into one
-pop_enroll_zip <- bind_rows(pop_enroll_zip, pop_enroll_zip_wc)
+pop_enroll_zip_wc_a <- lapply(seq(12, 16), popcount_zip_wc_f, df = pha_elig_sql, agency = TRUE)
+pop_enroll_zip_wc_a <- as.data.frame(data.table::rbindlist(pop_enroll_zip_wc_a))
+pop_enroll_zip_wc_c <- lapply(seq(12, 16), popcount_zip_wc_f, df = pha_elig_sql, agency = FALSE)
+pop_enroll_zip_wc_c <- as.data.frame(data.table::rbindlist(pop_enroll_zip_wc_c))
 
+# Add suppression
+
+
+
+# Optional: Combine and write out just first part
+pop_enroll_zip <- bind_rows(pop_enroll_zip_a, pop_enroll_zip_c, pop_enroll_zip_wc_a, pop_enroll_zip_wc_c)
 write.xlsx(pop_enroll_zip, paste0(housing_path, "/OrganizedData/Summaries/PHA enrollment count - zip_", Sys.Date(), ".xlsx"))
 
-rm(pop_enroll_zip)
-rm(pop_enroll_zip_wc)
+
+
+# ZIP pop for Lin's counts
+pop_enroll_zip_lin_a <- lapply(seq(2012, 2016), popcount_zip_lin_f, agency = TRUE)
+pop_enroll_zip_lin_a <- as.data.frame(data.table::rbindlist(pop_enroll_zip_lin_a))
+pop_enroll_zip_lin_c <- lapply(seq(2012, 2016), popcount_zip_lin_f, agency = TRUE)
+pop_enroll_zip_lin_c <- as.data.frame(data.table::rbindlist(pop_enroll_zip_lin_c))
+
+# Add suppression
+
+# Optional: Combine and write out just Lin's pop
+pop_enroll_zip_lin <- bind_rows(pop_enroll_zip_lin_a, pop_enroll_zip_lin_c)
+write.xlsx(pop_enroll_zip_lin, paste0(housing_path, "/OrganizedData/Summaries/PHA enrollment count - zip - lin_", Sys.Date(), ".xlsx"))
+
+
+# Combine into single file
+
+rm(pop_enroll_zip_a)
+rm(pop_enroll_zip_c)
+rm(pop_enroll_zip_wc_a)
+rm(pop_enroll_zip_wc_c)
+rm(pop_enroll_zip_lin_a)
+rm(pop_enroll_zip_lin_c)
 
 
 #### TEMP #####
@@ -696,7 +836,7 @@ conditions_lin_f <- function(year) {
     "SELECT ENRTYPE as enrtype, AGEGP as agegp, GENDER as gender, 
     ETHN as ethn, AGENCY as agency, DUAL as dual, VOUCHER as voucher,
     SUBSIDY as subsidy, OPERATOR as operator, PORTFOLIO as portfolio, 
-    LENGTH as length,
+    LENGTH as length, HZIP as zip_h,
     SUM(HTN) AS htn, SUM(AST) AS ast, SUM(DIA) AS dia,
     SUM(DEP) AS dep, SUM(MEN) AS men, SUM(COP) AS cop,
     SUM(IHD) AS ihd, SUM(INJ) AS inj
@@ -753,7 +893,7 @@ conditions_lin_f <- function(year) {
     ON p. mid=c.ID)	d) e
     WHERE ENRTYPE <> 'h'
     GROUP BY enrtype, agegp, gender, ethn, agency, dual, voucher, 
-    subsidy, operator, portfolio, length")
+    subsidy, operator, portfolio, length, HZIP")
 
   output <- sqlQuery(db.apde51, query, stringsAsFactors = FALSE)
   output <- mutate(output, year = as.numeric(year))
@@ -767,7 +907,7 @@ conditions_lin <- as.data.frame(data.table::rbindlist(conditions_lin))
 conditions_lin <- melt(conditions_lin,
                        id.vars = c("enrtype", "agegp", "gender", "ethn",
                                    "agency", "dual", "voucher", "subsidy",
-                                   "operator", "portfolio", "length", "year"),
+                                   "operator", "portfolio", "length", "zip_h", "year"),
                        variable.name = "indicator", value.name = "count")
 conditions_lin <- conditions_lin %>%
   mutate(popsource = "lin") %>%
@@ -791,6 +931,20 @@ conditions_lin <- conditions_lin %>%
   )
 
 
+# Produce ZIP counts for chronic conditions
+conditions_lin_zip <- conditions_lin %>%
+  group_by(year, agency, zip_h, indicator) %>%
+  summarise(count = sum(count)) %>%
+  ungroup() %>%
+  rename(zip = zip_h) %>%
+  mutate(popsource = "lin") %>%
+  select(popsource, year:count) %>%
+  arrange(indicator, year, agency, zip)
+
+write.xlsx(conditions_lin_zip, paste0(housing_path, "/OrganizedData/Summaries/claims_Tableau_v9_health_events_lin zip_", Sys.Date(), ".xlsx"))
+
+
+
 #### ACUTE EVENTS ####
 ### Join demographics and hospitalization events
 pha_elig_hosp <- left_join(pha_elig_sql, hosp,
@@ -809,11 +963,11 @@ hosp_cnt <- as.data.frame(data.table::rbindlist(hosp_cnt)) %>%
 hosp_pers_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_hosp, event = hosp_pers)
 hosp_pers_zip <- as.data.frame(data.table::rbindlist(hosp_pers_zip)) %>%
   mutate(indicator = "Persons with hospitalization") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 hosp_cnt_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_hosp, event = hosp_cnt)
 hosp_cnt_zip <- as.data.frame(data.table::rbindlist(hosp_cnt_zip)) %>%
   mutate(indicator = "Hospitalizations") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 
 
 ### Join demographics and ED events
@@ -836,24 +990,24 @@ ed_avoid <- as.data.frame(data.table::rbindlist(ed_avoid)) %>%
 ed_pers_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_ed, event = ed_pers)
 ed_pers_zip <- as.data.frame(data.table::rbindlist(ed_pers_zip)) %>%
   mutate(indicator = "Persons with ED visits") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 ed_cnt_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_ed, event = ed_cnt)
 ed_cnt_zip <- as.data.frame(data.table::rbindlist(ed_cnt_zip)) %>%
   mutate(indicator = "ED visits") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 ed_avoid_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_ed, event = ed_avoid)
 ed_avoid_zip <- as.data.frame(data.table::rbindlist(ed_avoid_zip)) %>%
   mutate(indicator = "Avoidable ED visits") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 
 
 ### Join demographics and injury events
 pha_elig_inj <- left_join(pha_elig_sql, inj, by = "mid") %>%
   filter(is.na(fr_sdt) | (fr_sdt >= startdate_c & fr_sdt <= enddate_c))
+
 # Set things up to count by demographics
 pha_elig_inj <- pha_elig_inj %>%
-  mutate(inj_year = year(fr_sdt),
-         inj = ifelse(is.na(inj), 0, inj))
+  mutate(inj = ifelse(is.na(inj), 0, inj))
 pha_elig_inj <- pha_elig_inj %>%
   group_by(mid, pid2, startdate_c, enddate_c, inj_year) %>%
   mutate(inj_cnt = sum(inj)) %>%
@@ -870,7 +1024,7 @@ inj_cnt <- as.data.frame(data.table::rbindlist(inj_cnt)) %>%
 inj_cnt_zip <- lapply(seq(12, 16), eventcount_zip_f, df = pha_elig_inj, event = inj_cnt)
 inj_cnt_zip <- as.data.frame(data.table::rbindlist(inj_cnt_zip)) %>%
   mutate(indicator = "Unintentional injuries") %>%
-  select(year, zipcode, indicator, count)
+  select(year, agency_new, zipcode, indicator, count)
 
 
 #### Lin's version of hospitalizations and ED visits ####
@@ -970,5 +1124,6 @@ rm(hosp_cnt_zip)
 rm(ed_pers_zip)
 rm(ed_cnt_zip)
 rm(ed_avoid_zip)
+rm(inj_cnt_zip)
 rm(acute_events_zip)
 gc()
