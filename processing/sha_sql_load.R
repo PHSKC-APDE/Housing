@@ -51,7 +51,7 @@ sha4a <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/4_HCV 2004 t
 
 # Bring in voucher data
 sha_vouch_type <- read.xlsx(paste0(housing_path, "/SHA/Original/HCV Voucher Type_2017-05-15.xlsx"))
-sha_prog_codes <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-11-02.xlsx"), 2)
+sha_prog_codes <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2018-01-26.xlsx"), 2)
 
 # Bring in portfolio codes
 sha_portfolio_codes  <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-11-02.xlsx"), 1)
@@ -167,7 +167,7 @@ sha5a_new <- sha5a_new %>%
             funs(as.numeric(ifelse(. == "NULL", NA, .))))
 
 sha5b_new <- sha5b_new %>%
-  mutate_at(vars(inc_year, inc_excl, inc_fin, antic_inc, asset_val), funs(as.numeric(ifelse(. == "NULL", NA, .))))
+  mutate_at(vars(inc, inc_excl, inc_adj, asset_inc, asset_val), funs(as.numeric(ifelse(. == "NULL", NA, .))))
 
 
 sha_vouch_type <- sha_vouch_type %>%
@@ -203,9 +203,9 @@ sha_hcv <- sha_hcv %>%
             funs(as.numeric(ifelse(. == "NULL" | . == "N/A", NA, .)))) %>%
   mutate(tb_rent_ceiling = car::recode(ph_rent_ceiling, c("'Yes' = 1; 'No' = 0; else = NA")))
 
-# Append data
-sha <- bind_rows(sha_ph, sha_hcv)
 
+#### Append data ####
+sha <- bind_rows(sha_ph, sha_hcv)
 
 ### Fix up a few more format issues
 sha <- sha %>%
@@ -216,22 +216,6 @@ sha <- yesno_f(sha, bdrm_voucher, rent_subs, disability)
 sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname == hh_lname & fname == hh_fname,
                         1, mbr_num))
 
-
-### Tidy up income fields and consolidate
-sha <- sha %>%
-  mutate(inc_code = car::recode(inc_code, "'Annual imputed welfare income' = 'IW'; 'Child Support' = 'C';
-                                'Federal Wage' = 'F'; 'General Assistance' = 'G'; 'Indian Trust/Per Capita' = 'I';
-                                'Medical reimbursement' = 'E'; 'Military Pay' = 'M'; 'MTW Income' = 'X';
-                                'NULL' = NA; 'Other NonWage Sources' = 'N'; 'Other Wage' = 'W'; 'Own Business' = 'B'; 'Pension' = 'P';
-                                'PHA Wage' = 'HA'; 'Social Security' = 'SS'; 'SSI' = 'S'; 'TANF (formerly AFDC)' = 'T';
-                                'Unemployment Benefits' = 'U'; '' = NA"),
-         inc_fixed_temp = ifelse(inc_code %in% c("P", "PE", "Pension", "S", "SS", "SSI", "Social Security"), 1, 0))
-
-# We are only interested in whether or not all income comes from a fixed source so taking the minimum tells us this
-sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
-  mutate(inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
-  ungroup() %>%
-  select(-inc_fixed_temp)
 
 
 #### Fix up SHA member numbers and head-of-household info ####
@@ -360,14 +344,67 @@ rm(mbr_miss_join)
 #### END SHA HEAD OF HOUSEHOLD FIX ####
 
 
-# Restrict to relevant fields 
-# (can drop specific income and asset fields once fixed income flag is made)
-sha <- sha %>% 
-  select(-inc_code, -inc_year, -inc_excl, -inc_fin, -inc_fin_tot,
-         -inc_tot, -inc_adj, -inc_deduct, -inc_mbr_num, -incasset_id,
-         -asset_type, -asset_val, -antic_inc,
-         -antic_inc_tot, -asset_impute, -asset_final, -asset_tot) %>% 
-  distinct()
+#### INCOME SECTIONS ####
+# Need to do the following:
+# 1) Tidy up and recode some fields
+# 2) Identify people with income from a fixed source
+# 3) Summarize income and assets for a given time point to reduce duplicated rows
+
+### Tidy up income fields and recode
+sha <- sha %>%
+  mutate(inc_code = car::recode(inc_code, "'Annual imputed welfare income' = 'IW'; 'Child Support' = 'C';
+                                'Federal Wage' = 'F'; 'General Assistance' = 'G'; 'Indian Trust/Per Capita' = 'I';
+                                'Medical reimbursement' = 'E'; 'Military Pay' = 'M'; 'MTW Income' = 'X';
+                                'NULL' = NA; 'Other NonWage Sources' = 'N'; 'Other Wage' = 'W'; 'Own Business' = 'B'; 'Pension' = 'P';
+                                'PHA Wage' = 'HA'; 'Social Security' = 'SS'; 'SSI' = 'S'; 'TANF (formerly AFDC)' = 'T';
+                                'Unemployment Benefits' = 'U'; '' = NA"),
+         inc_fixed_temp = ifelse(inc_code %in% c("P", "PE", "Pension", "S", "SS", "SSI", "Social Security"), 1, 0))
+
+### We are  interested in whether or not all income comes from a fixed source so taking the minimum tells us this
+sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
+  mutate(inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
+  ungroup() %>%
+  select(-inc_fixed_temp)
+
+### Summarize income and assets separately and rejoin
+# (each is repeated in different ways so a straight sum would be inaccurate)
+sha_inc <- sha %>%
+  select(ssn, lname, fname, dob, act_date, inc, inc_excl, inc_adj) %>%
+  distinct() %>%
+  group_by(ssn, lname, fname, dob, act_date) %>%
+  summarise(inc = sum(inc, na.rm = T), inc_excl = sum(inc_excl, na.rm = T),
+            inc_adj = sum(inc_adj, na.rm = T)) %>%
+  ungroup()
+
+sha_asset <- sha %>%
+  select(ssn, lname, fname, dob, act_date, asset_val, asset_inc) %>%
+  distinct() %>%
+  group_by(ssn, lname, fname, dob, act_date) %>%
+  summarise(asset_val = sum(asset_val, na.rm = T), asset_inc = sum(asset_inc, na.rm = T)) %>%
+  ungroup()
+  
+sha_inc_asset <- left_join(sha_inc, sha_asset, by = c("ssn", "lname", "fname", "dob", "act_date"))
+
+### TEMP RENAME
+sha <- sha %>% rename(inc = inc_year)
+sha <- sha %>% rename(inc_adj = inc_final)
+sha <- sha %>% rename(hh_inc_adj = hh_inc_final)
+
+sha <- sha %>% select(-inc, -inc_excl, -inc_adj, -asset_val, -asset_inc)
+sha <- left_join(sha, sha_inc_asset, by = c("ssn", "lname", "fname", "dob", "act_date"))
+
+### Remove unnecessary income and asset columns, deduplicate, and reorder
+sha <- sha %>% select(-inc_code, -asset_type) %>% distinct() %>%
+  select(incasset_id:bed_cnt, rent_type:tb_rent_ceiling, lname:mbr_id, race:mbr_num, 
+         asset_val, asset_inc, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
+         inc, inc_excl, inc_adj, inc_fixed, hh_inc, hh_inc_adj, 
+         hh_inc_tot, hh_inc_deduct, hh_inc_tot_adj)
+
+rm(sha_inc)
+rm(sha_asset)
+rm(sha_inc_asset)
+
+#### END INCOME SECTION ####
 
 
 ### Transfer over data to rows with missing programs and vouchers
