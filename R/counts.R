@@ -10,7 +10,7 @@
 #' 
 #' @param df A data frame
 #' @param group_var A set of variables to group counts by. Default is PH agency.
-#' @param agency A string that restricts analysis to KCHa, SHA or both. Default
+#' @param agency A string that restricts analysis to KCHA, SHA or both. Default
 #' is to count across both agencies (note that an individual or housheold will 
 #' be counted only once if they appear in both agencies or >1 group for the
 #' given time period). Not case sensitive.
@@ -39,7 +39,8 @@
 #' counts(pha_longitudinal)
 #' counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
 #' agency = "kcha", unit = hhold_id_new)
-#' counts(pha_longitudinal, filter = quo(disability == 1))
+#' counts(pha_longitudinal, filter = quo(disability == 1), yearmin = 2014,
+#' yearmax = 2016, period = "month")
 #' }
 #' 
 #' @export
