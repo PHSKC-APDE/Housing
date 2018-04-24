@@ -31,8 +31,8 @@ time_range <- function(yearmin = 2012, yearmax = 2016, period = "year",
   if(yearmin > yearmax) {
     stop("yearmin must be <= yearmax")
   }
-  if(!period %in% c("date", "month", "quarter", "year")) {
-    stop("Period must be date, month, quarter, or year")
+  if(!period %in% c("date", "month", "quarter", "biannual", "year")) {
+    stop("Period must be date, month, quarter, biannual, or year")
   }
   
   if (missing(period)) {
@@ -48,13 +48,17 @@ time_range <- function(yearmin = 2012, yearmax = 2016, period = "year",
     timestart <- seq(as.Date(paste0(yearmin, "-01-01")), length = (yearmax - yearmin + 1) * 12, by = "1 month")
     timeend <- seq(as.Date(paste0(yearmin, "-02-01")), length = (yearmax - yearmin + 1) * 12, by = "1 month") - 1
   }
-  if (period == "year") {
-    timestart <- seq(as.Date(paste0(yearmin, "-01-01")), length = (yearmax - yearmin + 1), by = "1 year")
-    timeend <- seq(as.Date(paste0(yearmin + 1, "-01-01")), length = (yearmax - yearmin + 1), by = "1 year") - 1
-  }
   if (period == "quarter") {
     timestart <- seq(as.Date(paste0(yearmin, "-01-01")), length = (yearmax - yearmin + 1) * 4, by = "1 quarter")
     timeend <- seq(as.Date(paste0(yearmin, "-04-01")), length = (yearmax - yearmin + 1) * 4, by = "1 quarter") - 1
+  }
+  if (period == "biannual") {
+    timestart <- seq(as.Date(paste0(yearmin, "-01-01")), length = (yearmax - yearmin + 1) * 2, by = "6 months")
+    timeend <- seq(as.Date(paste0(yearmin, "-07-01")), length = (yearmax - yearmin + 1) * 2, by = "6 months") - 1
+  }
+  if (period == "year") {
+    timestart <- seq(as.Date(paste0(yearmin, "-01-01")), length = (yearmax - yearmin + 1), by = "1 year")
+    timeend <- seq(as.Date(paste0(yearmin + 1, "-01-01")), length = (yearmax - yearmin + 1), by = "1 year") - 1
   }
   time_list <- list(timestart = timestart, timeend = timeend, period = period)
   return(time_list)
