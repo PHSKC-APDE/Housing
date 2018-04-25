@@ -1,4 +1,4 @@
-MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,,SHA_prog_port_codes,KCHA_modified,KCHA_eop,PHSKC
+MTW50058_num,SHAold,SHAnewph,SHA_new_hcv,,SHA_prog_port_codes,KCHA_modified,KCHA_eop,PHSKC
 01a,AgencyName1a,AgencyName1a,,,,h1a,,agency
 02a,ActionType2a,ActionType2a,actiontype2a,,,h2a,HUD50058.2a.Type.of.Action,act_type
 02a,,,ActionType2a,,,,,act_type
@@ -86,13 +86,13 @@ h03n,HeadofHouseSSN,SSN,headofhousessn,,,hh_ssn,HOH.SSN,hh_ssn
 h03t,NumberofHouseholdMembers3tHead,NumberofHouseholdMembers3tHead,,,,,,hh_hhold_num
 h03w,FormerHeadofHouseSSN3w,FormerHeadofHouseSSN3w,formerheadofhousessn3w,,,,,fhh_ssn
 ,UnitID,UnitID,UnitID,,,,,unit_id
-,IncAsset_ID,IncAsset_ID,,,,,,incasset_id
-,FK_HSUM,FK_HSUM,,,,,,incasset_id
-,FK_mtw5800,FK_mtw5800,,,,,,incasset_id
-,FK_inf5800,FK_inf5800,,,,,,incasset_id
-,PK_HSUM,PK_HSUM,PK_HSUM,,,,,incasset_id
+,IncAssetID,IncAssetID,,,,,,incasset_id
+,FKHSUM,FKHSUM,,,,,,incasset_id
+,FKmtw5800,FKmtw5800,,,,,,incasset_id
+,FKinf5800,FKinf5800,,,,,,incasset_id
+,PKHSUM,PKHSUM,PK_HSUM,,,,,incasset_id
 ,PropertyID,PropertyID,PropertyID,,,Project.Code,,property_id
-,,Project_ID,Project_ID,,Project_ID,,,property_id
+,,ProjectID,Project_ID,,Project_ID,,,property_id
 ,,,certificationuniqueidshafield,,,certificationid,,cert_id
 ,,,CertificationUniqueIDSHAField,,,,,cert_id
 ,,,hohuniqueidentifier,,,,Household.ID,hh_id
