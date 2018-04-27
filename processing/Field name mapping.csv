@@ -104,11 +104,11 @@ MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,,SHA_prog_port_codes,KCHA_modified,K
 23hj1,,initialstartdateofcontract23j1,,,,,,fss_start_date
 23hj2,,initialenddateofcontract23j2,,,,,,fss_end_date
 23hj3,,contractdateextended23j3,,,,,,fss_extend_date
-h03b,lastname3bhead,lastname3b,hohlastname3b,,,hh_lname,,hh_lname
+h03b,lastname3bhead,hohlastname3b,hohlastname3b,,,hh_lname,,hh_lname
 h03b1,suffixhead,suffixhead,,,,,,hh_lnamesuf
-h03c,firstname3chead,firstname3c,hohfirstname3c,,,hh_fname,,hh_fname
-h03d,middleinitial3dhead,middleinitial3d,hohmiddleinitial3d,,,hh_mname,,hh_mname
-h03n,headofhousessn,ssn,headofhousessn,,,hh_ssn,HOH.SSN,hh_ssn
+h03c,firstname3chead,hohfirstname3c,hohfirstname3c,,,hh_fname,,hh_fname
+h03d,middleinitial3dhead,hohmiddleinitial3d,hohmiddleinitial3d,,,hh_mname,,hh_mname
+h03n,headofhousessn,hohssn,headofhousessn,,,hh_ssn,HOH.SSN,hh_ssn
 ,,,,,,,HOH.Birthdate,hh_dob
 ,,,,,,,HOH.Full.Name,hh_name
 h03t,numberofhouseholdmembers3thead,numberofhouseholdmembers3thead,,,,,,hh_hhold_num
