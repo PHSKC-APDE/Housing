@@ -17,7 +17,7 @@
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
-# 2017-05-17, split into separate files 2017-10
+# 2017-05-17, last updated 2018-04-30
 # 
 ###############################################################################
 
@@ -25,45 +25,85 @@
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 library(housing) # contains many useful functions for cleaning
-library(RODBC) # Used to connect to SQL server
+library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
-library(dplyr) # Used to manipulate data
+library(data.table) # Used to read in csv files more efficiently
+library(tidyverse) # Used to manipulate data
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
-db.apde51 <- odbcConnect("PH_APDEStore51")
+sha_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA"
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 
 #### Bring in data ####
-sha3a_new <- read.csv(file = paste0(housing_path, "/SHA/Original/3.a_HH PublicHousing 2012 to Current- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha3b_new <- read.csv(file = paste0(housing_path, "/SHA/Original/3.b_Income Assets PublicHousing 2012 to 2015- (Yardi) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha5a_new <- read.csv(file = paste0(housing_path, "/SHA/Original/5.a_HH HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
-sha5b_new <- read.csv(file = paste0(housing_path, "/SHA/Original/5.b_Income Assets HCV 2006 to Current- (Elite) 50058 Data_2017-03-31.csv"), stringsAsFactors = FALSE)
+sha3a_new <- fread(file = 
+                     file.path(sha_path, "Original",
+                               "3a_PH 2012-current Yardi 50058 Data_2018-04-20.csv"), 
+                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   stringsAsFactors = F)
+sha3b_new <- fread(file = file.path(sha_path, "Original",
+                                       "3b_PH income 2012-current Yardi 50058_2018-04-20.csv"), 
+                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   stringsAsFactors = F)
+sha5a_new <- fread(file = file.path(sha_path, "Original",
+                                       "5a_HCV 2006-current Elite 50058_2018-04-20.csv"), 
+                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   stringsAsFactors = F)
+sha5b_new <- fread(file = file.path(sha_path, "Original",
+                                       "5b_HCV income 2006-current Elite 50058_2018-04-20.csv"),
+                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   stringsAsFactors = F)
+
 
 # Bring in suffix corrected SHA data
-sha1a <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/1.a_HH PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
-sha1b <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/1.b_Income PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha1c <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/1.c_Assets PublicHousing 2004 to 2006 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha2a <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/2.a_HH PublicHousing 2007 to 2012 -(MLS) 50058 Data_2016-05-11.csv"), stringsAsFactors = FALSE)
-sha2b <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/2.b_Income PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha2c <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/2.c_Assets PublicHousing 2007 to 2012 - (MLS) 50058 Data_2016-02-16.csv"), stringsAsFactors = FALSE)
-sha4a <- read.csv(file = paste0(housing_path, "/SHA/SuffixCorrected/4_HCV 2004 to 2006 - (MLS) 50058 Data_2016-05-25.csv"), stringsAsFactors = FALSE)
+sha1a <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "1a_PH 2004-2006_MLS 50058_2016-05-11.csv"), 
+               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+sha1b <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "1b_PH income 2004-2006_MLS 50058_2016-02-16.csv"),
+               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+sha1c <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "1c_PH assets 2004-2006_MLS 50058_2016-02-16.csv"),
+               na.strings = c("NA", " ", "", "NULL", "N/A"), stringsAsFactors = F)
+sha2a <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "2a_PH 2007-2012_MLS 50058_2016-05-11.csv"),
+               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+sha2b <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "2b_PH income 2007-2012_MLS 50058_2016-02-16.csv"),
+               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+sha2c <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "2c_PH assets 2007-2012_MLS 50058_2016-02-16.csv"),
+                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+sha4a <- fread(file = file.path(sha_path, "SuffixCorrected",
+                                   "4_HCV 2004-2006_MLS 50058_2016-05-25.csv"),
+                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               stringsAsFactors = F)
+
 
 # Bring in voucher data
-sha_vouch_type <- read.xlsx(paste0(housing_path, "/SHA/Original/HCV Voucher Type_2017-05-15.xlsx"))
-sha_prog_codes <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2018-01-26.xlsx"), 2)
+sha_prog_codes <- read.xlsx(file.path(
+  sha_path, "Original", "Program codes and portfolios_2018-01-26.xlsx"), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(paste0(housing_path, "/SHA/Original/Program codes and portfolios_2017-11-02.xlsx"), 1)
+sha_portfolio_codes  <- read.xlsx(file.path(
+  sha_path, "Original", "Program codes and portfolios_2018-01-26.xlsx"), 1)
 
 
-#### Join data sets together ####
+#### PREP DATA SETS FOR JOINING ####
 
 ### First deduplicate data to avoid extra rows being made when joined
 # Make list of data frames to deduplicate
-dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
-            sha3a_new = sha3a_new, sha3b_new = sha3b_new, sha4a = sha4a, sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_vouch_type = sha_vouch_type, sha_prog_codes = sha_prog_codes, sha_portfolio_codes = sha_portfolio_codes)
+dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, 
+            sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
+            sha3a_new = sha3a_new, sha3b_new = sha3b_new, 
+            sha4a = sha4a, 
+            sha5a_new = sha5a_new, sha5b_new = sha5b_new,
+            sha_prog_codes = sha_prog_codes, 
+            sha_portfolio_codes = sha_portfolio_codes)
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -73,24 +113,155 @@ df_dedups <- lapply(dfs, function(data) {
 
 # Bring back data frames from list
 list2env(df_dedups, .GlobalEnv)
+rm(df_dedups)
 
 
-#### Join PH files ####
-# Get field names to match
+### Get field names to match
 # Bring in variable name mapping table
-fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
-
-sha1a <- data.table::setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- data.table::setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- data.table::setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- data.table::setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- data.table::setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- data.table::setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- data.table::setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
-sha3b_new <- data.table::setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), fields$SHA_new_ph)])
-sha_portfolio_codes <- data.table::setnames(sha_portfolio_codes, fields$PHSKC[match(names(sha_portfolio_codes), fields$SHA_prog_port_codes)])
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+         header = TRUE, stringsAsFactors = FALSE)
 
 
+# Get rid of spaces, characters, and capitals in existing names
+# Makes it easier to accommodate changes in names provided by SHA
+df_rename <- lapply(dfs, function(data) {
+  colnames(data) <- str_replace_all(colnames(data), "[:punct:]|[:space:]", "")
+  colnames(data) <- tolower(colnames(data))
+  return(data)
+})
+
+# Bring back data frames from list
+list2env(df_rename, .GlobalEnv)
+rm(dfs)
+rm(df_rename)
+gc()
+
+
+# Apply new names to columns
+sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
+sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
+sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
+sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
+sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
+sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
+sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), 
+                                                    fields$SHA_new_ph)])
+sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), 
+                                                    fields$SHA_new_ph)])
+sha_portfolio_codes <- setnames(sha_portfolio_codes, 
+                                fields$PHSKC[match(names(sha_portfolio_codes), 
+                                                   fields$SHA_prog_port_codes)])
+
+sha4a <- setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
+sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), 
+                                                    fields$SHA_new_hcv)])
+sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
+                                                    fields$SHA_new_hcv)])
+sha_prog_codes <- setnames(sha_prog_codes, 
+                           fields$PHSKC[match(names(sha_prog_codes), 
+                                              fields$SHA_prog_port_codes)])
+
+
+
+
+#### INCOME SECTIONS ####
+# Need to do the following:
+# 1) Tidy up and recode some fields
+# 2) Identify people with income from a fixed source
+# 3) Summarize income/assets for a given time point to reduce duplicated rows
+
+### Function to do this across various income/asset data frames
+inc_clean_f <- function(df) {
+  ### Print message to show code is working
+  message("Working on list item")
+  
+  ### Tidy up income fields and recode
+  if("inc_code" %in% names(df)) {
+    df <- df %>%
+      mutate(inc_code = 
+               car::recode(inc_code, 
+                           "'Annual imputed welfare income' = 'IW'; 
+                           'Child Support' = 'C';'Federal Wage' = 'F'; 
+                           'General Assistance' = 'G'; 
+                           'Indian Trust/Per Capita' = 'I'; 
+                           'Medical reimbursement' = 'E'; 'Military Pay' = 'M'; 
+                           'MTW Income' = 'X'; 'NULL' = NA; 
+                           'Other NonWage Sources' = 'N'; 'Other Wage' = 'W'; 
+                           'Own Business' = 'B'; 'Pension' = 'P'; 
+                           'PHA Wage' = 'HA'; 'Social Security' = 'SS'; 
+                           'SSI' = 'S'; 'TANF (formerly AFDC)' = 'T';
+                           'Unemployment Benefits' = 'U'; '' = NA"),
+             inc_fixed_temp = ifelse(
+               inc_code %in% c("P", "S", "SS"), 1, 0))
+  }
+  
+  ### Summarize income and assets differently depending on data format
+  # Tested out summarise instead of mutate in first part. No faster.
+  # Still need ways to optimize this code
+  if ("mbr_id" %in% names(df)) {
+    df <- df %>%
+      group_by(cert_id, mbr_id, increment) %>%
+      summarise(
+        inc = sum(inc, na.rm = T), 
+        inc_excl = sum(inc_excl, na.rm = T),
+        inc_adj = sum(inc_adj, na.rm = T),
+        inc_fixed = min(inc_fixed_temp, na.rm = T),
+        asset_val = sum(asset_val, na.rm = T), 
+        asset_inc = sum(asset_inc, na.rm = T))
+  } else if ("incasset_id" %in% names(df) & "inc_mbr_num" %in% names(df)) {
+    if ("inc" %in% names(df)) {
+      df <- df %>%
+        group_by(incasset_id, inc_mbr_num) %>%
+        mutate(
+          inc = sum(inc, na.rm = T), 
+          inc_excl = sum(inc_excl, na.rm = T),
+          inc_adj = sum(inc_adj, na.rm = T),
+          inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
+        ungroup() %>%
+        select(-inc_fixed_temp, -inc_code) %>%
+        distinct()
+    }
+    if ("asset_val" %in% names(df)) {
+      df <- df %>%
+        group_by(incasset_id, inc_mbr_num) %>%
+        mutate(
+          asset_val = sum(asset_val, na.rm = T), 
+          asset_inc = sum(asset_inc, na.rm = T)
+        ) %>%
+        ungroup() %>%
+        select(-asset_type) %>%
+        distinct()
+    }
+  } else if ("incasset_id" %in% names(df) & !("inc_mbr_num" %in% names(df))) {
+    df <- df %>%
+      group_by(incasset_id) %>%
+      mutate(hh_asset_val = sum(asset_val, na.rm = T),
+             hh_asset_inc = sum(asset_inc, na.rm = T)) %>%
+      ungroup() %>%
+      select(-asset_type, -asset_val, -asset_inc) %>%
+      distinct()
+  } else {
+    stop("No valid grouping variables")
+  }
+  
+  return(df)
+  
+}
+
+# Make list of data frames with income or asset variables
+dfs_inc <- list(sha1b = sha1b, sha1c = sha1c, sha2b = sha2b, sha2c = sha2c, 
+                sha3b_new = sha3b_new, sha5b_new = sha5b_new)
+
+# Apply function to all relevant data frames (takes a few minutes to run)
+income_assets <- lapply(dfs_inc, inc_clean_f)
+
+# Bring back data frames from list
+list2env(income_assets, .GlobalEnv)
+rm(dfs_inc)
+rm(income_assets)
+
+
+#### JOIN PUBLIC HOUSING FILES ####
 # Clean up mismatching variables
 sha2a <- yesno_f(sha2a, ph_rent_ceiling)
 sha2a <- mutate(sha2a, fhh_ssn = as.character(fhh_ssn))
@@ -109,7 +280,8 @@ sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
 sha2 <- left_join(sha2a, sha2b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
 
-sha3 <- left_join(sha3a_new, sha3b_new, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha3 <- left_join(sha3a_new, sha3b_new, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 
 
 # Add source field to track where each row came from
@@ -117,15 +289,21 @@ sha1 <- sha1 %>% mutate(sha_source = "sha1")
 sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
-# Append data
-sha_ph <- bind_rows(sha1, sha2, sha3)
+# Append data and drop data fields not being used (data from SHA are blank)
+sha_ph <- bind_rows(sha1, sha2, sha3) %>%
+  select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 
 # Fix more formats
 sha_ph <- sha_ph %>%
-  mutate(property_id = ifelse(as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)), paste0("00", property_id),
-                              ifelse(as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & !is.na(as.numeric(property_id)), 
+  mutate(property_id = ifelse(as.numeric(property_id) < 10 & 
+                                !is.na(as.numeric(property_id)), 
+                              paste0("00", property_id),
+                              ifelse(as.numeric(property_id) >= 10 & 
+                                       as.numeric(property_id) < 100 & 
+                                       !is.na(as.numeric(property_id)), 
                                      paste0("0", property_id),
-                              property_id)))
+                              property_id))) %>%
+  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
 
 # Join with portfolio data
 sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
@@ -136,56 +314,53 @@ sha_ph <- mutate(sha_ph,
                                     "Lake City Court", portfolio))
 
 
-#### Join HCV files
-# Fix up names
-sha4a <- data.table::setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
-sha5a_new <- data.table::setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), fields$SHA_new_hcv)])
-sha5b_new <- data.table::setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), fields$SHA_new_hcv)])
-sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), fields$SHA_new_hcv)])
-sha_prog_codes <- data.table::setnames(sha_prog_codes, fields$PHSKC[match(names(sha_prog_codes), fields$SHA_prog_port_codes)])
-
-
+#### JOIN HCV FILES ####
 # Clean up mismatching variables
 sha4a <- sha4a %>%
   mutate(mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
-         # Truncate increment numbers so they match the reference list when joined
+         # Truncate increment numbers to match the reference list when joined
          increment_old = increment,
-         increment = str_sub(increment, 1, 5)
-         )
+         increment = str_sub(increment, 1, 5)) %>%
+  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
 
+sha4a <- yesno_f(sha4a, r_white, r_black, r_aian, r_asian, r_nhpi, 
+                portability, disability)
+sha4a <- sha4a %>% mutate(r_hisp = ifelse(r_hisp == 2 & !is.na(r_hisp), 
+                                        0, r_hisp))
 
 sha5a_new <- sha5a_new %>%
   mutate(
-    act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
-                                       'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
-                                       'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
-                                       'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
-                                       'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA"))
+    act_type = car::recode(
+      act_type, c("'Annual HQS Inspection Only' = 13; 
+                  'Annual Reexamination' = 2;
+                  'Annual Reexamination Searching' = 9; 'End Participation' = 6;
+                  'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
+                  'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 
+                  'Issuance of Voucher' = 10; 'New Admission' = 1; 
+                  'Other Change of Unit' = 7; 
+                  'Port-Out Update (Not Submitted To MTCS)' = 16;
+                  'Portability Move-in' = 4; 'Portability Move-out' = 5; 
+                  'Portablity Move-out' = 5; 'Void' = 15; else = NA"))
     ) %>%
-  mutate_at(vars(unit_zip, bed_cnt, cost_month, rent_gross, rent_tenant_owner, rent_mixfam_owner),
-            funs(as.numeric(ifelse(. == "NULL", NA, .))))
-
-sha5b_new <- sha5b_new %>%
-  mutate_at(vars(inc, inc_excl, inc_adj, asset_inc, asset_val), funs(as.numeric(ifelse(. == "NULL", NA, .))))
+  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%Y-%m-%d")))
 
 
-sha_vouch_type <- sha_vouch_type %>%
-  mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
-                                       'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
-                                       'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
-                                       'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
-                                       'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA")))
+sha5a_new <- yesno_f(sha5a_new, portability, disability, tb_rent_ceiling)
+sha5a_new <- sha5a_new %>%
+  mutate(r_hisp = as.numeric(case_when(
+    r_hisp == "1 " ~ 1,
+    r_hisp == "2 " ~ 0
+  )))
 
 
 # Join with income and asset files
-sha4 <- left_join(sha4a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha4 <- left_join(sha4a, sha1b, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
 sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
-sha5 <- left_join(sha5a_new, sha5b_new, by = c("cert_id", "mbr_id"))
-sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
+sha5 <- left_join(sha5a_new, sha5b_new, 
+                  by = c("cert_id", "mbr_id", "increment"))
 sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
 # Add source field to track where each row came from
@@ -196,13 +371,12 @@ sha5 <- sha5 %>% mutate(sha_source = "sha5")
 sha_hcv <- bind_rows(sha4, sha5)
 
 
-### Join PH and HCV combined files
+#### JOIN PH AND HCV COMBINED FILES ####
 # Clean up mismatching variables
-sha_hcv <- sha_hcv %>%
-  mutate_at(vars(rent_tenant, rent_mixfam, ph_util_allow, ph_rent_ceiling, mbr_num, r_hisp),
-            funs(as.numeric(ifelse(. == "NULL" | . == "N/A", NA, .)))) %>%
-  mutate(tb_rent_ceiling = car::recode(ph_rent_ceiling, c("'Yes' = 1; 'No' = 0; else = NA")))
-
+sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi, 
+                  portability, disability, access_unit, access_req, 
+                  assist_tanf, assist_gen, assist_food, assist_mcaid_chip,
+                  assist_eitc)
 
 #### Append data ####
 sha <- bind_rows(sha_ph, sha_hcv)
@@ -210,10 +384,11 @@ sha <- bind_rows(sha_ph, sha_hcv)
 ### Fix up a few more format issues
 sha <- sha %>%
   mutate_at(vars(act_date, admit_date, dob), funs(as.Date(., format = "%m/%d/%Y")))
-sha <- yesno_f(sha, bdrm_voucher, rent_subs, disability)
+
 
 # Set up mbr_num head of households (will be important later when cleaning up names)
-sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname == hh_lname & fname == hh_fname,
+sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & 
+                                         lname == hh_lname & fname == hh_fname,
                         1, mbr_num))
 
 
@@ -227,8 +402,9 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn & lname ==
 # ISSUE 3: Not all households have member numbers or are missing #1
 # FIX 3: Make sure the HoH has member number = 1
 
-### First set up temporary household ID that should be unique to a household and action date
-sha$hhold_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, unit_city, act_date, act_type, incasset_id)
+### Set up temp household ID  unique to a household and action date
+sha$hhold_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, 
+                                   unit_city, act_date, act_type, incasset_id)
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
 # Check for households with >1 people listed as HoH
@@ -310,15 +486,17 @@ mbr_miss <- mbr_miss %>%
   mutate(done = max(mbr_num, na.rm = T)) %>%
   ungroup() %>%
   # Then try name combos
-  mutate(mbr_num = ifelse(is.infinite(done) & lname == hh_lname & fname == hh_fname, 1, mbr_num)) %>%
+  mutate(mbr_num = ifelse(is.infinite(done) & 
+                            toupper(lname) == toupper(hh_lname) & 
+                            toupper(fname) == toupper(hh_fname), 
+                          1, mbr_num)) %>%
   select(-done)
 
 # If multiple people were flagged as #1, take the oldest
 # Common when there are children and parents with the same name or DOB typos
-# If same DOB, take row with middle inital, then last name suffix
-# If still a clash, take newer SHA data
+# If same DOB, take row with middle inital, then no last name suffix
 mbr_miss <- mbr_miss %>%
-  arrange(hhold_id_temp, mbr_num, dob, hh_mname, hh_lnamesuf) %>%
+  arrange(hhold_id_temp, mbr_num, dob, hh_mname, desc(hh_lnamesuf)) %>%
   group_by(hhold_id_temp) %>%
   mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
   ungroup()
@@ -327,7 +505,8 @@ mbr_miss <- mbr_miss %>%
 # Restrict to the newly identified HoHs and join back to main data
 mbr_miss_join <- mbr_miss %>%
   filter(mbr_num == 1) %>%
-  distinct(hhold_id_temp, act_date, ssn, lname, fname, mname, lnamesuf, dob, mbr_num)
+  distinct(hhold_id_temp, act_date, ssn, lname, fname, mname, 
+           lnamesuf, dob, mbr_num)
 sha <- left_join(sha, mbr_miss_join, 
                        by = c("hhold_id_temp", "act_date", "ssn", 
                               "lname", "fname", "mname", "lnamesuf", "dob"))
@@ -344,71 +523,10 @@ rm(mbr_miss_join)
 #### END SHA HEAD OF HOUSEHOLD FIX ####
 
 
-#### INCOME SECTIONS ####
-# Need to do the following:
-# 1) Tidy up and recode some fields
-# 2) Identify people with income from a fixed source
-# 3) Summarize income and assets for a given time point to reduce duplicated rows
-
-### Tidy up income fields and recode
-sha <- sha %>%
-  mutate(inc_code = car::recode(inc_code, "'Annual imputed welfare income' = 'IW'; 'Child Support' = 'C';
-                                'Federal Wage' = 'F'; 'General Assistance' = 'G'; 'Indian Trust/Per Capita' = 'I';
-                                'Medical reimbursement' = 'E'; 'Military Pay' = 'M'; 'MTW Income' = 'X';
-                                'NULL' = NA; 'Other NonWage Sources' = 'N'; 'Other Wage' = 'W'; 'Own Business' = 'B'; 'Pension' = 'P';
-                                'PHA Wage' = 'HA'; 'Social Security' = 'SS'; 'SSI' = 'S'; 'TANF (formerly AFDC)' = 'T';
-                                'Unemployment Benefits' = 'U'; '' = NA"),
-         inc_fixed_temp = ifelse(inc_code %in% c("P", "PE", "Pension", "S", "SS", "SSI", "Social Security"), 1, 0))
-
-### We are  interested in whether or not all income comes from a fixed source so taking the minimum tells us this
-sha <- sha %>% group_by(ssn, lname, fname, dob, act_date) %>%
-  mutate(inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
-  ungroup() %>%
-  select(-inc_fixed_temp)
-
-### Summarize income and assets separately and rejoin
-# (each is repeated in different ways so a straight sum would be inaccurate)
-sha_inc <- sha %>%
-  select(ssn, lname, fname, dob, act_date, inc, inc_excl, inc_adj) %>%
-  distinct() %>%
-  group_by(ssn, lname, fname, dob, act_date) %>%
-  summarise(inc = sum(inc, na.rm = T), inc_excl = sum(inc_excl, na.rm = T),
-            inc_adj = sum(inc_adj, na.rm = T)) %>%
-  ungroup()
-
-sha_asset <- sha %>%
-  select(ssn, lname, fname, dob, act_date, asset_val, asset_inc) %>%
-  distinct() %>%
-  group_by(ssn, lname, fname, dob, act_date) %>%
-  summarise(asset_val = sum(asset_val, na.rm = T), asset_inc = sum(asset_inc, na.rm = T)) %>%
-  ungroup()
-  
-sha_inc_asset <- left_join(sha_inc, sha_asset, by = c("ssn", "lname", "fname", "dob", "act_date"))
-
-### TEMP RENAME
-sha <- sha %>% rename(inc = inc_year)
-sha <- sha %>% rename(inc_adj = inc_final)
-sha <- sha %>% rename(hh_inc_adj = hh_inc_final)
-
-sha <- sha %>% select(-inc, -inc_excl, -inc_adj, -asset_val, -asset_inc)
-sha <- left_join(sha, sha_inc_asset, by = c("ssn", "lname", "fname", "dob", "act_date"))
-
-### Remove unnecessary income and asset columns, deduplicate, and reorder
-sha <- sha %>% select(-inc_code, -asset_type) %>% distinct() %>%
-  select(incasset_id:bed_cnt, rent_type:tb_rent_ceiling, lname:mbr_id, race:mbr_num, 
-         asset_val, asset_inc, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
-         inc, inc_excl, inc_adj, inc_fixed, hh_inc, hh_inc_adj, 
-         hh_inc_tot, hh_inc_deduct, hh_inc_tot_adj)
-
-rm(sha_inc)
-rm(sha_asset)
-rm(sha_inc_asset)
-
-#### END INCOME SECTION ####
-
 
 ### Transfer over data to rows with missing programs and vouchers
-# (not all rows were joined earlier and it is easier to clean up at this point once duplicate rows are deleted)
+# (not all rows were joined earlier and it is easier to clean up at this point 
+# once duplicate rows are deleted)
 sha <- sha %>%
   arrange(ssn, lname, fname, dob, act_date) %>%
   group_by(ssn, lname, fname, dob) %>%
@@ -423,14 +541,10 @@ sha <- sha %>%
 
 
 ##### Load to SQL server #####
-# May need to delete table first
-sqlDrop(db.apde51, "dbo.sha_combined")
-sqlSave(db.apde51, sha, tablename = "dbo.sha_combined",
-        varTypes = c(
-          act_date = "Date",
-          admit_date = "Date",
-          dob = "Date"
-        ))
+# May need to delete table first if data structure and columns have changed
+dbRemoveTable(db.apde51, name = "sha_combined")
+dbWriteTable(db.apde51, name = "sha_combined", 
+             value = as.data.frame(sha), overwrite = T)
 
 
 ##### Remove temporary files #####
@@ -440,8 +554,6 @@ rm(list = ls(pattern = "sha3"))
 rm(list = ls(pattern = "sha4"))
 rm(list = ls(pattern = "sha5"))
 rm(list = ls(pattern = "sha_"))
-rm(dfs)
-rm(df_dedups)
 rm(fields)
 gc()
 
