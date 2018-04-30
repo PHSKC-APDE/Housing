@@ -27,12 +27,21 @@ options(max.print = 350, tibble.print_max = 50, scipen = 999)
 library(housing) # contains many useful functions for cleaning
 library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
-library(dplyr) # Used to manipulate data
+library(data.table) # Used to read in csv files more efficiently
+library(tidyverse) # Used to manipulate data
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+kcha_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data"
 db.apde51 <- odbcConnect("PH_APDEStore51")
 
+panel_1_2004_2015_fname <- "kcha_panel_01_2004_2015.csv"
+panel_2_2004_2015_fname <- "kcha_panel_02_2004_2015.csv"
+panel_3_2004_2015_fname <- "kcha_panel_03_2004_2015.csv"
+panel_1_2016_fname <- "kcha_panel_01_2016.csv"
+panel_2_2016_fname <- "kcha_panel_02_2016.csv"
+panel_3_2016_fname <- "kcha_panel_03_2016.csv"
+panel_1_2017_fname <- "kcha_panel_01_2017.csv"
+panel_2_2017_fname <- "kcha_panel_02_2017.csv"
+panel_3_2017_fname <- "kcha_panel_03_2017.csv"
 
 #####################################
 #### PART 1: RAW DATA PROCESSING ####
@@ -40,84 +49,107 @@ db.apde51 <- odbcConnect("PH_APDEStore51")
 
 #### Bring in raw data and combine ####
 ### Bring in data
-kcha_old_p1 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_01_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
-kcha_old_p2 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_02_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
-kcha_old_p3 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_03_2004-2015_received_2017-03-07.csv", stringsAsFactors = FALSE)
+kcha_2004_2015_p1 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
+                                 stringsAsFactors = FALSE)
+kcha_2004_2015_p2 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
+                                       stringsAsFactors = FALSE)
+kcha_2004_2015_p3 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
+                                       stringsAsFactors = FALSE)
 
-kcha_new_p1 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_01_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
-kcha_new_p2 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_02_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
-kcha_new_p3 <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/kcha_panel_03_2016_received_2017-05-04.csv", stringsAsFactors = FALSE)
+kcha_2016_p1 <- fread(file = file.path(kcha_path, panel_1_2016_fname), 
+                                       stringsAsFactors = FALSE)
+kcha_2016_p2 <- fread(file = file.path(kcha_path, panel_2_2016_fname), 
+                                       stringsAsFactors = FALSE)
+kcha_2016_p3 <- fread(file = file.path(kcha_path, panel_3_2016_fname), 
+                                       stringsAsFactors = FALSE)
+
+
+kcha_2017_p1 <- fread(file = file.path(kcha_path, panel_1_2017_fname), 
+                                  stringsAsFactors = FALSE)
+kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname), 
+                                  stringsAsFactors = FALSE)
+kcha_2017_p3 <- fread(file = file.path(kcha_path, panel_3_2017_fname), 
+                                  stringsAsFactors = FALSE)
 
 
 ### Remove duplicates to reduce join issues (not needed with newer data)
-kcha_old_p1 <- kcha_old_p1 %>% distinct()
-kcha_old_p2 <- kcha_old_p2 %>% distinct()
-kcha_old_p3 <- kcha_old_p3 %>% distinct()
+kcha_2004_2015_p1 <- kcha_2004_2015_p1 %>% distinct()
+kcha_2004_2015_p2 <- kcha_2004_2015_p2 %>% distinct()
+kcha_2004_2015_p3 <- kcha_2004_2015_p3 %>% distinct()
 
 
 ### Join into a single file for each extract
-kcha_old_full <- list(kcha_old_p1, kcha_old_p2, kcha_old_p3) %>%
-  Reduce(function(dtf1, dtf2) full_join(dtf1, dtf2, by = c("subsidy_id", "h2a", "h2b")), .)
+kcha_2004_2015_full <- list(kcha_2004_2015_p1, kcha_2004_2015_p2, 
+                            kcha_2004_2015_p3) %>%
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("subsidy_id", "h2a", "h2b")), .)
 
-kcha_new_full <- list(kcha_new_p1, kcha_new_p2, kcha_new_p3) %>%
-  Reduce(function(dtf1, dtf2) full_join(dtf1, dtf2, by = c("householdid", "certificationid", "h2a", "h2b")), .)
+kcha_2016_full <- list(kcha_2016_p1, kcha_2016_p2, kcha_2016_p3) %>%
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("householdid", "certificationid", "h2a", "h2b")), .)
+
+kcha_2017_full <- list(kcha_2017_p1, kcha_2017_p2, kcha_2017_p3) %>%
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("householdid", "certificationid", "h2a", "h2b")), .)
 
 
 ### Rename and reformat a few variables to make for easier appending
-# Dates in older data come as integers with dropped leading zeros (and sometimes dropped second zero before the days)
-kcha_old_full <- kcha_old_full %>%
+# Dates in older data come as integers with dropped leading zeros 
+# (and sometimes dropped second zero before the days)
+kcha_2004_2015_full <- kcha_2004_2015_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
-            funs(as.Date(ifelse(nchar(as.character(.)) == 7, paste0("0", as.character(.)),
-                                ifelse(nchar(as.character(.)) == 6, 
-                                       paste0("0", str_sub(., 1, 1), "0", str_sub(., 2, 6)),
-                                       as.character(.))), "%m%d%Y")))
+            funs(as.Date(
+              ifelse(nchar(as.character(.)) == 7, paste0("0", as.character(.)),
+                     ifelse(nchar(as.character(.)) == 6, 
+                            paste0("0", str_sub(., 1, 1), "0", str_sub(., 2, 6)),
+                            as.character(.))), "%m%d%Y")))
 
 # Dates in newer data come as character
-kcha_new_full <- kcha_new_full %>%
+kcha_2016_full <- kcha_2016_full %>%
+  mutate_at(vars(h2b, h2h, starts_with("h3e")),
+            funs(as.Date(., format = "%m/%d/%Y")))
+kcha_2017_full <- kcha_2017_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
             funs(as.Date(., format = "%m/%d/%Y")))
 
 
-# Keep all SSNs in both data as characters for now
-kcha_old_full <- kcha_old_full %>%
-  mutate_at(vars(starts_with("h3n")),
-            funs(as.character(.)))
-
-kcha_new_full <- kcha_new_full %>%
-  mutate_at(vars(starts_with("h3n")),
-            funs(as.character(.)))
+# Keep all SSNs as characters for now (older data all characters with fread)
+kcha_2016_full <- kcha_2016_full %>%
+  mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
+kcha_2017_full <- kcha_2017_full %>%
+  mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
 
 
 # A few other vars are character only in older data
-kcha_old_full <- kcha_old_full %>%
+kcha_2004_2015_full <- kcha_2004_2015_full %>%
   mutate_at(vars(h20b, h20d, h21b, h21e, h21i, h21j, h21k, h21n, h21p),
             funs(as.numeric(.)))
 
 
-# The city variable seems misnamed in newer data
-kcha_new_full <- kcha_new_full %>%
-  rename(h5a3 = h5a2)
+# The city variable seems misnamed in 2016 data (ok in 2017)
+kcha_2016_full <- kcha_2016_full %>% rename(h5a3 = h5a2)
+
+
+# Fix up some inconsistent naming in income fields of <2015 data
+kcha_2004_2015_full <- kcha_2004_2015_full %>%
+  select(-h19a10a, -h19a11a, -h19a12a, -h19a13a, -h19a14a, 
+         -h19a15a, -h19a16a, -h19a10b, -h19a11b, -h19a12b, 
+         -h19a13b, -h19a14b, -h19a15b, -h19a16b) %>%
+  rename(h19a10a = h1910a, h19a11a = h1911a, h19a12a = h1912a, h19a13a = h1913a,
+         h19a14a = h1914a, h19a15a = h1915a, h19a16a = h1916a, 
+         h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b,
+         h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
 
 
 ### Append latest extract
-kcha <- bind_rows(kcha_old_full, kcha_new_full)
-
-
-#### Load to SQL server ####
-# May need to delete table first
-sqlDrop(db.apde51, "dbo.kcha_combined_raw")
-sqlSave(db.apde51, kcha, tablename = "dbo.kcha_combined_raw",
-        varTypes = c(
-          h2b = "Date",
-          h2h = "Date",
-          h3e01 = "Date", h3e02 = "Date", h3e03 = "Date", h3e04 = "Date", h3e05 = "Date", h3e06 = "Date",
-          h3e07 = "Date", h3e08 = "Date", h3e09 = "Date", h3e10 = "Date", h3e11 = "Date", h3e12 = "Date"
-        ))
+kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)
 
 
 #### Remove temporary files ####
-rm(list = ls(pattern = "kcha_old"))
-rm(list = ls(pattern = "kcha_new"))
+rm(list = ls(pattern = "kcha_2004_2015"))
+rm(list = ls(pattern = "kcha_2016"))
+rm(list = ls(pattern = "kcha_2017"))
+rm(list = ls(pattern = "panel_"))
 gc()
 
 
@@ -131,9 +163,8 @@ kcha <- kcha %>%
   select(h1a, h2a, h2b, h2c, h2d, h2h, starts_with("h3"), starts_with("h5"),
          h19a1b, h19a2b, h19a3b, h19a4b, h19a5b, h19a6b,h19a7b, h19a8b, h19a9b, h1910b, h1911b, h1912b, h1913b,
          h1914b, h1915b, h1916b, starts_with("h19b"), starts_with("h19d"), starts_with("h19f"), h19g, h19h, 
-         starts_with("h20"), starts_with("h21"), program_type, householdid:developmentname, spec_vouch, subsidy_id) %>%
-  # Fix up some inconsistent naming
-  rename(h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b, h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
+         starts_with("h20"), starts_with("h21"), program_type, householdid:developmentname, spec_vouch, subsidy_id)
+
 
 
 # Need to strip duplicates again now that some variables have been removed
