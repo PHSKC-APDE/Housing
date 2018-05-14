@@ -1,8 +1,8 @@
 MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,SHA_prog_port_codes,KCHA_modified,KCHA_eop,PHSKC
 01a,agencyname1a,agencyname1a,,,h1a,,agency
-02a,actiontype2a,actiontype2a,actiontype2a,,h2a,HUD50058.2a.Type.of.Action,act_type
-02a,,,actiontype2a,,,HUD-50058.2a.Type.of.Action,act_type
-02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,,h2b,Effective.Date,act_date
+02a,actiontype2a,actiontype2a,actiontype2a,,h2a,HUD-50058 2a Type of Action,act_type
+02a,,,actiontype2a,,,,act_type
+02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,,h2b,Effective Date,act_date
 02b,,,effectivedateofaction2b,,,,act_date
 02c,,,,,h2c,,correction
 02d,,,,,h2d,,correction_date
@@ -111,9 +111,9 @@ h03b,lastname3bhead,hohlastname3b,hohlastname3b,,hh_lname,,hh_lname
 h03b1,suffixhead,suffixhead,,,,,hh_lnamesuf
 h03c,firstname3chead,hohfirstname3c,hohfirstname3c,,hh_fname,,hh_fname
 h03d,middleinitial3dhead,hohmiddleinitial3d,hohmiddleinitial3d,,hh_mname,,hh_mname
-h03n,headofhousessn,hohssn,headofhousessn,,hh_ssn,HOH.SSN,hh_ssn
-,,,,,,HOH.Birthdate,hh_dob
-,,,,,,HOH.Full.Name,hh_name
+h03n,headofhousessn,hohssn,headofhousessn,,hh_ssn,HOH SSN,hh_ssn
+,,,,,,HOH Birthdate,hh_dob
+,,,,,,HOH Full Name,hh_name
 h03t,numberofhouseholdmembers3thead,numberofhouseholdmembers3thead,,,,,hh_hhold_num
 h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh_ssn
 ,unitid,unitid,unitid,,,,unit_id
@@ -127,15 +127,15 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,projectid,projectid,,,property_id
 ,,,certificationuniqueidshafield,,certificationid,,cert_id
 ,,,certificationuniqueidshafield,,,,cert_id
-,,,hohuniqueidentifier,,,Household.ID,hh_id
+,,,hohuniqueidentifier,,householdid,Household ID,hh_id
 ,,,hohuniqueidentifier,,,,hh_id
 ,,,memberuniqueidentifier,,,,mbr_id
 ,,,memberuniqueidentifier,,,,mbr_id
 ,,,,,householdid,,hhold_id
 ,,,,,subsidy_id,,subsidy_id
-,,,,,,Voucher.Number,vouch_num
+,,,,,,Voucher Number,vouch_num
 ,,majorprogram,majorprogram,,,,major_prog
-,,,programtype,Program.Type,program_type,Program.Type,prog_type
+,,,programtype,Program.Type,program_type,Program Type,prog_type
 ,,,,programtype,,,prog_type
 ,,,programsubtype,,,,prog_subtype
 ,,,programsubtype,,,,prog_subtype
@@ -184,7 +184,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,Acc...Reported.to.HUD,,dev_unit_report
 ,,,,,Unit.Program.Type,,dev_unit_type
 ,,,,,Bedrooms,,bed_cnt
-,,,,,,MTW.Rent.Calculation.Profile,add_yr_eop
+,,,,,,MTW Rent Calculation Profile,add_yr_eop
 ,,originalmoveindate,,,,,move_in_date
 ,,totalannualunremimbursedmedicalexpense,,,,,reimbursed_med
 ,,medicaldisabilitythreshold,,,,,med_dis_thresh
