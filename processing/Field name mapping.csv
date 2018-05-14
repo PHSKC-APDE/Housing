@@ -1,6 +1,7 @@
 MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,SHA_prog_port_codes,KCHA_modified,KCHA_eop,PHSKC
 01a,agencyname1a,agencyname1a,,,h1a,,agency
 02a,actiontype2a,actiontype2a,actiontype2a,,h2a,HUD50058.2a.Type.of.Action,act_type
+,,,,,,HUD-50058.2a.Type.of.Action,act_type
 02a,,,actiontype2a,,,,act_type
 02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,,h2b,Effective.Date,act_date
 02b,,,effectivedateofaction2b,,,,act_date
