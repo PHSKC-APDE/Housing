@@ -584,7 +584,7 @@ kcha_long <- kcha_long %>%
 
 # Remove specific incomes and codes and deduplicate
 kcha_long <- kcha_long %>%
-  select(-h19a1, -h19a2, -h19b, -h19d, -h19f)
+  select(-h19a1, -h19a2, -h19b, -h19d, -h19f, -h19h, -h19k)
 
 # Remove temporary data
 rm(list = ls(pattern = "inc_"))
@@ -657,10 +657,17 @@ kcha_long <- kcha_long %>%
 # kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
 
 
-#### Final clean up of formats ####
+#### Final clean up of formats in preparation for joining ####
 kcha_long <- kcha_long %>%
   mutate_at(vars(admit_date, dob, hh_dob),
             funs(as.Date(., origin = "1970-01-01")))
+
+kcha_long <- yesno_f(kcha_long, correction, ph_rent_ceiling, disability,
+                     access_unit, access_req, tb_rent_ceiling, portability,
+                     r_white, r_black, r_aian, r_asian, r_nhpi)
+kcha_long <- char_f(kcha_long, property_id)
+
+kcha_long <- kcha_long %>% distinct()
 
 
 
