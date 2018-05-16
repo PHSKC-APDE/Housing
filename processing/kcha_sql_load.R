@@ -657,11 +657,24 @@ kcha_long <- kcha_long %>%
 # kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
 
 
+#### Final clean up of formats ####
+kcha_long <- kcha_long %>%
+  mutate_at(vars(admit_date, dob, hh_dob),
+            funs(as.Date(., origin = "1970-01-01")))
+
+
+
 ##### WRITE RESHAPED DATA TO SQL #####
 # May need to delete table first if data structure and columns have changed
 dbRemoveTable(db.apde51, name = "kcha_reshaped")
 dbWriteTable(db.apde51, name = "kcha_reshaped", 
-             value = as.data.frame(kcha_long), overwrite = T)
+             value = as.data.frame(kcha_long), overwrite = T,
+             field.types = c(
+               act_date = "date",
+               admit_date = "date",
+               dob = "date",
+               hh_dob = "date"
+             ))
 
 ##### Remove temporary files #####
 rm(list = c("fields", "reshape_f", "kcha_path"))

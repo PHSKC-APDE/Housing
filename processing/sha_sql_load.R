@@ -544,7 +544,12 @@ sha <- sha %>%
 # May need to delete table first if data structure and columns have changed
 dbRemoveTable(db.apde51, name = "sha_combined")
 dbWriteTable(db.apde51, name = "sha_combined", 
-             value = as.data.frame(sha), overwrite = T)
+             value = as.data.frame(sha), overwrite = T,
+             field.types = c(
+               act_date = "date",
+               admit_date = "date",
+               dob = "date"
+             ))
 
 
 ##### Remove temporary files #####
