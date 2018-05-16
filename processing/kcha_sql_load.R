@@ -22,16 +22,17 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
-options(max.print = 350, tibble.print_max = 50, scipen = 999)
+options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
 library(housing) # contains many useful functions for cleaning
-library(RODBC) # Used to connect to SQL server
+library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
 
 kcha_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data"
-db.apde51 <- odbcConnect("PH_APDEStore51")
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+
 
 panel_1_2004_2015_fname <- "kcha_panel_01_2004_2015.csv"
 panel_2_2004_2015_fname <- "kcha_panel_02_2004_2015.csv"
@@ -43,39 +44,103 @@ panel_1_2017_fname <- "kcha_panel_01_2017.csv"
 panel_2_2017_fname <- "kcha_panel_02_2017.csv"
 panel_3_2017_fname <- "kcha_panel_03_2017.csv"
 
+kcha_eop_fname <- "EOP Certifications_received_2017-10-05.csv"
+
 #####################################
 #### PART 1: RAW DATA PROCESSING ####
 #####################################
 
-#### Bring in raw data and combine ####
-### Bring in data
+#### Bring in data ####
+# Some SSNs have temporary IDs in them so should be read in as characters
 kcha_2004_2015_p1 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
-                                 stringsAsFactors = FALSE)
+                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           stringsAsFactors = F,
+                           colClasses = list(character = c("h3n06", "h3n07", 
+                                                         "h3n08", "h3n09")))
 kcha_2004_2015_p2 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
-                                       stringsAsFactors = FALSE)
+                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           stringsAsFactors = F,
+                           colClasses = list(character = c("h3n10", "h3n11", 
+                                                           "h3g12", "h3n12")))
 kcha_2004_2015_p3 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
-                                       stringsAsFactors = FALSE)
+                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           stringsAsFactors = F)
 
-kcha_2016_p1 <- fread(file = file.path(kcha_path, panel_1_2016_fname), 
-                                       stringsAsFactors = FALSE)
+kcha_2016_p1 <- fread(file = file.path(kcha_path, panel_1_2016_fname),
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = F,
+                      colClasses = list(character = c("h3n03", "h3n04", "h3n05",
+                                                      "h3n06", "h3n09")))
 kcha_2016_p2 <- fread(file = file.path(kcha_path, panel_2_2016_fname), 
-                                       stringsAsFactors = FALSE)
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = F,
+                      colClasses = list(character = c("h3n11", "h3g12")))
 kcha_2016_p3 <- fread(file = file.path(kcha_path, panel_3_2016_fname), 
-                                       stringsAsFactors = FALSE)
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = F,
+                      colClasses = list(character = c("h19a9a", "h19b09")))
 
 
 kcha_2017_p1 <- fread(file = file.path(kcha_path, panel_1_2017_fname), 
-                                  stringsAsFactors = FALSE)
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = FALSE)
 kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname), 
-                                  stringsAsFactors = FALSE)
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = F,
+                      colClasses = 
+                        list(character = c("h3b12", "h3c12", "h3d12", "h3e12", 
+                                           "h3g12", "h3h12", "h3i12", "h3j12", 
+                                           "h3k12a", "h3k12b", "h3k12c", 
+                                           "h3k12d", "h3k12e", "h3n12", 
+                                           "h3b13", "h3c13", "h3d13", "h3e13", 
+                                           "h3g13", "h3h13", "h3i13", "h3j13", 
+                                           "h3k13a", "h3k13b", "h3k13c", 
+                                           "h3k13d", "h3k13e", "h3n13", 
+                                           "h3b14", "h3c14", "h3d14", "h3e14", 
+                                           "h3g14", "h3h14", "h3i14", "h3j14", 
+                                           "h3k14a", "h3k14b", "h3k14c", 
+                                           "h3k14d", "h3k14e", "h3n14"
+                                           )))
 kcha_2017_p3 <- fread(file = file.path(kcha_path, panel_3_2017_fname), 
-                                  stringsAsFactors = FALSE)
+                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      stringsAsFactors = F,
+                      colClasses = list(character = c("h19b09", "h19a9a")))
 
 
-### Remove duplicates to reduce join issues (not needed with newer data)
-kcha_2004_2015_p1 <- kcha_2004_2015_p1 %>% distinct()
-kcha_2004_2015_p2 <- kcha_2004_2015_p2 %>% distinct()
-kcha_2004_2015_p3 <- kcha_2004_2015_p3 %>% distinct()
+# Some of the KCHA end of participation data is missing from the original extract
+kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
+                  na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                  stringsAsFactors = F)
+
+
+# Bring in variable name mapping table
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+                   header = TRUE, stringsAsFactors = FALSE)
+
+
+#### Deduplicate and combine ####
+
+### First deduplicate data to avoid extra rows being made when joined
+# Make list of data frames to deduplicate (not needed with newer data)
+dfs <- list(kcha_2004_2015_p1 = kcha_2004_2015_p1, 
+            kcha_2004_2015_p2 = kcha_2004_2015_p2, 
+            kcha_2004_2015_p3 = kcha_2004_2015_p3)
+
+# Clean up member numbers that are showing 0 and deduplicate data
+df_dedups <- lapply(dfs, function(data) {
+  data <- data %>% 
+    mutate_at(vars(contains("h3a"), contains("h3e"), contains("h3m"),
+                   contains("h5j"), contains("h19")), 
+              funs(ifelse(. == 0, NA, .))) %>%
+    distinct()
+  return(data)
+})
+
+# Bring back data frames from list
+list2env(df_dedups, .GlobalEnv)
+rm(dfs)
+rm(df_dedups)
+gc()
 
 
 ### Join into a single file for each extract
@@ -140,6 +205,14 @@ kcha_2004_2015_full <- kcha_2004_2015_full %>%
          h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b,
          h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
 
+# Fix up an inconsitent name in the 2017 data
+kcha_2017_full <- kcha_2017_full %>% rename(spec_vouch = spec_voucher)
+
+
+# Add source field to track where each row came from
+kcha_2004_2015_full <- kcha_2004_2015_full %>% mutate(kcha_source = "kcha2015")
+kcha_2016_full <- kcha_2016_full %>% mutate(kcha_source = "kcha2016")
+kcha_2017_full <- kcha_2017_full %>% mutate(kcha_source = "kcha2017")
 
 ### Append latest extract
 kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)
@@ -157,27 +230,74 @@ gc()
 #### PART 2: RESHAPE AND REORGANIZE  ####
 #########################################
 
-### Strip out some variables for now
-# Remove panel 19 on income except for member name/number and source of income
+### Drop columns with no information
+kcha <- kcha %>% select(-(contains("15")), -(contains("16")))
+
+#### Fix up program column (used for joining in this section)
 kcha <- kcha %>%
-  select(h1a, h2a, h2b, h2c, h2d, h2h, starts_with("h3"), starts_with("h5"),
-         h19a1b, h19a2b, h19a3b, h19a4b, h19a5b, h19a6b,h19a7b, h19a8b, h19a9b, h1910b, h1911b, h1912b, h1913b,
-         h1914b, h1915b, h1916b, starts_with("h19b"), starts_with("h19d"), starts_with("h19f"), h19g, h19h, 
-         starts_with("h20"), starts_with("h21"), program_type, householdid:developmentname, spec_vouch, subsidy_id)
+  mutate(program_type = case_when(
+    program_type == "P" ~ "PH",
+    program_type == "PR" ~ "PBS8",
+    program_type %in% c("T", "VO") ~ "TBS8",
+    TRUE ~ program_type
+  ))
 
 
+#### Remove duplicates ####
+# There are duplicate rows where the only difference is the cert id (~426)
+# Possibly a double data entry issue
+# Remove via distinct, either list all columns or drop cert id (former for now)
+kcha <- kcha %>%
+  distinct(h1a, subsidy_id, h2a, h2b, program_type, h2c, h2d, h2h, h3a01, h3b01, 
+           h3c01, h3d01, h3e01, h3g01, h3h01, h3i01, h3j01, h3k01a, h3k01b, 
+           h3k01c, h3k01d, h3k01e, h3m01, h3n01, h3a02, h3b02, h3c02,  h3d02, 
+           h3e02, h3g02, h3h02, h3i02, h3j02, h3k02a, h3k02b, h3k02c,  h3k02d, 
+           h3k02e, h3m02, h3n02, h3a03, h3b03, h3c03, h3d03, h3e03,  h3g03, 
+           h3h03, h3i03, h3j03, h3k03a, h3k03b, h3k03c, h3k03d, h3k03e,  h3m03, 
+           h3n03, h3a04, h3b04, h3c04, h3d04, h3e04, h3g04, h3h04,  h3i04, 
+           h3j04, h3k04a, h3k04b, h3k04c, h3k04d, h3k04e, h3m04, h3n04,  h3a05, 
+           h3b05, h3c05, h3d05, h3e05, h3g05, h3h05, h3i05, h3j05,  h3k05a, 
+           h3k05b, h3k05c, h3k05d, h3k05e, h3m05, h3n05, h3a06, h3b06,  h3c06, 
+           h3d06, h3e06, h3g06, h3h06, h3i06, h3j06, h3k06a, h3k06b, h3k06c, 
+           h3k06d, h3k06e, h3m06, h3n06, h3a07, h3b07, h3c07, h3d07, h3e07, 
+           h3g07, h3h07, h3i07, h3j07, h3k07a, h3k07b, h3k07c, h3k07d, h3k07e, 
+           h3m07, h3n07, h3a08, h3b08, h3c08, h3d08, h3e08, h3g08, h3h08, h3i08, 
+           h3j08, h3k08a, h3k08b, h3k08c, h3k08d, h3k08e, h3m08, h3n08, h3a09, 
+           h3b09, h3c09, h3d09, h3e09, h3g09, h3h09, h3i09, h3j09, h3k09a, 
+           h3k09b, h3k09c, h3k09d, h3k09e, h3m09, h3n09, spec_vouch, h3a10, 
+           h3b10, h3c10, h3d10, h3e10, h3g10, h3h10, h3i10, h3j10, h3k10a, 
+           h3k10b, h3k10c, h3k10d, h3k10e, h3m10, h3n10, h3a11, h3b11, h3c11, 
+           h3d11, h3e11, h3g11, h3h11, h3i11, h3j11, h3k11a, h3k11b, h3k11c, 
+           h3k11d, h3k11e, h3m11, h3n11, h3a12, h3b12, h3c12, h3d12, h3e12, 
+           h3g12, h3h12, h3i12, h3j12, h3k12a, h3k12b, h3k12c, h3k12d, h3k12e, 
+           h3m12, h3n12, h5a1a, h5a1b, h5a2, h5a3, h5a4, h5a5, h5e, h5f, h5g, 
+           h5j, h5k, h5d, h19a1a, h19a1b, h19b01, h19d01, h19f01, h19a2a, 
+           h19a2b, h19b02, h19d02, h19f02, h19a3a, h19a3b, h19b03, h19d03, 
+           h19f03, h19a4a, h19a4b, h19b04, h19d04, h19f04, h19a5a, h19a5b, 
+           h19b05, h19d05, h19f05, h19a6a, h19a6b, h19b06, h19d06, h19f06, 
+           h19a7a, h19a7b, h19b07, h19d07, h19f07, h19a8a, h19a8b, h19b08, 
+           h19d08, h19f08, h19g, h19i, h19a9a, h19a9b, h19b09, h19d09, h19f09, 
+           h19a10a, h19a10b, h19b10, h19d10, h19f10, h19a11a, h19a11b, h19b11, 
+           h19d11, h19f11, h19a12a, h19a12b, h19b12, h19d12, h19f12, h19a13a, 
+           h19a13b, h19b13, h19d13, h19f13, h19a14a, h19a14b, h19b14, h19d14, 
+           h19f14, h20b, h20d, h21a, h21b, h21d, h21e, h21f, h21i, h21j, h21k, 
+           h21n, h21p, kcha_source, householdid, developmentname, h19h, h19k, 
+           h20a, h20c, h20e, h21m, h21q, propertytype, h3a13, h3a14, h3b13, 
+           h3b14, h3c13, h3c14, h3d13, h3d14, h3e13, h3e14, h3g13, h3g14, h3h13, 
+           h3h14, h3i13, h3i14, h3j13, h3j14, h3k13a, h3k13b, h3k13c, h3k13d, 
+           h3k13e, h3k14a, h3k14b, h3k14c, h3k14d, h3k14e, h3m13, h3m14, h3n13, 
+           h3n14, .keep_all = T)
 
-# Need to strip duplicates again now that some variables have been removed
-kcha <- kcha %>% distinct()
 
-### Look at household income sources before reshaping
+#### Look at household income sources before reshaping ####
 # Much easier to do when the entire household is on a single row
+# NB. There are many household/date combos repeated due to minor differences
+# in rows, e.g., addresses formatted differently. This will mean household
+# income is repeated until rows are cleaned up.
 
-# First clean up white space around income codes
-kcha <- mutate_at(kcha, vars(starts_with("h19b")), funs(str_trim(.)))
-
-# Next take most complete income data 
-# (sometimes h19h is missing when h19g is not, unclear if this is always true for h19d and h19f, which add up to h19g and h19h, respectively)
+# Take most complete adjusted income data
+# (sometimes h19h is missing when h19g is not, same is true for h19f and h19d, 
+# which add up to h19h and h19g, respectively)
 kcha <- kcha %>%
   mutate(
     h19f01 = ifelse(is.na(h19f01) & !is.na(h19d01), h19d01, h19f01),
@@ -193,57 +313,132 @@ kcha <- kcha %>%
     h19f11 = ifelse(is.na(h19f11) & !is.na(h19d11), h19d11, h19f11),
     h19f12 = ifelse(is.na(h19f12) & !is.na(h19d12), h19d12, h19f12),
     h19f13 = ifelse(is.na(h19f13) & !is.na(h19d13), h19d13, h19f13),
-    h19f14 = ifelse(is.na(h19f14) & !is.na(h19d14), h19d14, h19f14),
-    h19f15 = ifelse(is.na(h19f15) & !is.na(h19d15), h19d15, h19f15),
-    h19f16 = ifelse(is.na(h19f16) & !is.na(h19d16), h19d16, h19f16)
+    h19f14 = ifelse(is.na(h19f14) & !is.na(h19d14), h19d14, h19f14)
   )
 
 # Make matrices of income codes and dollar amounts
-inc_fixed <- kcha %>% select(h19b01:h19b16) %>%
+inc_fixed <- kcha %>% select(contains("h19b")) %>%
   mutate_all(funs(ifelse(. %in% c("G", "P", "S", "SS"), 1, 0)))
 inc_fixed <- as.matrix(inc_fixed)
 
-inc_vary <- kcha %>% select(h19b01:h19b16) %>%
+inc_vary <- kcha %>% select(contains("h19b")) %>%
   mutate_all(funs(ifelse(. %in% c("G", "P", "S", "SS"), 0, 1)))
 inc_vary <- as.matrix(inc_vary)
 
-inc_amount <- kcha %>% select(h19f01:h19f16)
+inc_amount <- kcha %>% select(contains("h19d"))
 inc_amount <- as.matrix(inc_amount)
 
+inc_adj_amount <- kcha %>% select(contains("h19f"))
+inc_adj_amount <- as.matrix(inc_adj_amount)
+
 # Calculate totals of fixed and varying incomes
+# Using the adjusted amounts
 inc_fixed_amt <- as.data.frame(inc_fixed * inc_amount)
 inc_fixed_amt <- inc_fixed_amt %>%
-  mutate(hhold_inc_fixed = rowSums(., na.rm = TRUE)) %>%
-  select(hhold_inc_fixed)
+  mutate(hh_inc_fixed = rowSums(., na.rm = TRUE)) %>%
+  select(hh_inc_fixed)
+
+inc_adj_fixed_amt <- as.data.frame(inc_fixed * inc_adj_amount)
+inc_adj_fixed_amt <- inc_adj_fixed_amt %>%
+  mutate(hh_inc_adj_fixed = rowSums(., na.rm = TRUE)) %>%
+  select(hh_inc_adj_fixed)
 
 inc_vary_amt <- as.data.frame(inc_vary * inc_amount)
 inc_vary_amt <- inc_vary_amt %>%
-  mutate(hhold_inc_vary = rowSums(., na.rm = TRUE)) %>%
-  select(hhold_inc_vary)
+  mutate(hh_inc_vary = rowSums(., na.rm = TRUE)) %>%
+  select(hh_inc_vary)
+
+inc_adj_vary_amt <- as.data.frame(inc_vary * inc_adj_amount)
+inc_adj_vary_amt <- inc_adj_vary_amt %>%
+  mutate(hh_inc_adj_vary = rowSums(., na.rm = TRUE)) %>%
+  select(hh_inc_adj_vary)
 
 # Join back to main data
-kcha <- bind_cols(kcha, inc_fixed_amt, inc_vary_amt)
+kcha <- bind_cols(kcha, inc_fixed_amt, inc_adj_fixed_amt, 
+                  inc_vary_amt, inc_adj_vary_amt)
 
 # Remove temporary data
 rm(list = ls(pattern = "inc_"))
+gc()
 
 
-#### Reshape data ####
-# The data initially has household members in wide format
-# Need to reshape to give one hhold member per row but retain head of hhold info
-
-# Make HH vars first
+#### Set up heads of households ####
+# Also set up data for joining to EOP data and reshaping
 kcha <- kcha %>%
   mutate(
     hh_lname = h3b01,
     hh_fname = h3c01,
     hh_mname = h3d01,
     hh_ssn = h3n01,
-    hh_dob = h3e01,
-    # Make temporary record of the row each new row came from when reshaped
-    hhold_id_temp = row_number()
-  )
+    hh_dob = h3e01)
 
+
+#### Add missing end of participation (EOP) certs ####
+# Rename EOP fields to match KCHA
+# NB. No longer using names from the fields csv
+kcha_eop <- kcha_eop %>%
+  rename(householdid = `Household ID`, vouch_num = `Voucher Number`,
+         hh_ssn = `HOH SSN`, hh_dob = `HOH Birthdate`, 
+         hh_lname = `HOH Full Name`, program_type = `Program Type`,
+         h2a = `HUD-50058 2a Type of Action`, h2b = `Effective Date`)
+
+# Fix up variable types
+kcha_eop <- kcha_eop %>%
+  mutate(
+    hh_lname = toupper(hh_lname),
+    hh_ssn = str_replace_all(hh_ssn, "-", ""),
+    hh_dob = as.Date(hh_dob, format = "%m/%d/%Y"),
+    h2b = as.Date(h2b, format = "%m/%d/%Y"),
+    program_type = car::recode(program_type, "'MTW Tenant-Based Assistance' = 'TBS8';
+                            'MTW Project-Based Assistance' = 'PBS8';
+                            'MTW Public Housing' = 'PH'"),
+    eop_source = "eop"
+    ) %>%
+  # Restrict to necessary columns
+  select(householdid, vouch_num, hh_ssn, hh_dob:h2a, h2b, eop_source) %>%
+  # Drop missing SSNs
+  filter(!is.na(hh_ssn))
+
+# Join EOP and HH info together
+kcha <- bind_rows(kcha, kcha_eop) %>% arrange(hh_ssn, h2b, h2a, eop_source)
+
+# Decide which row to keep when the EOP is already captured
+kcha <- kcha %>%
+  mutate(drop = case_when(
+    # Keep EOP if names are missing from main data
+    hh_ssn == lag(hh_ssn, 1) & h2b == lag(h2b, 1) & h2a == lag(h2a, 1) &
+      is.na(hh_lname) & !is.na(lag(hh_lname, 1)) & lag(eop_source, 1) == "eop" ~ 1,
+    # Keep main data in other circumstances
+    hh_ssn == lead(hh_ssn, 1) & h2b == lead(h2b) & h2a == lead(h2a, 1) &
+      !is.na(lead(hh_lname, 1)) & eop_source == "eop" ~ 1,
+    TRUE ~ 0
+  )) %>%
+  # Remove records that should be dropped
+  filter(drop == 0) %>%
+  select(-drop)
+
+  
+# Transfer household data from row immediately prior to EOP row
+kcha <- kcha %>%
+  mutate_at(vars(h1a, h2h, contains("h3"), contains("h5"), contains("h19"),
+                 contains("h20"), contains("h21"), hh_lname, hh_fname, 
+                 hh_mname, contains("hh_inc"), kcha_source, propertytype,
+                 developmentname, spec_vouch),
+            funs(ifelse(hh_ssn == lag(hh_ssn, 1) & eop_source == "eop" &
+                          !is.na(eop_source), 
+                        lag(., 1), .))
+            )
+
+rm(list = ls(pattern = "kcha_eop"))
+
+
+#### RESHAPE DATA ####
+# The data initially has household members in wide format
+# Need to reshape to give one hhold member per row but retain head of hhold info
+# Make temporary record of the row each new row came from when reshaped
+kcha <- kcha %>%
+  arrange(hh_ssn, h2b, h2a) %>%
+  mutate(hh_id_temp = row_number())
 
 # Rename some variables to have consistent format
 names <- as.data.frame(names(kcha), stringsAsFactors = FALSE)
@@ -255,195 +450,171 @@ names <- names %>%
     varname = ifelse(str_detect(varname, "h3k[:digit:]*c"), str_replace(varname, "h3k", "h3k3"), varname),
     varname = ifelse(str_detect(varname, "h3k[:digit:]*d"), str_replace(varname, "h3k", "h3k4"), varname),
     varname = ifelse(str_detect(varname, "h3k[:digit:]*e"), str_replace(varname, "h3k", "h3k5"), varname),
-    varname = ifelse(str_detect(varname, "h19a[1]{1}[ab]+"), str_replace(varname, "h19a", "h19a0"), varname),
-    varname = ifelse(str_detect(varname, "h19a[2-9]+[ab]+"), str_replace(varname, "h19a", "h19a0"), varname),
+    varname = ifelse(str_detect(varname, "h19a[0-9]{1}[a]+"), str_replace(varname, "h19a", "h19a10"), varname),
+    varname = ifelse(str_detect(varname, "h19a[0-9]{2}[a]+"), str_replace(varname, "h19a", "h19a1"), varname),
+    varname = ifelse(str_detect(varname, "h19a[0-9]{1}[b]+"), str_replace(varname, "h19a", "h19a20"), varname),
+    varname = ifelse(str_detect(varname, "h19a[0-9]{2}[b]+"), str_replace(varname, "h19a", "h19a2"), varname),
     # Trim the final letter
     varname = ifelse(str_detect(varname, "h3k") | str_detect(varname, "h19a"), str_sub(varname, 1, -2), varname)
   )
 colnames(kcha) <- names[,1]
 
+# Remove temporary data
+rm(names)
+
 
 # Using an apply process over reshape due to memory issues
 # Make function to save space
-reshape_f <- function(x) {
-  print(x)
-  sublong[[x]] <- kcha %>%
-    select_('h1a:h2h',
-            h3a = paste0("h3a", x), # not reliable so make own member number
-            h3b = paste0("h3b", x),
-            h3c = paste0("h3c", x),
-            h3d = paste0("h3d", x),
-            h3e = paste0("h3e", x),
-            h3g = paste0("h3g", x),
-            h3h = paste0("h3h", x),
-            h3i = paste0("h3i", x),
-            h3j = paste0("h3j", x),
-            h3k1 = paste0("h3k1", x),
-            h3k2 = paste0("h3k2", x),
-            h3k3 = paste0("h3k3", x),
-            h3k4 = paste0("h3k4", x),
-            h3k5 = paste0("h3k5", x),
-            h3m = paste0("h3m", x),
-            h3n = paste0("h3n", x),
-            'program_type',
-            'spec_vouch',
-            'h5a1a:hhold_id_temp') %>%
-    mutate(mbr_num = x)
+reshape_f <- function(df, min = 1, max = 14) {
+  
+  # Set up number of people in the data, ensure leading zero with sprintf
+  digits <- max(2, nchar(max))
+  people <- as.list(sprintf(paste0("%0", digits, ".0f"), min:max))
+  
+  df_inner <- df
+  
+  #Make function to get a person's info
+  person_f <- function(df_inner, x) {
+    print(paste0("Working on person ", x))
+    sublong <- df_inner %>%
+      select(h1a, h2a, h2b, h2c:h2h,
+             subsidy_id,
+             vouch_num,
+             certificationid,
+             h3a = paste0("h3a", x), # not reliable so make own member number
+             h3b = paste0("h3b", x),
+             h3c = paste0("h3c", x),
+             h3d = paste0("h3d", x),
+             h3e = paste0("h3e", x),
+             h3g = paste0("h3g", x),
+             h3h = paste0("h3h", x),
+             h3i = paste0("h3i", x),
+             h3j = paste0("h3j", x),
+             h3k1 = paste0("h3k1", x),
+             h3k2 = paste0("h3k2", x),
+             h3k3 = paste0("h3k3", x),
+             h3k4 = paste0("h3k4", x),
+             h3k5 = paste0("h3k5", x),
+             h3m = paste0("h3m", x),
+             h3n = paste0("h3n", x),
+             h19a1 = paste0("h19a1", x),
+             h19a2 = paste0("h19a2", x),
+             h19b = paste0("h19b", x),
+             h19d = paste0("h19d", x),
+             h19f = paste0("h19f", x),
+             h19h, h19k,
+             program_type,
+             spec_vouch,
+             h5a1a:h5a5,
+             h5d, h5e, h5f, h5g, h5j, h5k,
+             developmentname,
+             h20a, h20b, h20c, h20d, h20e,
+             h21a, h21b, h21d, h21e, h21f, h21i, h21j, 
+             h21k, h21m, h21n, h21p, h21q,
+             hh_inc_fixed: hh_inc_adj_vary,
+             householdid,
+             hh_lname:hh_dob,
+             kcha_source,
+             eop_source,
+             hh_id_temp) %>%
+      mutate(mbr_num = x)
+    
+    return(sublong)
+  }
+  
+  # Run function over everyone
+  templist <- lapply(people, person_f, df = df_inner)
+  
+  # Turn back into a data frame
+  long_full <- as.data.frame(rbindlist(templist))
+  return(long_full)
 }
 
+kcha_long <- reshape_f(df = kcha, min = 1, max = 14)
 
-# Make empty list and run reshaping function
-sublong <- list()
-members <- c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
-kcha_long <- lapply(members, reshape_f)
-kcha_long <- bind_rows(kcha_long)
 
 # Get rid of white space (focus on variables used to filter first to save memory)
 kcha_long <- kcha_long %>%
   mutate_at(vars(h3a, h3b, h3c, h3n, starts_with("h5a")), funs(str_trim(.)))
 
-# Get rid of empty rows (note: some rows have a SSN but no name or address, others have an address but no name or other details)
-kcha_long <- kcha_long %>%
-  filter(!((is.na(h3a) |  h3a == 0) & h3b == "" & h3c == "" & h3n == ""))
 
-# Add number of household members at that time
-kcha_long <- kcha_long %>%
-  group_by(hhold_id_temp) %>%
-  mutate(hhold_size = n()) %>%
-  ungroup()
-
-# Make mbr_num (created and from data) and unit_zip a number
-kcha_long <- mutate_at(kcha_long, vars(h3a, mbr_num, h19a01:h19a16, h5a5), funs(as.numeric(.)))
-
-
-# Convert dates to appropriate format
-kcha_long <- mutate_at(kcha_long, vars(h2b, h2h, h3e, hh_dob),
-                       funs(as.Date(., origin = "1970-01-01")))
+# Make mbr_num (both created and original data versions) and unit_zip a number
+kcha_long <- mutate_at(kcha_long, vars(h3a, mbr_num, h19a2, h5a5), 
+                       funs(as.numeric(.)))
 
 
 #### REORGANIZE INCOME FIELDS ####
-# Need to restrict the income source codes to only those that apply to that individual
-# Code could be made more efficient but currently works
+# Need to sum the income for a given time point to reduce duplicated rows
+# No asset data provided
+# Run this now because the number of rows with data exceed the number of 
+# people in the household sometimes and data would be lost if run later
+inc_temp <- kcha_long %>% select(hh_id_temp, mbr_num, contains("h19"))
 
-inc_temp <- kcha_long %>%
-  select(hhold_id_temp, mbr_num, h19a01:h19b16)
+# Filter out rows with no income or member number information
+inc_temp <- inc_temp %>% filter(!(is.na(h19a2) | is.na(h19f)))
 
-# Reshape limited dataset
-inc_temp <- inc_temp %>%
-  gather(key, value, -hhold_id_temp, -mbr_num, -h19b01, -h19b02, -h19b03, -h19b04, -h19b05, -h19b06,
-         -h19b07, -h19b08, -h19b09, -h19b10, -h19b11, -h19b12, -h19b13, -h19b14, -h19b15, -h19b16) %>%
-  filter(!is.na(value))
-
-inc_temp <- inc_temp %>%
-  # Filter out NA rows and rows that don't match the member number
-  filter(!is.na(value) & mbr_num == value)
-
-inc_temp <- inc_temp %>%
-  arrange(hhold_id_temp, mbr_num) %>%
-  # Keep record of overall row number for merging back later
-  mutate(rownum = row_number()) %>%
-  # Find the row number for that person to know how many income sources they have
-  group_by(hhold_id_temp, mbr_num) %>%
-  mutate(grprownum = row_number()) %>%
-  ungroup() %>%
-  mutate(
-    incomenum = as.numeric(str_sub(key, -2, -1))
-  )
-
-### Make a data frame to accommodate the new columns
-# Establish parameters for size of new data
-maxnum <- max(inc_temp$grprownum)
-rowcount <- nrow(inc_temp)
-
-# Make data frame and name columns appropriately
-inc_df <- data.frame(matrix(ncol = maxnum, nrow = rowcount))
-colnames(inc_df) <- paste0(rep("income", ncol(inc_df)), c(1:ncol(inc_df)))
-
-# Join df back to main
-inc_temp2 <- cbind(inc_temp, inc_df)
-
-### Make a new variable that pulls the appropriate income code
-# Set up column index
-colnum <- data.frame(colnums = ifelse(inc_temp2$incomenum < 10, match(paste0("h19b0", inc_temp2$incomenum), colnames(inc_temp2)),
-                                      ifelse(inc_temp2$incomenum >= 10, match(paste0("h19b", inc_temp2$incomenum), colnames(inc_temp2)),
-                                             NA)))
-inc_temp2 <- cbind(inc_temp2, colnum)
-
-
-### Extract out correct income code for that row
-# Separate out rows by the column that should be looked up
-inc_recode_f <- function(x) {
-  inc_group[[x]] <- inc_temp2 %>%
-    filter(colnums == x) %>%
-    select(hhold_id_temp, mbr_num, grprownum, x) %>%
-    mutate(income00 = .[[4]])
-}
-
-inc_group <- list()
-inc_members <- seq(from = 3, to = 14)
-inc_check <- lapply(inc_members, inc_recode_f)
-
-# Bring back into a single data frame
-inc_check <- bind_rows(inc_check)
-
-# Clean out superfluous columns and trim white space
-inc_check <- select(inc_check, hhold_id_temp, mbr_num, grprownum, income00)
-
-### Merge back with main data
-inc_temp2 <- left_join(inc_temp2, inc_check, by = c("hhold_id_temp", "mbr_num", "grprownum"))
-# Set income up and restrict columns
-inc_temp2 <- inc_temp2 %>%
-  mutate(
-    income1 = ifelse(grprownum == 1, income00, NA),
-    income2 = ifelse(grprownum == 2, income00, NA),
-    income3 = ifelse(grprownum == 3, income00, NA),
-    income4 = ifelse(grprownum == 4, income00, NA),
-    income5 = ifelse(grprownum == 5, income00, NA),
-    income6 = ifelse(grprownum == 6, income00, NA)
-  ) %>%
-  select(hhold_id_temp, mbr_num, income1:income6) %>%
-  # Consolidate to a single row per household member (slow, should find a more efficient approach)
-  group_by(hhold_id_temp, mbr_num) %>%
-  mutate(
-    income1 = max(income1, na.rm = T),
-    income2 = max(income2, na.rm = T),
-    income3 = max(income3, na.rm = T),
-    income4 = max(income4, na.rm = T),
-    income5 = max(income5, na.rm = T),
-    income6 = max(income6, na.rm = T)
-  ) %>%
-  slice(1) %>%
+# Summarise fixed and varying income by person
+inc_fixed <- inc_temp %>%
+  filter(h19b %in% c("G", "P", "S", "SS")) %>%
+  group_by(hh_id_temp, h19a2) %>%
+  summarise(inc_fixed = sum(h19d, na.rm = T),
+            inc_adj_fixed = sum(h19f, na.rm = T)) %>%
   ungroup()
 
-### Merge back with longitudinal file
-kcha_long <- left_join(kcha_long, inc_temp2, by = c("hhold_id_temp", "mbr_num"))
+inc_vary <- inc_temp %>%
+  filter(!h19b %in% c("G", "P", "S", "SS")) %>%
+  group_by(hh_id_temp, h19a2) %>%
+  summarise(inc_vary = sum(h19d, na.rm = T),
+            inc_adj_vary = sum(h19f, na.rm = T)) %>%
+  ungroup()
 
-### Remove extraneous columns
-kcha_long <- select(kcha_long, program_type, spec_vouch, householdid, certificationid, subsidy_id,
-                    h1a:h2h, mbr_num, h3a:h3n, h5a1a:h5a5, developmentname, h5e:h5d, income1:income6, 
-                    h20b:h21q, hh_lname:hh_dob, hhold_inc_fixed, hhold_inc_vary, hhold_size)
+# Join back to main data and make combined income data
+# Join to KCHA-given mbr num (h3a) rather than income field mbr num (h19a2)
+# because the latter can be propagated across multiple household members
+kcha_long <- left_join(kcha_long, inc_fixed, by = c("hh_id_temp", "h3a" = "h19a2"))
+kcha_long <- left_join(kcha_long, inc_vary, by = c("hh_id_temp", "h3a" = "h19a2"))
 
+kcha_long <- kcha_long %>%
+  mutate(inc = rowSums(select(., inc_fixed, inc_vary), na.rm = T),
+         inc_adj = rowSums(select(., inc_adj_fixed, inc_adj_vary), na.rm = T),
+         hh_inc = rowSums(select(., hh_inc_fixed, hh_inc_vary), na.rm = T),
+         hh_inc_adj = rowSums(select(., hh_inc_adj_fixed, hh_inc_adj_vary), na.rm = T),
+         # No asset income data so total adjusted income is the same as income source
+         hh_inc_tot_adj = hh_inc_adj)
+
+# Remove specific incomes and codes and deduplicate
+kcha_long <- kcha_long %>%
+  select(-h19a1, -h19a2, -h19b, -h19d, -h19f)
+
+# Remove temporary data
+rm(list = ls(pattern = "inc_"))
 
 #### END INCOME REORGANIZATION ####
 
 
+# Get rid of empty rows (note: some rows have a SSN but no name or address, 
+# others have an address but no name or other details)
+kcha_long <- kcha_long %>%
+  filter(!((is.na(h3a) |  h3a == 0) & h3b == "" & h3c == "" & h3n == ""))
+gc()
+
+# Add number of household members at that time
+# Use summarise and join because mutate crashes things
+hhold_size <- kcha_long %>%
+  group_by(hh_id_temp) %>%
+  summarise(hhold_size = n_distinct(mbr_num)) %>%
+  ungroup()
+
+kcha_long <- left_join(kcha_long, hhold_size, by = "hh_id_temp")
 
 
 #### Rename variables ####
-# Bring in variable name mapping table
-# (file is also here: https://github.com/PHSKC-APDE/Housing/blob/master/processing/Field%20name%20mapping.xlsx)
-fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
-# Change names
-kcha_long <- data.table::setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
 kcha_long <- kcha_long %>%
   mutate(
-    prog_type = ifelse(prog_type == "P", "PH",
-                       ifelse(prog_type == "PR", "PBS8",
-                              ifelse(prog_type %in% c("T", "VO"), "TBS8",
-                                     prog_type))),
     major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
     property_id = as.numeric(ifelse(str_detect(subsidy_id, "^[0-9]-") == T, str_sub(subsidy_id, 3, 5), NA))
   )
@@ -452,16 +623,24 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(paste0(housing_path, "/KCHA/Original data/Property list with project code_received_2017-07-26.xlsx"))
-kcha_portfolio_codes <- data.table::setnames(kcha_portfolio_codes, fields$PHSKC[match(names(kcha_portfolio_codes), fields$KCHA_modified)])
+kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property list with project code_received_2017-07-26.xlsx"))
+kcha_portfolio_codes <- setnames(kcha_portfolio_codes, 
+                                 fields$PHSKC[match(names(kcha_portfolio_codes), 
+                                                    fields$KCHA_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
 kcha_long <- kcha_long %>% 
-  # There shouldn't be any rows with values in both property_name columns (checked and seems to be the case)
-  mutate(property_name = ifelse(is.na(property_name.y) & !is.na(property_name.x) & property_name.x != "", property_name.x,
-                                ifelse(!is.na(property_name.y), property_name.y, NA))) %>%
+  # There shouldn't be any rows with values in both property_name columns 
+  # (checked and seems to be the case)
+  mutate(property_name = case_when(
+    is.na(property_name.y) & !is.na(property_name.x) & 
+      property_name.x != "" ~ property_name.x,
+    !is.na(property_name.y) ~ property_name.y,
+    TRUE ~ NA_character_
+    )) %>%
   select(-property_name.x, -property_name.y)
+
 
 
 ### HCV (currently being done after join with SHA and address cleanup)
@@ -478,28 +657,15 @@ kcha_long <- kcha_long %>%
 # kcha_long <- left_join(kcha_long, kcha_dev_adds, by = c("dev_add_apt", "dev_city"))
 
 
-# TEMP SAVE POINT
-saveRDS(kcha_long, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
-kcha_long <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/kcha_long.Rda")
-
 ##### WRITE RESHAPED DATA TO SQL #####
-sqlDrop(db.apde51, "dbo.kcha_reshaped")
-sqlSave(
-  db.apde51,
-  kcha_long,
-  tablename = "dbo.kcha_reshaped",
-  varTypes = c(
-    act_date = "Date",
-    admit_date = "Date",
-    dob = "Date",
-    hh_dob = "Date"
-  )
-)
-
+# May need to delete table first if data structure and columns have changed
+dbRemoveTable(db.apde51, name = "kcha_reshaped")
+dbWriteTable(db.apde51, name = "kcha_reshaped", 
+             value = as.data.frame(kcha_long), overwrite = T)
 
 ##### Remove temporary files #####
-rm(list = ls(pattern = "inc_"))
-rm(list = c('members', 'maxnum', 'rowcount', 'sublong', 'names', 'colnum', 'reshape_f'))
+rm(list = c("fields", "reshape_f", "kcha_path"))
+rm(hhold_size)
 rm(kcha_portfolio_codes)
 rm(kcha)
 gc()
