@@ -23,30 +23,28 @@
 
 #### Set up global parameter and call in libraries ####
 library(housing) # contains many useful functions for cleaning
-library(dplyr) # Used to manipulate data
-library(stringr) # Used to manipulate string data
-library(RODBC) # Used to connect to SQL server
+library(data.table) # Used to read in csv files more efficiently
+library(tidyverse) # Used to manipulate data
 
-options(max.print = 350, tibble.print_max = 50, scipen = 999)
+options(max.print = 400, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
-housing_db <- odbcConnect("PH_APDEStore51")
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+
 
 #### Bring in data ####
-# This takes ~90 seconds
-sha <- sqlQuery(housing_db,
-                "SELECT * FROM dbo.sha_combined",
-                stringsAsFactors = FALSE)
+# This takes ~60 seconds
+system.time(sha <- DBI::dbReadTable(db.apde51, "sha_combined"))
+
 # This takes ~35 seconds
-kcha_long <- sqlQuery(housing_db,
-                      "SELECT * FROM dbo.kcha_reshaped",
-                      stringsAsFactors = FALSE)
+system.time(kcha_long <- DBI::dbReadTable(db.apde51, "kcha_reshaped"))
+
 
 #### Fix up variable formats ####
-sha <- date_ymd_f(sha, act_date, admit_date, dob)
+sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date, 
+                  mtw_admit_date, move_in_date)
+sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher))
 
 kcha_long <- date_ymd_f(kcha_long, act_date, admit_date, dob, hh_dob)
-kcha_long <- yesno_f(kcha_long, ph_rent_ceiling, tb_rent_ceiling, disability)
-kcha_long <- char_f(kcha_long, property_id)
 
 
 #### Make variable to track where data came from ####
@@ -54,10 +52,8 @@ sha <- mutate(sha, agency_new = "SHA")
 kcha_long <- mutate(kcha_long, agency_new = "KCHA")
 
 
-#### Append data and remove duplictaes ####
+#### Append data ####
 pha <- bind_rows(kcha_long, sha)
-# Remove any duplicates
-pha <- pha %>% distinct()
 
 
 #### Clean up data ####
@@ -150,7 +146,7 @@ pha <- pha %>% mutate(
 # Need to look for suffixes in last name if wanting to merge with SHA data
 
 suffix3 <- c(" JR", " SR"," II", " IV")
-suffix4 <- c(" III", " LLL", " 2ND")
+suffix4 <- c(" III", " LLL", " 2ND", " 111", " JR.")
 
 pha <- pha %>%
   # Suffixes in last names
