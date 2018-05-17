@@ -548,6 +548,7 @@ i2013 <- interval(start = "2013-01-01", end = "2013-12-31")
 i2014 <- interval(start = "2014-01-01", end = "2014-12-31")
 i2015 <- interval(start = "2015-01-01", end = "2015-12-31")
 i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
+i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
 
 # Person-time in housing, needs to be done separately to avoid errors
 pt_temp_h <- pha_elig_final %>%
@@ -558,7 +559,8 @@ pt_temp_h <- pha_elig_final %>%
     pt13_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2013) / ddays(1)) + 1,
     pt14_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2014) / ddays(1)) + 1,
     pt15_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2015) / ddays(1)) + 1,
-    pt16_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2016) / ddays(1)) + 1
+    pt16_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2016) / ddays(1)) + 1,
+    pt17_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2017) / ddays(1)) + 1
   )
 
 pha_elig_final <- left_join(pha_elig_final, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"))
@@ -573,7 +575,8 @@ pt_temp_m <- pha_elig_final %>%
     pt13_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2013) / ddays(1)) + 1,
     pt14_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2014) / ddays(1)) + 1,
     pt15_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2015) / ddays(1)) + 1,
-    pt16_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2016) / ddays(1)) + 1
+    pt16_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2016) / ddays(1)) + 1,
+    pt17_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2017) / ddays(1)) + 1
   )
 
 pha_elig_final <- left_join(pha_elig_final, pt_temp_m, by = c("pid2", "startdate_m", "enddate_m"))
@@ -588,7 +591,8 @@ pt_temp_o <- pha_elig_final %>%
     pt13_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2013) / ddays(1)) + 1,
     pt14_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2014) / ddays(1)) + 1,
     pt15_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2015) / ddays(1)) + 1,
-    pt16_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2016) / ddays(1)) + 1
+    pt16_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2016) / ddays(1)) + 1,
+    pt17_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2017) / ddays(1)) + 1
   )
 
 pha_elig_final <- left_join(pha_elig_final, pt_temp_o, by = c("pid2", "startdate_o", "enddate_o"))
@@ -601,7 +605,8 @@ pha_elig_final <- pha_elig_final %>%
     pt13 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2013) / ddays(1)) + 1,
     pt14 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2014) / ddays(1)) + 1,
     pt15 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2015) / ddays(1)) + 1,
-    pt16 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2016) / ddays(1)) + 1
+    pt16 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2016) / ddays(1)) + 1,
+    pt17 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2017) / ddays(1)) + 1
   )
 
 
@@ -612,6 +617,16 @@ pha_elig_final <- pha_elig_final %>%
                  enddate_o, startdate_c, enddate_c, dob_h, dob_m, start_housing,
                  start_pha, start_prog, hh_dob_h),
             funs(if_else(. == "NA", NA, .)))
+
+
+#### TEMP AS OF 2018-01-26 ####
+# High Point was previously mapping to the incorrect portfolio
+# Fix here until earlier data creation steps are run
+pha_elig_final <- pha_elig_final %>%
+  mutate(portfolio_final = 
+           ifelse(property_name %in% c("HIGH POINT NORTH", "HIGH POINT SOUTH"), 
+                  "HIGH POINT", portfolio_final))
+
 
 
 #### Save point ####
