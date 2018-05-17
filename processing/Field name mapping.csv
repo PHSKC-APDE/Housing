@@ -130,14 +130,12 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,hohuniqueidentifier,,householdid,Household ID,hh_id
 ,,,hohuniqueidentifier,,,,hh_id
 ,,,memberuniqueidentifier,,,,mbr_id
-,,,memberuniqueidentifier,,,,mbr_id
 ,,,,,householdid,,hhold_id
 ,,,,,subsidy_id,,subsidy_id
 ,,,,,,Voucher Number,vouch_num
 ,,majorprogram,majorprogram,,,,major_prog
 ,,,programtype,Program.Type,program_type,Program Type,prog_type
 ,,,,programtype,,,prog_type
-,,,programsubtype,,,,prog_subtype
 ,,,programsubtype,,,,prog_subtype
 ,,,specialpurposetenantbasedtype,Voucher.Type,spec_vouch,,vouch_type
 ,,,,vouchertype,,,vouch_type
