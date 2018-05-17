@@ -27,8 +27,7 @@ options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(housing) # contains many useful functions for cleaning
-library(dplyr) # Used to manipulate data
-library(stringr) # Used to manipulate string data
+library(tidyverse) # Used to manipulate data
 library(lubridate) # used to manipulate dates
 library(RecordLinkage) # used to clean up duplicates in the data
 library(phonics) # used to extract phonetic version of names
@@ -942,19 +941,36 @@ pha_clean <- pha_clean %>%
     ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_num,
     # don't keep mbr_id for now as there are some individuals with multiple IDs on the same date
     # Head of household demographics
-    hh_id, hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
+    hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
     # Household details
-    hhold_size, hhold_id,
-    # Action details
-    act_type:admit_date, reexam_date,
+    hhold_size, hh_id, 
+    # Previous experience
+    list_date, list_zip, list_homeless, housing_act,
+    # Action and subsidy details
+    act_type, act_date:admit_date, reexam_date, subsidy_id, vouch_num, cert_id,
+    increment, increment_old, repayment, repay_amount,
     # Program details
-    agency, agency_new, portability, cost_pha, major_prog, prog_type, vouch_type, sha_source,
+    agency, agency_new, portability, cost_pha, major_prog, prog_type, 
+    vouch_type, noncit_subsidy, sroyn,
     # Unit details
     property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
-    # Income details
-    inc_fixed, hhold_inc_fixed, hhold_inc_vary
-    # Rent details (not used for now)
-    #rent_tenant:bdrm_voucher, cost_month, rent_owner:tb_rent_ceiling
+    unit_type, unit_year, access_unit, access_req, access_rec, bed_cnt, 
+    moving_in, move_in_date,
+    # Rent details
+    rent_type:bdrm_voucher, cost_month, rent_owner:tb_rent_ceiling,
+    # Asset and income details
+    incasset_id, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
+    asset_val, asset_inc,
+    inc_fixed, inc_vary, inc, inc_excl, inc_adj_fixed, inc_adj_vary, inc_adj,
+    hh_inc_fixed, hh_inc_adj_fixed, hh_inc, 
+    hh_inc_vary, hh_inc_adj_vary, 
+    hh_inc_tot, hh_inc_adj, hh_inc_deduct, hh_inc_tot_adj,
+    # FSS and MTW details + assistance
+    fss, fss_cat, mtw_self_suff, mtw_admit_date,
+    assist_tanf:assist_eitc, child_care_srvc,
+    reimbursed_med, med_dis_thresh, med_dis_allowance,
+    # Process details
+    sha_source, kcha_source, eop_source
   )
 # With some variables stripped out, can reduce the number of rows
 pha_clean <- pha_clean %>% distinct()
@@ -965,11 +981,6 @@ pha_clean <- pha_clean %>% distinct()
 # Set up cleaned head of household names
 # Can only use ssn_id not ssn_new and ssn_c because the latter two differ across 
 # rows for the same HoH
-
-# Temporary measure until pha_combing run again
-pha_clean <- pha_clean %>% mutate_at(vars(contains("name")), funs(ifelse(is.na(.), "", .)))
-#
-
 pha_clean <- pha_clean %>%
   mutate(
     hh_ssn_id_m6 = ifelse(mbr_num == 1 & ssn_id_m6 != "", ssn_id_m6, ""),
@@ -1014,8 +1025,8 @@ pha_clean <- junk_ssn_all(pha_clean, hh_ssn_id_m6)
 
 ### Clean up column order
 pha_clean <- pha_clean %>% 
-  select(ssn_new:ssn_id_m6, ssn_id_m6_junk, lname_new_m6:hh_ssn_id_m6, hh_ssn_id_m6_junk,
-         hh_lname_m6:hhold_id_new, -hhold_id_temp)
+  select(ssn_new:ssn_id_m6, ssn_id_m6_junk, lname_new_m6:hh_ssn_id_m6, 
+         hh_ssn_id_m6_junk, hh_lname_m6:hhold_id_new, -hhold_id_temp)
 
 
 ### Filter out test names
