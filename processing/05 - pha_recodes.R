@@ -26,8 +26,7 @@
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
-library(stringr) # Used to manipulate string data
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 
 
 #### Bring in data ####
@@ -73,13 +72,14 @@ pha_recoded <- pha_recoded %>%
   # make new variable to look at people with one race only
   mutate_at(vars(r_white_new:r_nhpi_new), funs(alone = ifelse(r_multi_new == 1, 0, .))) %>%
   # make single race variable
-  mutate(race2 = ifelse(r_white_new_alone == 1, "White only",
-                        ifelse(r_black_new_alone == 1, "Black only",
-                               ifelse(r_aian_new_alone == 1, "AIAN only",
-                                      ifelse(r_asian_new_alone == 1, "Asian only",
-                                             ifelse(r_nhpi_new_alone == 1, "NHPI only",
-                                                    ifelse(r_multi_new == 1, "Multiple race",
-                                                           NA)))))))
+  mutate(race2 = case_when(
+    r_white_new_alone == 1 ~ "White only",
+    r_black_new_alone == 1 ~ "Black only",
+    r_aian_new_alone == 1 ~ "AIAN only",
+    r_asian_new_alone == 1 ~ "Asian only",
+    r_nhpi_new_alone == 1 ~ "NHPI only",
+    r_multi_new == 1 ~ "Multiple race"
+  ))
 
 
 #### Add other recodes later ####
