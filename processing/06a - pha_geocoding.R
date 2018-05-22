@@ -20,8 +20,20 @@
 # 
 ###############################################################################
 
+library(openxlsx) # Used to import/export Excel files
+library(data.table) # used to read in csv files and rename fields
+library(tidyverse) # Used to manipulate data
+library(reticulate) # used to pull in python-based address parser
+library(ggmap) # used to geocode addresses
+library(rgdal) # Used to convert coordinates between ESRI and Google output
+
 
 path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+bounds <- "& bounds=47,-122.7|48,-121"
+
+
+### Import Python address parser
+addparser <- import("usaddress")
 
 
 # file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))

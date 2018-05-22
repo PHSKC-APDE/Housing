@@ -32,21 +32,16 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
-bounds <- "& bounds=47,-122.7|48,-121"
+
 
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
-library(dplyr) # Used to manipulate data
-library(reticulate) # used to pull in python-based address parser
-library(ggmap) # used to geocode addresses
-library(rgdal) # Used to convert coordinates between ESRI and Google output
+library(data.table) # used to read in csv files and rename fields
+library(tidyverse) # Used to manipulate data
+
 
 
 #### Bring in data #####
 pha_recoded <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
-
-### Import Python address parser
-addparser <- import("usaddress")
 
 
 ##### Addresses #####
@@ -61,7 +56,7 @@ pha_cleanadd <- pha_recoded %>%
 ### Specific addresses
 # Some addresses have specific issues than cannot be addressed via rules
 # However, these specific addresses should not be shared publically
-adds_specific <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx",
+adds_specific <- read.xlsx(paste0(housing_path, "/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx"),
                            na.strings = "")
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
@@ -317,7 +312,10 @@ pha_cleanadd <- pha_cleanadd %>%
 
 # For some reason there are a bunch of blank ZIPs even though other rows with 
 # the same address have a ZIP. Sort by address and copy over ZIP.
-pha_cleanadd
+pha_cleanadd <- pha_cleanadd %>%
+  group_by(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new) %>%
+  mutate(ifelse(is.na(unit_zip_new), max(unit_zip_new), unit_zip_new)) %>%
+  ungroup()
 
 
 # Make concatenated version of address fields
@@ -325,6 +323,7 @@ pha_cleanadd <- pha_cleanadd %>%
   mutate(unit_concat = paste(unit_add_new, unit_apt_new, unit_city_new, unit_state_new, unit_zip_new, sep = ","))
 
 rm(adds_specific)
+
 
 #### STOP HERE IF GEOCODING WILL BE RERUN ####
 #saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
@@ -339,13 +338,13 @@ rm(adds_specific)
 # Using these addresses will allow for better row consolidation below
 
 # Bring in data
-adds_matched <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA_addresses_matched_combined.Rda")
-adds_matched <- adds_matched %>% mutate(unit_zip_new = as.numeric(unit_zip_new))
-
-# Merge data
-pha_cleanadd <- left_join(pha_cleanadd, adds_matched, by = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"))
-pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
-  select(-unit_concat.y)
+# adds_matched <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA_addresses_matched_combined.Rda")
+# adds_matched <- adds_matched %>% mutate(unit_zip_new = as.numeric(unit_zip_new))
+# 
+# # Merge data
+# pha_cleanadd <- left_join(pha_cleanadd, adds_matched, by = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"))
+# pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
+#   select(-unit_concat.y)
 
 # Parse out updated addresses (to come)
 # pha_cleanadd <- pha_cleanadd %>%
@@ -353,10 +352,12 @@ pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
 # 
 
 # Remove temp files
-rm(adds_matched)
+# rm(adds_matched)
 
 
-##### Merge KCHA development data now that addresses are clean ##### 
+#### START HERE IF SKIPPING GEOCODING ####
+
+#### Merge KCHA development data now that addresses are clean #####
 pha_cleanadd <- pha_cleanadd %>%
   mutate(dev_city = paste0(unit_city_new, ", ", unit_state_new, " ", unit_zip_new),
     # Trim any white space
@@ -365,9 +366,12 @@ pha_cleanadd <- pha_cleanadd %>%
 
 # HCV
 # Bring in data
-kcha_dev_adds <- read.csv(file = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data/Development Addresses_received_2017-07-21.csv", stringsAsFactors = FALSE)
-# Bring in variable name mapping table and rename variables
-fields <- read.xlsx("//phhome01/home/MATHESAL/My Documents/Housing/processing/Field name mapping.xlsx")
+kcha_dev_adds <- fread(file = file.path(housing_path, "KCHA/Original data/", 
+                                        "Development Addresses_received_2017-07-21.csv"), 
+                                        stringsAsFactors = FALSE)
+# Bring in variable name mapping table
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+                   header = TRUE, stringsAsFactors = FALSE)
 kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
 
 
