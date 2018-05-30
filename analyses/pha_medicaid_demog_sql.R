@@ -40,12 +40,12 @@ pha_elig_sql <- pha_elig_sql %>%
   mutate(dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"))
 
 pha_elig_sql <- pha_elig_sql %>%
-  mutate(age12 = round(interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
-         age13 = round(interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
-         age14 = round(interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
-         age15 = round(interval(start = dob_c, end = ymd(20151231)) / years(1), 1),
-         age16 = round(interval(start = dob_c, end = ymd(20161231)) / years(1), 1),
-         age17 = round(interval(start = dob_c, end = ymd(20171231)) / years(1), 1)
+  mutate(age12 = round(lubridate::interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
+         age13 = round(lubridate::interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
+         age14 = round(lubridate::interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
+         age15 = round(lubridate::interval(start = dob_c, end = ymd(20151231)) / years(1), 1),
+         age16 = round(lubridate::interval(start = dob_c, end = ymd(20161231)) / years(1), 1),
+         age17 = round(lubridate::interval(start = dob_c, end = ymd(20171231)) / years(1), 1)
   ) %>%
   # Remove negative ages
   mutate_at(vars(age12:age17), funs(ifelse(. < 0, 0.01, .)))

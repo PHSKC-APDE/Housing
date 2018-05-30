@@ -110,12 +110,12 @@ enrollment_f <- function(df, demog, year) {
         category = cat,
         group = !!demog,
         group_sha = case_when(
-          #enrollment == 1 ~ "Only enrolled in Medicaid",
+          enrollment == 1 ~ "Only enrolled in Medicaid",
           enrollment %in% c(2, 3, 6, 7, 19, 20, 23, 24) ~ "PHA resident but not simultanesouly enrolled in Medicaid",
           enrollment %in% c(8:15, 25:32) ~ "PHA resident and simultanesouly enrolled in Medicaid at some point"
         ),
         group_kcha = case_when(
-          #enrollment == 1 ~ "Only enrolled in Medicaid",
+          enrollment == 1 ~ "Only enrolled in Medicaid",
           enrollment %in% c(4:7, 12:15) ~ "PHA resident but not simultanesouly enrolled in Medicaid",
           enrollment %in% c(17:32) ~ "PHA resident and simultanesouly enrolled in Medicaid at some point"
         )
@@ -137,13 +137,13 @@ enrollment_f <- function(df, demog, year) {
         group = "Total",
         group_sha = case_when(
           #enrollment == 1 ~ "Only enrolled in Medicaid",
-          enrollment %in% c(2, 3, 6, 7, 19, 20, 23, 24) ~ "PHA resident but not simultanesouly enrolled in Medicaid",
-          enrollment %in% c(8:15, 25:32) ~ "PHA resident and simultanesouly enrolled in Medicaid at some point"
+          enrollment %in% c(2, 3, 6, 7, 19, 20, 23, 24) ~ "PHA resident but not simultaneously  enrolled in Medicaid",
+          enrollment %in% c(8:15, 25:32) ~ "PHA resident and simultaneously  enrolled in Medicaid at some point"
         ),
         group_kcha = case_when(
           #enrollment == 1 ~ "Only enrolled in Medicaid",
-          enrollment %in% c(4:7, 12:15) ~ "PHA resident but not simultanesouly enrolled in Medicaid",
-          enrollment %in% c(17:32) ~ "PHA resident and simultanesouly enrolled in Medicaid at some point"
+          enrollment %in% c(4:7, 12:15) ~ "PHA resident but not simultaneously  enrolled in Medicaid",
+          enrollment %in% c(17:32) ~ "PHA resident and simultaneously  enrolled in Medicaid at some point"
         )
       ) %>%
       distinct(year, category, group, pid2, group_sha, group_kcha)

@@ -27,7 +27,7 @@ yesno_f <- function(df, ...) {
   df <- df %>%
     mutate_at(vars(!!!vars), 
               funs(as.numeric(car::recode(., "'Y' = 1; 'Yes' = 1; '1' = 1; 
-                                          'N' = 0; 'No ' = 0; '0' = 0;
+                                          'N' = 0; 'No' = 0; 'No ' = 0; '0' = 0;
                                           'N/A' = NA; 'SRO' = NA; 
                                           'NULL' = NA; else = NA"))))
 }
