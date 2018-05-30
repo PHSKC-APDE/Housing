@@ -943,7 +943,7 @@ pha_clean <- pha_clean %>%
     # Head of household demographics
     hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
     # Household details
-    hhold_size, hh_id, 
+    hh_size, hh_id, 
     # Previous experience
     list_date, list_zip, list_homeless, housing_act,
     # Action and subsidy details
@@ -995,21 +995,21 @@ pha_clean <- pha_clean %>%
 # Set up another temporary household ID based on slightly modified original HoH characteristics
 # Need to use date and addresses too because the cleanup didn't catch everything
 # Result is some inconsistency in HoH name over time but the overall numbers should work
-pha_clean$hhold_id_temp <- group_indices(pha_clean, major_prog, hh_ssn_new, hh_ssn_c, 
+pha_clean$hh_id_temp <- group_indices(pha_clean, major_prog, hh_ssn_new, hh_ssn_c, 
                                          hh_lname, hh_lnamesuf, hh_fname, hh_dob, 
                                          unit_add, unit_apt, unit_apt2, unit_city, 
                                          act_date, act_type)
 
 # Limit to just the cleaned up HH variables
 pha_clean_hh <- pha_clean %>%
-  distinct(hhold_id_temp, 
+  distinct(hh_id_temp, 
            hh_ssn_id_m6, hh_lname_m6, hh_lnamesuf_m6, 
            hh_fname_m6, hh_mname_m6, hh_dob_m6, mbr_num) %>%
   filter(mbr_num == 1) %>%
   select(-mbr_num)
 
 # Merge back to the main data and clean up duplicated varnames
-pha_clean <- left_join(pha_clean, pha_clean_hh, by = c("hhold_id_temp")) %>%
+pha_clean <- left_join(pha_clean, pha_clean_hh, by = c("hh_id_temp")) %>%
   rename(hh_ssn_id_m6 = hh_ssn_id_m6.y, hh_lname_m6 = hh_lname_m6.y, 
          hh_lnamesuf_m6 = hh_lnamesuf_m6.y, hh_fname_m6 = hh_fname_m6.y,
          hh_mname_m6 = hh_mname_m6.y, hh_dob_m6 = hh_dob_m6.y) %>%
@@ -1017,7 +1017,7 @@ pha_clean <- left_join(pha_clean, pha_clean_hh, by = c("hhold_id_temp")) %>%
 
 
 ### Make a new household ID based on head of household characteristics
-pha_clean$hhold_id_new <- group_indices(pha_clean, hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6)
+pha_clean$hh_id_new <- group_indices(pha_clean, hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6)
 
 ### Make new flags for junk SSNs
 pha_clean <- junk_ssn_all(pha_clean, ssn_id_m6)
@@ -1026,7 +1026,7 @@ pha_clean <- junk_ssn_all(pha_clean, hh_ssn_id_m6)
 ### Clean up column order
 pha_clean <- pha_clean %>% 
   select(ssn_new:ssn_id_m6, ssn_id_m6_junk, lname_new_m6:hh_ssn_id_m6, 
-         hh_ssn_id_m6_junk, hh_lname_m6:hhold_id_new, -hhold_id_temp)
+         hh_ssn_id_m6_junk, hh_lname_m6:hh_id_new, -hh_id_temp)
 
 
 ### Filter out test names
