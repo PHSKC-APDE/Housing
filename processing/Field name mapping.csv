@@ -184,9 +184,11 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,Unit.Number,,dev_unit
 ,,,,,Unit Number,,dev_unit
 ,,,,,Owner.Display.Name,,dev_owner
+,,,,,Owner Display Name,,dev_owner
 ,,,,,Landlord.Display.Name,,dev_landlord
+,,,,,Landlord Display Name,,dev_landlord
 ,,,,,Acc...Reported.to.HUD,,dev_unit_report
-,,,,,Owner Display Name Landlord Display Name Acc - Reported to HUD,,dev_unit_report
+,,,,,Acc - Reported to HUD,,dev_unit_report
 ,,,,,Unit.Program.Type,,dev_unit_type
 ,,,,,Unit Program Type,,dev_unit_type
 ,,,,,Bedrooms,,bed_cnt
