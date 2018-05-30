@@ -38,7 +38,7 @@ db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 sha3a_new <- fread(file = 
                      file.path(sha_path, "Original",
                                "3a_PH 2012-current Yardi 50058 Data_2018-04-20.csv"), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   na.strings = c("NA", " ", "", "NULL", "N/A"),
                    stringsAsFactors = F)
 sha3b_new <- fread(file = file.path(sha_path, "Original",
                                        "3b_PH income 2012-current Yardi 50058_2018-04-20.csv"), 
@@ -163,7 +163,6 @@ sha_prog_codes <- setnames(sha_prog_codes,
 
 
 
-
 #### INCOME SECTIONS ####
 # Need to do the following:
 # 1) Tidy up and recode some fields
@@ -199,17 +198,38 @@ inc_clean_f <- function(df) {
   # Tested out summarise instead of mutate in first part. No faster.
   # Still need ways to optimize this code
   if ("mbr_id" %in% names(df)) {
-    df <- df %>%
-      group_by(cert_id, mbr_id, increment) %>%
+    df_inc <- df %>%
+      distinct(cert_id, mbr_id, increment, inc_code, 
+               inc, inc_excl, inc_adj, inc_fixed_temp) %>%
+    group_by(cert_id, mbr_id, increment) %>%
       summarise(
         inc = sum(inc, na.rm = T), 
         inc_excl = sum(inc_excl, na.rm = T),
         inc_adj = sum(inc_adj, na.rm = T),
-        inc_fixed = min(inc_fixed_temp, na.rm = T),
+        inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
+      group_by(cert_id) %>%
+      mutate(
+        hh_inc = sum(inc, na.rm = T), 
+        hh_inc_excl = sum(inc_excl, na.rm = T),
+        hh_inc_adj = sum(inc_adj, na.rm = T)) %>%
+      ungroup()
+
+    df_ass <- df %>%
+      distinct(cert_id, mbr_id, increment, asset_type, asset_val, asset_inc) %>%
+      group_by(cert_id, mbr_id, increment) %>%
+      summarise(
         asset_val = sum(asset_val, na.rm = T), 
-        asset_inc = sum(asset_inc, na.rm = T))
+        asset_inc = sum(asset_inc, na.rm = T)) %>%
+      group_by(cert_id) %>%
+      mutate(
+        hh_asset_val = sum(asset_val, na.rm = T), 
+        hh_asset_inc = sum(asset_inc, na.rm = T)) %>%
+      ungroup()
+    
+    df <- left_join(df_inc, df_ass, by = c("cert_id", "mbr_id", "increment"))
+    
   } else if ("incasset_id" %in% names(df) & "inc_mbr_num" %in% names(df)) {
-    if ("inc" %in% names(df)) {
+    if ("inc" %in% names(df) & !("asset_val" %in% names(df))) {
       df <- df %>%
         group_by(incasset_id, inc_mbr_num) %>%
         mutate(
@@ -219,9 +239,15 @@ inc_clean_f <- function(df) {
           inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
         ungroup() %>%
         select(-inc_fixed_temp, -inc_code) %>%
-        distinct()
+        distinct() %>%
+        group_by(incasset_id) %>%
+        mutate(
+          hh_inc = sum(inc, na.rm = T), 
+          hh_inc_excl = sum(inc_excl, na.rm = T),
+          hh_inc_adj = sum(inc_adj, na.rm = T)) %>%
+        ungroup()
     }
-    if ("asset_val" %in% names(df)) {
+    if (!("inc" %in% names(df)) & "asset_val" %in% names(df)) {
       df <- df %>%
         group_by(incasset_id, inc_mbr_num) %>%
         mutate(
@@ -230,7 +256,37 @@ inc_clean_f <- function(df) {
         ) %>%
         ungroup() %>%
         select(-asset_type) %>%
-        distinct()
+        distinct() %>%
+        group_by(incasset_id) %>%
+        mutate(
+          hh_asset_val = sum(asset_val, na.rm = T), 
+          hh_asset_inc = sum(asset_inc, na.rm = T)
+        ) %>%
+          ungroup()
+    }
+    if ("inc" %in% names(df) & "asset_val" %in% names(df)) {
+      df <- df %>%
+        group_by(incasset_id, inc_mbr_num) %>%
+        mutate(
+          inc = sum(inc, na.rm = T), 
+          inc_excl = sum(inc_excl, na.rm = T),
+          inc_adj = sum(inc_adj, na.rm = T),
+          inc_fixed = min(inc_fixed_temp, na.rm = T),
+          asset_val = sum(asset_val, na.rm = T), 
+          asset_inc = sum(asset_inc, na.rm = T)
+        ) %>%
+        ungroup() %>%
+        select(-inc_fixed_temp, -inc_code, -asset_type) %>%
+        distinct() %>%
+        group_by(incasset_id) %>%
+        mutate(
+          hh_inc = sum(inc, na.rm = T), 
+          hh_inc_excl = sum(inc_excl, na.rm = T),
+          hh_inc_adj = sum(inc_adj, na.rm = T),
+          hh_asset_val = sum(asset_val, na.rm = T), 
+          hh_asset_inc = sum(asset_inc, na.rm = T)
+        ) %>%
+        ungroup()
     }
   } else if ("incasset_id" %in% names(df) & !("inc_mbr_num" %in% names(df))) {
     df <- df %>%
@@ -314,6 +370,7 @@ sha_ph <- mutate(sha_ph,
                                     "Lake City Court", portfolio))
 
 
+
 #### JOIN HCV FILES ####
 # Clean up mismatching variables
 sha4a <- sha4a %>%
@@ -381,6 +438,60 @@ sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi,
 #### Append data ####
 sha <- bind_rows(sha_ph, sha_hcv)
 
+
+### Fix up conflicting and missing income
+# Some joined income data will show NA for HH fields. Use summarise to 
+# fill in gaps (rather than mutate, which is slow)
+# Data recorded in the HH fields do not add up to the calculated HH income
+# Need to standardize, calculated data seems more accurate
+hh_inc_y <- sha %>%
+  filter(!is.na(hh_inc.y)) %>%
+  group_by(incasset_id, cert_id, increment) %>%
+  summarise(hh_inc.y = max(hh_inc.y, na.rm = T)) %>%
+  ungroup()
+
+hh_inc_adj_y <- sha %>%
+  filter(!is.na(hh_inc.y)) %>%
+  group_by(incasset_id, cert_id, increment) %>%
+  summarise(hh_inc_adj.y = max(hh_inc_adj.y, na.rm = T)) %>%
+  ungroup()
+
+
+sha <- left_join(sha, hh_inc_y, by = c("incasset_id", "cert_id", "increment"))
+sha <- left_join(sha, hh_inc_adj_y, by = c("incasset_id", "cert_id", "increment"))
+
+# Now replace all NAs with 0 (came from joins where no income available)
+sha <- sha %>%
+  mutate_at(vars(contains("inc"), contains("asset")),
+            funs(ifelse(is.na(.), 0, .)))
+
+sha <- sha %>%
+  mutate(
+    hh_inc = case_when(
+      sha_source %in% c("sha4", "sha5") ~ as.numeric(hh_inc),
+      sha_source %in% c("sha1", "sha2", "sha3") ~ as.numeric(hh_inc.y.y)
+      ),
+    hh_inc_adj = hh_inc_adj.y.y,
+    hh_asset_val = case_when(
+      sha_source %in% c("sha1", "sha2", "sha4") ~ as.numeric(hh_asset_inc),
+      sha_source %in% c("sha3", "sha5") ~ as.numeric(hh_asset_val.y)
+    ),
+    hh_asset_inc = case_when(
+      sha_source %in% c("sha1", "sha2", "sha4") ~ as.numeric(hh_asset_inc),
+      sha_source %in% c("sha3", "sha5") ~ as.numeric(hh_asset_inc.y)
+    )
+  ) %>%
+  select(-(contains(".x")), -(contains(".y"))) %>%
+  # Remake household totals to overwrite what was read in
+  mutate(hh_asset_inc_final = max(hh_asset_inc, hh_asset_impute, na.rm = T),
+         hh_inc_tot = hh_inc_adj + hh_asset_inc_final,
+         hh_inc_tot_adj = case_when(
+           is.na(hh_inc_deduct) ~ hh_inc_tot,
+           !is.na(hh_inc_deduct) ~ hh_inc_tot - hh_inc_deduct
+         ))
+
+  
+
 ### Fix up a few more format issues
 sha <- sha %>%
   mutate_at(vars(act_date, admit_date, dob), funs(as.Date(., format = "%m/%d/%Y")))
@@ -403,26 +514,26 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn &
 # FIX 3: Make sure the HoH has member number = 1
 
 ### Set up temp household ID  unique to a household and action date
-sha$hhold_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, 
+sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, 
                                    unit_city, act_date, act_type, incasset_id)
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
 # Check for households with >1 people listed as HoH
 multi_hoh <- sha %>%
-  group_by(hhold_id_temp) %>%
+  group_by(hh_id_temp) %>%
   summarise(people = n_distinct(hh_ssn, hh_lname, hh_lnamesuf, hh_fname, hh_mname)) %>%
   ungroup() %>%
   filter(people > 1) %>%
   mutate(rowcheck = row_number())
 
 # Join to main data, restrict to member #1
-multi_hoh_join <- left_join(multi_hoh, sha, by = "hhold_id_temp") %>%
+multi_hoh_join <- left_join(multi_hoh, sha, by = "hh_id_temp") %>%
   filter(mbr_num == 1) %>%
-  select(rowcheck, hhold_id_temp, hh_ssn, hh_lname, hh_lnamesuf, hh_fname, hh_mname) %>%
+  select(rowcheck, hh_id_temp, hh_ssn, hh_lname, hh_lnamesuf, hh_fname, hh_mname) %>%
   distinct()
 
 # Add back to main data and bring over data into new columns
-sha <- left_join(sha, multi_hoh_join, by = "hhold_id_temp") %>%
+sha <- left_join(sha, multi_hoh_join, by = "hh_id_temp") %>%
   rename_at(vars(ends_with(".x")), funs(str_replace(., ".x", "_orig"))) %>%
   rename_at(vars(ends_with(".y")), funs(str_replace(., ".y", ""))) %>%
   mutate(
@@ -445,13 +556,13 @@ rm(multi_hoh_join)
 # Find when HoH != member number #1
 # wrong_hoh <- pha_clean %>%
 #   filter(mbr_num == 1 & ssn_new != hh_ssn_new & (lname_new != hh_lname | fname_new != hh_fname)) %>%
-#   distinct(hhold_id_temp)
+#   distinct(hh_id_temp)
 # 
 # # Bring in other housheold members
-# wrong_hoh_join <- left_join(wrong_hoh, pha_clean, by = "hhold_id_temp") %>%
-#   select(hhold_id_temp, ssn_new, lname_new, fname_new, mbr_num, 
+# wrong_hoh_join <- left_join(wrong_hoh, pha_clean, by = "hh_id_temp") %>%
+#   select(hh_id_temp, ssn_new, lname_new, fname_new, mbr_num, 
 #          hh_ssn_new, hh_lname, hh_fname, hh_dob) %>%
-#   arrange(hhold_id_temp, mbr_num) %>%
+#   arrange(hh_id_temp, mbr_num) %>%
 #   distinct()
 
 
@@ -467,22 +578,22 @@ rm(multi_hoh_join)
 # Exclude difficult temp HH IDs
 min_mbr <- sha %>%
   filter(!is.na(mbr_num)) %>%
-  group_by(hhold_id_temp) %>%
+  group_by(hh_id_temp) %>%
   summarise(mbr_num_min = min(mbr_num)) %>%
   ungroup()
 
 
 # Join with full list of temporary HH IDs to find which ones are missing member numbers
-mbr_miss <- anti_join(sha, min_mbr, by = "hhold_id_temp") %>%
-  select(hhold_id_temp, act_date, ssn, lname, fname, mname, lnamesuf, dob,
+mbr_miss <- anti_join(sha, min_mbr, by = "hh_id_temp") %>%
+  select(hh_id_temp, act_date, ssn, lname, fname, mname, lnamesuf, dob,
          mbr_num, hh_ssn, hh_lname, hh_fname, hh_mname, hh_lnamesuf) %>%
-  arrange(hhold_id_temp, ssn, lname, fname)
+  arrange(hh_id_temp, ssn, lname, fname)
 
 # Find the HoH and label them as member #1
 mbr_miss <- mbr_miss %>%
   # Try matching on SSN
   mutate(mbr_num = ifelse(ssn == hh_ssn, 1, mbr_num)) %>%
-  group_by(hhold_id_temp) %>%
+  group_by(hh_id_temp) %>%
   mutate(done = max(mbr_num, na.rm = T)) %>%
   ungroup() %>%
   # Then try name combos
@@ -496,8 +607,8 @@ mbr_miss <- mbr_miss %>%
 # Common when there are children and parents with the same name or DOB typos
 # If same DOB, take row with middle inital, then no last name suffix
 mbr_miss <- mbr_miss %>%
-  arrange(hhold_id_temp, mbr_num, dob, hh_mname, desc(hh_lnamesuf)) %>%
-  group_by(hhold_id_temp) %>%
+  arrange(hh_id_temp, mbr_num, dob, hh_mname, desc(hh_lnamesuf)) %>%
+  group_by(hh_id_temp) %>%
   mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
   ungroup()
 
@@ -505,16 +616,16 @@ mbr_miss <- mbr_miss %>%
 # Restrict to the newly identified HoHs and join back to main data
 mbr_miss_join <- mbr_miss %>%
   filter(mbr_num == 1) %>%
-  distinct(hhold_id_temp, act_date, ssn, lname, fname, mname, 
+  distinct(hh_id_temp, act_date, ssn, lname, fname, mname, 
            lnamesuf, dob, mbr_num)
 sha <- left_join(sha, mbr_miss_join, 
-                       by = c("hhold_id_temp", "act_date", "ssn", 
+                       by = c("hh_id_temp", "act_date", "ssn", 
                               "lname", "fname", "mname", "lnamesuf", "dob"))
 
 # Bring over older member numbers and clean up columns
 sha <- sha %>%
   mutate(mbr_num = ifelse(!is.na(mbr_num.y), mbr_num.y, mbr_num.x)) %>%
-  select(-mbr_num.x, -mbr_num.y, -hhold_id_temp, -rowcheck)
+  select(-mbr_num.x, -mbr_num.y, -hh_id_temp, -rowcheck)
 
 rm(min_mbr)
 rm(mbr_miss)
