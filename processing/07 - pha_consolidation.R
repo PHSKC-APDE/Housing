@@ -28,10 +28,8 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(housing) # contains many useful functions for cleaning
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
-library(tidyr) # More data manipulation
+library(tidyverse) # Used to manipulate data
 
 
 
@@ -42,7 +40,8 @@ pha_cleanadd_sort <- pha_cleanadd %>%
 
 #### Create key variables ####
 ### ID
-pha_cleanadd_sort$pid <- group_indices(pha_cleanadd_sort, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)
+pha_cleanadd_sort$pid <- group_indices(pha_cleanadd_sort, ssn_id_m6, 
+                                       lname_new_m6, fname_new_m6, dob_m6)
 
 
 ### Final agency and program fields
@@ -52,49 +51,70 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     # Hard vs. TBS8 units (subsidy type)
     subsidy_type = ifelse(prog_type %in% c("TBS8", "TENANT BASED VOUCHER", "PORT"),
                           "TENANT BASED/SOFT UNIT", "HARD UNIT"),
-    # Reorganize voucher types
-    vouch_type_final =  ifelse(agency_new == "SHA" & is.na(vouch_type), "",
-                               ifelse(subsidy_type == "TENANT BASED/SOFT UNIT", vouch_type, 
-                                      ifelse(agency_new == "SHA" & vouch_type == "MOD REHAB", "MOD REHAB",
-                                             ifelse(agency_new == "SHA" & vouch_type == "PARTNER PROJECT-BASED VOUCHER",
-                                                    "PARTNER PROJECT-BASED VOUCHER", 
-                                                    "")))),
-    vouch_type_final = ifelse(agency_new == "KCHA" & prog_type == "PBS8",
-                              "PARTNER PROJECT-BASED VOUCHER", vouch_type_final),
-    vouch_type_final = ifelse(vouch_type_final %in% c("DOMESTIC VIOLENCE", "TERMINALLY ILL"),
-                                  "OTHER (TI/DV)",
-                                  ifelse(vouch_type_final %in% c("PERMANENT SUPPORTIVE HOUSING",
-                                                                 "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
-                                                                 "PROJECT-BASED - REPLACEMENT HOUSING",
-                                                                 "SOUND FAMILIES", "SUPPORTIVE HOUSING",
-                                                                 "TENANT BASED VOUCHER"),
-                                         "GENERAL TENANT-BASED VOUCHER", vouch_type_final)),
-    vouch_type_final = ifelse(subsidy_type == "TENANT BASED/SOFT UNIT" & vouch_type_final == "",
-                              "GENERAL TENANT-BASED VOUCHER", vouch_type_final),
     # Finalize portfolios
-    portfolio_final = ifelse(agency_new == "SHA" & prog_type == "SHA OWNED/MANAGED",
-                             portfolio,
-                             ifelse(agency_new == "KCHA", property_type, "")),
-    portfolio_final = ifelse(is.na(portfolio_final), "", portfolio_final),
+    portfolio_final = case_when(
+      agency_new == "SHA" & prog_type == "SHA, OWNED/MANAGED" ~ portfolio,
+      agency_new == "KCHA" ~ property_type,
+      TRUE ~ ""
+    ),
     # Make operator variable
-    operator_type = ifelse(subsidy_type == "HARD UNIT" & 
-                             (portfolio_final != "" |
-                                prog_type %in% c("PH", "SHA OWNED/MANAGED") |
-                                (vouch_type == "SHA OWNED PROJECT-BASED") & !is.na(vouch_type)), 
-                           "PHA OPERATED",
-                           ifelse(
-                             subsidy_type == "HARD UNIT" & !is.na(prog_type) &
-                               (portfolio_final == "") & 
-                               ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" &
-                                   (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type))) |
-                                  (agency_new == "KCHA" & prog_type != "PH")),
-                             "NON-PHA OPERATED", ""))
-  )
+    operator_type = case_when(
+      subsidy_type == "HARD UNIT" & 
+        (portfolio_final != "" | prog_type %in% c("PH", "SHA OWNED/MANAGED") |
+           (vouch_type == "SHA OWNED PROJECT-BASED" & !is.na(vouch_type))) ~ "PHA OPERATED",
+      subsidy_type == "HARD UNIT" & !is.na(prog_type) & portfolio_final == "" &
+        ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" &
+            (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type))) |
+           (agency_new == "KCHA" & prog_type != "PH")) ~ "NON-PHA OPERATED",
+      TRUE ~ ""
+    ),
+    # Reorganize voucher types
+    vouch_type_final =  case_when(
+      # Special types (some in hard units also)
+      vouch_type == "AGENCY VOUCHER" ~ "AGENCY TENANT-BASED VOUCHER",
+      vouch_type == "FUP" ~ "FUP",
+      vouch_type == "HASP" ~ "HASP",
+      vouch_type == "MOD REHAB" ~ "MOD REHAB",
+      vouch_type == "VASH" ~ "VASH",
+      vouch_type %in% c("DOMESTIC VIOLENCE", "TERMINALLY ILL", "OTHER - DV/TI") ~ "OTHER (TI/DV)",
+      # Other soft units
+      subsidy_type == "TENANT BASED/SOFT UNIT" & 
+        vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PROJECT-BASED - REPLACEMENT HOUSING",
+                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "TENANT BASED VOUCHER") ~ "GENERAL TENANT-BASED VOUCHER",
+      subsidy_type == "TENANT BASED/SOFT UNIT" & 
+        is.na(vouch_type) ~ "GENERAL TENANT-BASED VOUCHER",
+      # Partner vouchers
+      subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" &
+        vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PROJECT-BASED - REPLACEMENT HOUSING",
+                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "TENANT BASED VOUCHER") ~ "PARTNER PROJECT-BASED VOUCHER",
+      subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" & 
+        is.na(vouch_type) ~ "PARTNER PROJECT-BASED VOUCHER",
+      # PHA operated vouches
+      subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" &
+        vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PROJECT-BASED - REPLACEMENT HOUSING",
+                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "TENANT BASED VOUCHER") ~ "PHA OPERATED VOUCHER",
+      subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" & 
+        is.na(vouch_type) ~ "",
+      # The rest
+      TRUE ~ ""
+    )
+    )
 
 
 ### Concatenated agency field
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  mutate(agency_prog_concat = paste(agency_new, subsidy_type, operator_type, vouch_type_final, portfolio_final, sep = ", "))
+  mutate(agency_prog_concat = paste(agency_new, subsidy_type, operator_type, 
+                                    vouch_type_final, portfolio_final, 
+                                    sep = ", "))
 
 
 
@@ -189,6 +209,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     port_out_sha = ifelse(agency_new == "KCHA" & cost_pha == "WA001", 1, port_out_sha)
   )
 
+
 #### Remove missing dates (droptype = 1) ####
 dfsize_head <- nrow(pha_cleanadd_sort) # Keep track of size of data frame at each step
 pha_cleanadd_sort <- pha_cleanadd_sort %>% mutate(drop = ifelse(is.na(act_date), 1, 0))
@@ -217,10 +238,10 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
       (max_date == lead(max_date, 1)  | (is.na(max_date) & is.na(lead(max_date, 1)))) &
       act_type == lead(act_type, 1) & 
       (sha_source == lead(sha_source, 1) | (is.na(sha_source) & is.na(lead(sha_source, 1)))) &
-      (hhold_inc_fixed == lead(hhold_inc_fixed, 1) | 
-         (is.na(hhold_inc_fixed & is.na(lead(hhold_inc_fixed, 1))))) &
-      (hhold_inc_vary == lead(hhold_inc_vary, 1) |
-         (is.na(hhold_inc_vary & is.na(lead(hhold_inc_vary, 1))))) &
+      (hh_inc_fixed == lead(hh_inc_fixed, 1) | 
+         (is.na(hh_inc_fixed & is.na(lead(hh_inc_fixed, 1))))) &
+      (hh_inc_vary == lead(hh_inc_vary, 1) |
+         (is.na(hh_inc_vary & is.na(lead(hh_inc_vary, 1))))) &
       (relcode == lead(relcode, 1)  | (is.na(relcode) & is.na(lead(relcode, 1)))) &
       (inc_fixed == lead(inc_fixed, 1) | (is.na(inc_fixed & is.na(lead(inc_fixed, 1))))),
     2, 0))
@@ -482,27 +503,27 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 
 # Pull out the maximum data for each person
 max_date <- pha_cleanadd_sort %>% 
-  distinct(pid, hhold_id_new, agency_prog_concat, max_date2)
+  distinct(pid, hh_id_new, agency_prog_concat, max_date2)
 # ID which set of data is for the H-H
 hh_act_dates <- pha_cleanadd_sort %>%
   filter(ssn_id_m6 == hh_ssn_id_m6) %>%
-  distinct(hhold_id_new, agency_prog_concat, act_date) %>%
-  arrange(hhold_id_new, act_date)
+  distinct(hh_id_new, agency_prog_concat, act_date) %>%
+  arrange(hh_id_new, act_date)
 # Join together and do some filtering
 act_dates_merge <- left_join(max_date, hh_act_dates, 
-                             by = c("hhold_id_new", "agency_prog_concat")) %>%
-  arrange(hhold_id_new, pid, act_date) %>%
+                             by = c("hh_id_new", "agency_prog_concat")) %>%
+  arrange(hh_id_new, pid, act_date) %>%
   filter(act_date > max_date2)
 # The first row in each group is the next date for a household after this 
 # individual's last date. If missing, the individual was still in the household.
 act_dates_merge <- act_dates_merge %>% 
-  group_by(pid, hhold_id_new, agency_prog_concat) %>% 
+  group_by(pid, hh_id_new, agency_prog_concat) %>% 
   slice(., 1) %>%
   ungroup() %>%
   rename(next_hh_act = act_date)
 # Join back with original data
 pha_cleanadd_sort <- left_join(pha_cleanadd_sort, act_dates_merge,
-                               by = c("hhold_id_new", "pid", "agency_prog_concat",
+                               by = c("hh_id_new", "pid", "agency_prog_concat",
                                       "max_date2"))
 # Remove temp files
 rm(max_date)
@@ -736,52 +757,59 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
   mutate(
     # SHA already done in SHA data merging process
     # KCHA
-    inc_fixed = ifelse(agency_new == "KCHA" & 
-                         (((hhold_inc_fixed > 0 | hhold_inc_vary > 0) & hhold_inc_fixed / (hhold_inc_fixed + hhold_inc_vary) >= 0.9) |
-                         (hhold_inc_fixed == 0 & hhold_inc_vary == 0)), 1, inc_fixed),
-    inc_fixed = ifelse(agency_new == "KCHA" & 
-                         (hhold_inc_fixed > 0 | hhold_inc_vary > 0) & hhold_inc_fixed / (hhold_inc_fixed + hhold_inc_vary) < 0.9, 0, inc_fixed)
-    )
+    inc_fixed = case_when(
+      agency_new == "KCHA" & 
+        (((hh_inc_fixed > 0 | hh_inc_vary > 0) & 
+            hh_inc_fixed / (hh_inc_fixed + hh_inc_vary) >= 0.9) | 
+           (hh_inc_fixed == 0 & hh_inc_vary == 0)) ~ 1,
+      agency_new == "KCHA" & 
+        (hh_inc_fixed > 0 | hh_inc_vary > 0) & 
+        hh_inc_fixed / (hh_inc_fixed + hh_inc_vary) < 0.9 ~ 0
+    ))
 
 
 # Look at number of years for each individual (NB. painfully slow, look for ways to optimize)
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   mutate(
     # SHA public housing
-    add_yr_temp = ifelse(agency_new == "SHA" & prog_type == "PH" & adult == 1 & relcode != "L" & act_date >= "2016-01-01" &
-                           (senior == 1 | disability == 1) & homeworks == 0 & !is.na(homeworks),
-                         3, NA),
-    add_yr_temp = ifelse(agency_new == "SHA" & prog_type == "PH" & adult == 1 & relcode != "L" &
-                           (act_date < "2016-01-01" | (senior == 0 & disability == 0) | homeworks == 1),
-                         1, add_yr_temp),
-    # SHA HCV
-    add_yr_temp = ifelse(agency_new == "SHA" & prog_type != "PH" & vouch_type_final != "MOD REHAB" & adult == 1 & relcode != "L" &
-                           ((act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 1) |
-                              (act_date >= "2013-01-01" & (senior == 1 | disability == 1))),
-                         3, add_yr_temp),
-    add_yr_temp = ifelse(agency_new == "SHA" & prog_type != "PH" & adult == 1 & relcode != "L" &
-                           (act_date < "2010-01-01" | vouch_type_final == "MOD REHAB" |
-                              (act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 0) |
-                              (act_date >= "2013-01-01" & senior == 0 & disability == 0)),
-                         1, add_yr_temp),
-    
-    # KCHA default (will be modified below)
-    add_yr_temp = ifelse(agency_new == "KCHA" & adult == 1 & relcode != "L" & act_date < "2011-06-01",
-                         1, add_yr_temp),
-    # KCHA public housing
-    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type == "PH" & adult == 1 & relcode != "L" & act_date >= "2008-06-01",
-                         3, add_yr_temp),
-    # KCHA HCV
-    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type != "PH" & adult == 1 & relcode != "L" & act_date >= "2008-06-01" &
-                           (senior == 1 | disability == 1) & (inc_fixed == 1 | (hhold_inc_fixed == 0 & hhold_inc_vary == 0)),
-                         3, add_yr_temp),
-    add_yr_temp = ifelse(agency_new == "KCHA" & prog_type != "PH" & adult == 1 & relcode != "L" & act_date >= "2011-06-01" &
-                           ((senior == 0 & disability == 0) | (inc_fixed == 0 & (hhold_inc_fixed > 0 | hhold_inc_vary > 0))),
-                         2, add_yr_temp)
-  )
+    add_yr_temp = case_when(
+      agency_new == "SHA" & prog_type == "PH" & adult == 1 & relcode != "L" & 
+        act_date >= "2016-01-01" & (senior == 1 | disability == 1) & 
+        homeworks == 0 & !is.na(homeworks) ~ 3,
+      agency_new == "SHA" & prog_type == "PH" & adult == 1 & relcode != "L" &
+        (act_date < "2016-01-01" | (senior == 0 & disability == 0) | 
+           homeworks == 1) ~ 1,
+      # SHA HCV
+      agency_new == "SHA" & prog_type != "PH" & 
+        vouch_type_final != "MOD REHAB" & adult == 1 & relcode != "L" &
+        ((act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 1) |
+           (act_date >= "2013-01-01" & (senior == 1 | disability == 1))) ~ 3,
+      agency_new == "SHA" & prog_type != "PH" & adult == 1 & relcode != "L" &
+        (act_date < "2010-01-01" | vouch_type_final == "MOD REHAB" |
+           (act_date >= "2010-01-01" & act_date < "2013-01-01" & inc_fixed == 0) |
+           (act_date >= "2013-01-01" & senior == 0 & disability == 0)) ~ 1,
+      # KCHA public housing
+      agency_new == "KCHA" & prog_type == "PH" & adult == 1 & relcode != "L" & 
+        act_date >= "2008-06-01" ~ 3,
+      # KCHA HCV
+      agency_new == "KCHA" & prog_type != "PH" & adult == 1 & 
+        relcode != "L" & act_date >= "2008-06-01" &
+        (senior == 1 | disability == 1) & 
+        (inc_fixed == 1 | (hh_inc_fixed == 0 & hh_inc_vary == 0)) ~ 3,
+      agency_new == "KCHA" & prog_type != "PH" & adult == 1 & relcode != "L" & 
+        act_date >= "2011-06-01" &
+        ((senior == 0 & disability == 0) | 
+           (inc_fixed == 0 & (hh_inc_fixed > 0 | hh_inc_vary > 0))) ~ 2,
+      # KCHA default
+      agency_new == "KCHA" & adult == 1 & relcode != "L" & 
+        act_date < "2011-06-01" ~ 1,
+      TRUE ~ NA_real_
+    ))
+
+
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   # Now apply to entire household (only NAs in add_yr_temp should be children or live-in attendants)
-  group_by(hhold_id_new, act_date) %>%
+  group_by(hh_id_new, act_date) %>%
   mutate(add_yr = min(add_yr_temp, na.rm = TRUE),
          # A few cleanup errors lead to some households with no add_yr (shows as infinity) so set to 1 for now
          add_yr = ifelse(add_yr > 3, 1, add_yr)
@@ -810,19 +838,15 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
     # Other rows where that is the person's last row at that address/PHA billed but same agency/prog = act_date at next address - 1 day
     # Unless act_date is the same as startdate (e.g., because of different programs), then act_date 
     enddate = as.Date(
-      ifelse(act_type == 5 | act_type == 6, act_date, 
-             ifelse(pid != lead(pid, 1) | is.na(lead(pid, 1 )) | 
-                      agency_prog_concat != lead(agency_prog_concat, 1) | 
-                      cost_pha != lead(cost_pha, 1),
-                    pmin(today(), act_date + dyears(add_yr), 
-                         act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
-                    # Treat a new address as simple date change 
-                    # (if the dates are the same avoid making the end date before the start date)
-                    ifelse(unit_concat != lead(unit_concat, 1) & act_date != lead(act_date, 1),
-                           lead(act_date, 1) - 1,
-                           ifelse(unit_concat != lead(unit_concat, 1) & act_date == lead(act_date, 1),
-                                  lead(act_date, 1),
-                                  NA)))), origin = "1970-01-01")
+      case_when(
+        act_type == 5 | act_type == 6 ~  act_date,
+        pid != lead(pid, 1) | is.na(lead(pid, 1 )) |
+          agency_prog_concat != lead(agency_prog_concat, 1) |
+          cost_pha != lead(cost_pha, 1) ~ pmin(today(), act_date + dyears(add_yr),
+                                               act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
+        unit_concat != lead(unit_concat, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
+        unit_concat != lead(unit_concat, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
+      , origin = "1970-01-01")
   )
 
 
