@@ -314,7 +314,7 @@ pha_cleanadd <- pha_cleanadd %>%
 # the same address have a ZIP. Sort by address and copy over ZIP.
 pha_cleanadd <- pha_cleanadd %>%
   group_by(unit_add_new, unit_apt_new, unit_apt2_new, unit_city_new, unit_state_new) %>%
-  mutate(ifelse(is.na(unit_zip_new), max(unit_zip_new), unit_zip_new)) %>%
+  mutate(unit_zip_new = ifelse(is.na(unit_zip_new), max(unit_zip_new), unit_zip_new)) %>%
   ungroup()
 
 

@@ -23,6 +23,7 @@
 
 #### Set up global parameter and call in libraries ####
 library(housing) # contains many useful functions for cleaning
+library(odbc) # Used to connect to SQL server
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
 
