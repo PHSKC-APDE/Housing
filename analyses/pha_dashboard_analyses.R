@@ -14,8 +14,7 @@ library(RODBC) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(housing) # contains many useful functions for analyzing housing/Medicaid data
 library(lubridate) # Used to manipulate dates
-library(stringr) # Used to manipulate string data
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
 
 

@@ -15,9 +15,8 @@ options(max.print = 700, scipen = 100, digits = 5)
 
 library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 library(pastecs) # Used for summary statistics
 
 

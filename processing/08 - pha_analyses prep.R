@@ -27,10 +27,8 @@ options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
-library(tidyr) # More data manipulation
+library(tidyverse) # Used to manipulate data
 
 
 #### Bring in data ####
