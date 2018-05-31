@@ -53,8 +53,9 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
                           "TENANT BASED/SOFT UNIT", "HARD UNIT"),
     # Finalize portfolios
     portfolio_final = case_when(
-      agency_new == "SHA" & prog_type == "SHA, OWNED/MANAGED" ~ portfolio,
-      agency_new == "KCHA" ~ property_type,
+      agency_new == "SHA" & 
+        prog_type %in% c("SHA, OWNED/MANAGED", "SHA OWNED/MANAGED") ~ portfolio,
+      agency_new == "KCHA" & !is.na(property_type) ~ property_type,
       TRUE ~ ""
     ),
     # Make operator variable
@@ -62,7 +63,8 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
       subsidy_type == "HARD UNIT" & 
         (portfolio_final != "" | prog_type %in% c("PH", "SHA OWNED/MANAGED") |
            (vouch_type == "SHA OWNED PROJECT-BASED" & !is.na(vouch_type))) ~ "PHA OPERATED",
-      subsidy_type == "HARD UNIT" & !is.na(prog_type) & portfolio_final == "" &
+      subsidy_type == "HARD UNIT" & !is.na(prog_type) & 
+        (portfolio_final == "" | is.na(portfolio_final)) &
         ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" &
             (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type))) |
            (agency_new == "KCHA" & prog_type != "PH")) ~ "NON-PHA OPERATED",
@@ -485,6 +487,11 @@ saveRDS(drop_track, file = paste0(housing_path, "/OrganizedData/drop_track_mid-c
 # pha_cleanadd_sort <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
 # drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
 
+#### TEMP MEASURE UNTIL EARLIER CODE RUN ####
+pha_cleanadd_sort <- pha_cleanadd_sort %>%
+  rename(hh_id_new = hhold_id_new)
+
+
 #### Set up KCHA move outs ####
 # In the old KCHA system there was no record of when a household member moved
 # out but the household remained on the same subsidy. Need to look at the next
@@ -744,7 +751,7 @@ age_temp <- pha_cleanadd_sort %>%
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   left_join(., age_temp, by = c("pid", "act_date", "mbr_num")) %>%
   # Keep new DOBs if changed
-  mutate(dob_m6 = ifelse(is.na(dob_m6.y), dob_m6.x, dob_m6.y))
+  mutate(dob_m6 = as.Date(ifelse(is.na(dob_m6.y), dob_m6.x, dob_m6.y), origin = "1970-01-01"))
 # Count how many rows were affected
 pha_cleanadd_sort %>% filter(dob_m6.x != dob_m6.y) %>% summarise(agediff = n())
 
