@@ -1079,4 +1079,5 @@ saveRDS(pha_cleanadd_sort_dedup, file = "//phdata01/DROF_DATA/DOH DATA/Housing/O
 ### Clean up remaining data frames
 rm(pha_cleanadd)
 rm(pha_cleanadd_sort)
+rm(list = ls(pattern = "dfsize"))
 gc()

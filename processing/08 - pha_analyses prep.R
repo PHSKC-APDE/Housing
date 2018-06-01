@@ -32,7 +32,8 @@ library(tidyverse) # Used to manipulate data
 
 
 #### Bring in data ####
-pha_cleanadd_sort_dedup <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rda")
+pha_cleanadd_sort_dedup <- readRDS(file = paste0(
+  housing_path, "/OrganizedData/pha_cleanadd_sort_dedup.Rda"))
 
 
 
@@ -60,10 +61,11 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     unit_add:unit_zip,
     # New address info
     unit_add_new:unit_zip_new, unit_concat,
-    # Porperty/portfolio info
-    property_id, unit_id, property_name, property_type, portfolio, portfolio_final,
+    # Property/portfolio info
+    property_id, property_name, property_type, portfolio, portfolio_final,
     # Unit info
-    unit_type, unit_year, access_unit, access_req, access_rec, bed_cnt, move_in_date,
+    unit_id, unit_type, unit_year, access_unit, access_req, access_rec, 
+    bed_cnt, move_in_date,
     # Date info
     admit_date, startdate, enddate,
     # Port info
@@ -79,7 +81,7 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     # Received various forms of assistance (SHA only)
     # dropping for now
     # Linking and ID variables
-    incasset_id, subsidy_id, vouch_num, cert_id, increment
+    incasset_id, subsidy_id, vouch_num, cert_id, increment, contains("source")
     )
 
 
@@ -166,8 +168,7 @@ rm(zips)
 
 
 #### Save point ####
-saveRDS(pha_longitudinal, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_longitudinal.Rda")
-
+saveRDS(pha_longitudinal, file = paste0(housing_path, "/OrganizedData/pha_longitudinal.Rda"))
 
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)

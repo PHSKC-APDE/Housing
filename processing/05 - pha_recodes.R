@@ -35,7 +35,8 @@ pha_clean <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_matched.Rda
 
 #### Race ####
 # Recode race variables and make numeric
-# Note: Because of typos and other errors, this process will overestimate the number of people with multiple races
+# Note: Because of typos and other errors, this process will overestimate 
+# the number of people with multiple races
 pha_recoded <- pha_clean %>%
   mutate_at(vars(r_white:r_nhpi), 
             funs(new = car::recode(., "'Y' = 1; 'N' = 0; 'NULL' = NA; else = NA", 
@@ -78,7 +79,8 @@ pha_recoded <- pha_recoded %>%
     r_aian_new_alone == 1 ~ "AIAN only",
     r_asian_new_alone == 1 ~ "Asian only",
     r_nhpi_new_alone == 1 ~ "NHPI only",
-    r_multi_new == 1 ~ "Multiple race"
+    r_multi_new == 1 ~ "Multiple race",
+    TRUE ~ ""
   ))
 
 
