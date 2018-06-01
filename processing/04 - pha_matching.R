@@ -1033,6 +1033,12 @@ pha_clean <- pha_clean %>%
 pha_clean <- pha_clean %>% filter(!(lname_new_m6 == "DUFUS" & fname_new_m6 == "IAM"))
 
 
+### Make IDs and reorder
+pha_clean$pid <- group_indices(pha_clean, ssn_id_m6, lname_new_m6, 
+                               fname_new_m6, dob_m6)
+pha_clean <- pha_clean %>% select(pid, ssn_new:hh_id_new)
+
+
 #### Save point ####
 saveRDS(pha_clean, file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
 
