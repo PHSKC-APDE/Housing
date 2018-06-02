@@ -287,8 +287,6 @@ pha_cleanadd <- pha_cleanadd %>%
   )
 
 # Transfer data to rows where the address is blank due to ending participation in a program (mostly KCHA)
-# Set up temporary IDs and agency fields for faster comparisons
-pha_cleanadd$pid <- group_indices(pha_cleanadd, ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)
 pha_cleanadd <- pha_cleanadd %>%
   mutate_at(vars(prog_type, vouch_type, property_name, property_type, portfolio), 
             funs(toupper(.))) %>% 
@@ -307,8 +305,8 @@ pha_cleanadd <- pha_cleanadd %>%
                     agency_prog_concat == lag(agency_prog_concat, 1) & act_type %in% c(5, 6) &
                     unit_add_new == lag(unit_add_new, 1),
                   lag(unit_zip, 1), unit_zip_new)) %>%
-  # remove temporary pid and agency
-  select(-pid, -agency_prog_concat)
+  # remove temporary agency
+  select(-agency_prog_concat)
 
 # For some reason there are a bunch of blank ZIPs even though other rows with 
 # the same address have a ZIP. Sort by address and copy over ZIP.

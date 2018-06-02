@@ -36,14 +36,9 @@ library(tidyverse) # Used to manipulate data
 #### Bring in data and sort ####
 pha_cleanadd <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
 pha_cleanadd_sort <- pha_cleanadd %>%
-  arrange(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6, act_date, agency_new, prog_type)
+  arrange(pid, act_date, agency_new, prog_type)
 
 #### Create key variables ####
-### ID
-pha_cleanadd_sort$pid <- group_indices(pha_cleanadd_sort, ssn_id_m6, 
-                                       lname_new_m6, fname_new_m6, dob_m6)
-
-
 ### Final agency and program fields
 # Set up the groupings we want to use in analyses
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
@@ -487,10 +482,6 @@ saveRDS(drop_track, file = paste0(housing_path, "/OrganizedData/drop_track_mid-c
 # pha_cleanadd_sort <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
 # drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
 
-#### TEMP MEASURE UNTIL EARLIER CODE RUN ####
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  rename(hh_id_new = hhold_id_new)
-
 
 #### Set up KCHA move outs ####
 # In the old KCHA system there was no record of when a household member moved
@@ -676,7 +667,6 @@ drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
 # Finish dropping rows
 pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
 dfsize_head - nrow(pha_cleanadd_sort)
-
 
 
 
@@ -1067,14 +1057,14 @@ sum(pha_cleanadd_sort$truncated, na.rm = T)
 
 
 #### Export drop tracking data ####
-saveRDS(drop_track, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track.Rda")
-#drop_track <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/drop_track.Rda")
+saveRDS(drop_track, file = paste0(housing_path, "/OrganizedData/drop_track.Rda"))
+#drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track.Rda"))
 rm(drop_temp)
 rm(drop_track)
 
 #### Save point ####
 pha_cleanadd_sort_dedup <- pha_cleanadd_sort
-saveRDS(pha_cleanadd_sort_dedup, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_cleanadd_sort_dedup.Rda")
+saveRDS(pha_cleanadd_sort_dedup, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_dedup.Rda"))
 
 ### Clean up remaining data frames
 rm(pha_cleanadd)

@@ -26,6 +26,7 @@
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
+library(housing) # contains many useful functions for cleaning
 library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
@@ -47,7 +48,7 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     # New name, SSN, and demog variables (after matching)
     pid, ssn_id_m6, ssn_id_m6_junk, lname_new_m6, fname_new_m6, mname_new_m6,
     lnamesuf_new_m6, gender_new_m6, dob_m6, r_aian_new, r_asian_new, r_black_new,
-    r_multi_new, r_nhpi_new, r_white_new, r_hisp_new, race2, age, adult, senior,
+    r_nhpi_new, r_white_new, r_hisp_new, race_new, age, adult, senior,
     # Old household info
     mbr_num, hh_ssn_new:hh_dob, hh_id, 
     # New household info
@@ -83,18 +84,6 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     # Linking and ID variables
     incasset_id, subsidy_id, vouch_num, cert_id, increment, contains("source")
     )
-
-
-#### TEMP UNTIL pha_consolidation rerun ####
-### Fix date format
-pha_longitudinal <- pha_longitudinal %>% mutate(dob_m6 = as.Date(dob_m6, origin = "1970-01-01"))
-#### END TEMP ####
-
-### Fix up remaining program categories (will be moved earlier eventually)
-# Bring in program name mapping table and add new variables
-#program_map <- read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Program name mapping.xlsx")
-# No longer needed. Still some KCHA PBS8 properties that could have their portfolio updated based on property name
-# but numbers are small
 
 
 ### Set up time in housing for each row and note when there was a gap in coverage
