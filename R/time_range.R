@@ -25,7 +25,7 @@
 #' 
 #' @export
 
-time_range <- function(yearmin = 2012, yearmax = 2016, period = "year", 
+time_range <- function(yearmin = 2012, yearmax = 2017, period = "year", 
                        date = "-12-31") {
   # Error checks
   if(yearmin > yearmax) {
