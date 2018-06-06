@@ -5,14 +5,17 @@
 # Aim is to have a single row per contiguous time in a house per person
 #
 # STEPS:
-# Process raw KCHA data and load to SQL database
-# Process raw SHA data and load to SQL database
-# Bring in individual PHA datasets and combine into a single file
-# Deduplicate data and tidy up via matching process
-# Recode race and other demographics
-# Clean up addresses and geocode ### (THIS CODE) ###
-# Consolidate data rows
-# Add in final data elements and set up analyses
+# 01 - Process raw KCHA data and load to SQL database
+# 02 - Process raw SHA data and load to SQL database
+# 03 - Bring in individual PHA datasets and combine into a single file
+# 04 - Deduplicate data and tidy up via matching process
+# 05 - Recode race and other demographics
+# 06 - Clean up addresses ### (THIS CODE) ###
+# 06a - Geocode addresses
+# 07 - Consolidate data rows
+# 08 - Add in final data elements and set up analyses
+# 09 - Join with Medicaid eligibility data
+# 10 - Set up joint housing/Medicaid analyses
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
