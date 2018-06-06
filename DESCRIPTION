@@ -25,5 +25,5 @@ Suggests:
     openxlsx,
     phonics,
     RecordLinkage,
-    RODBC
+    odbc
 RoxygenNote: 6.0.1

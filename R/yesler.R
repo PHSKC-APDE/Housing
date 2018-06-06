@@ -66,11 +66,13 @@ yesler <- function(df, unit = NULL){
                 str_detect(!!address, "1305 E F") | 
                 str_detect(!!address, "820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
-      ss = ifelse(property_id %in% 
-                    c("050", "051", "052", "053", "054", "055", "056", "057",
-                      "A42", "A43", "I43", "L42", "P42", "P43") & 
-                    !is.na(property_id), 
-                  1, 0)
+      ss = ifelse(
+        (property_id %in% 
+           c("050", "051", "052", "053", "054", "055", "056", "057",
+             "A42", "A43", "I42", "I43", "L42", "L43", "P42", "P43") &
+           !is.na(property_id)) |
+          (str_detect(property_name, "SCATTERED")),
+        1, 0)
     )
   
   ### Find people who were ever at YT or SS

@@ -16,7 +16,7 @@
 #' given time period). Not case sensitive.
 #' @param unit A named variable that determines the unit to count over. 
 #' Default unit of analysis is pid (individuals) but pid2 should be used with 
-#' Medicaid-matched data. The other option is hhold_id_new for households.
+#' Medicaid-matched data. The other option is hh_id_new for households.
 #' @param filter A quosure that is a clunky way of adding the ability to add
 #' extra filters. Default is missing. Addtional filters must be set up in a 
 #' quo() syntax without quotation marks.
@@ -38,7 +38,7 @@
 #' \dontrun{
 #' counts(pha_longitudinal)
 #' counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
-#' agency = "kcha", unit = hhold_id_new)
+#' agency = "kcha", unit = hh_id_new)
 #' counts(pha_longitudinal, filter = quo(disability == 1), yearmin = 2014,
 #' yearmax = 2016, period = "month")
 #' }
@@ -57,7 +57,7 @@ counts <- function(df,
   # Warn about missing unit of analysis
   if (missing(unit)) {
     print("Attempting to use default unit of analysis (individuals (pid/pid2)). 
-          Possible options: pid, pid2, hhold_id_new")
+          Possible options: pid, pid2, hh_id_new")
   }
   
   # Set up quosures and other variables
@@ -70,8 +70,8 @@ counts <- function(df,
     unit <- quo(pid2)
   } else if("pid" %in% names(df)) {
     unit <- quo(pid)
-  } else if("hhold_id_new" %in% names(df)) {
-    unit <- quo(hhold_id_new)
+  } else if("hh_id_new" %in% names(df)) {
+    unit <- quo(hh_id_new)
   } else {
     stop("No valid unit of analysis found")
   }
@@ -142,7 +142,7 @@ counts <- function(df,
                (!!end_var) >= as.Date(timestart[i]) &
                agency_new %in% agency_filter)
     
-    if (quo_name(unit) == "hhold_id_new") {
+    if (quo_name(unit) == "hh_id_new") {
       df_temp <- df_temp %>% filter(mbr_num == 1)
       }
     

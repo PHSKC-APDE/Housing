@@ -4,7 +4,7 @@
 \alias{time_range}
 \title{Set up time periods.}
 \usage{
-time_range(yearmin = 2012, yearmax = 2016, period = "year",
+time_range(yearmin = 2012, yearmax = 2017, period = "year",
   date = "-12-31")
 }
 \arguments{

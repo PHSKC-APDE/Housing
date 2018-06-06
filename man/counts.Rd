@@ -57,7 +57,7 @@ given time period). Not case sensitive.}
 
 \item{unit}{A named variable that determines the unit to count over. 
 Default unit of analysis is pid (individuals) but pid2 should be used with 
-Medicaid-matched data. The other option is hhold_id_new for households.}
+Medicaid-matched data. The other option is hh_id_new for households.}
 
 \item{filter}{A quosure that is a clunky way of adding the ability to add
 extra filters. Default is missing. Addtional filters must be set up in a 
@@ -107,7 +107,7 @@ counts(pha_longitudinal, filter = quo(disability == 1))
 \dontrun{
 counts(pha_longitudinal)
 counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
-agency = "kcha", unit = hhold_id_new)
+agency = "kcha", unit = hh_id_new)
 counts(pha_longitudinal, filter = quo(disability == 1), yearmin = 2014,
 yearmax = 2016, period = "month")
 }
