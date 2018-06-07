@@ -52,19 +52,29 @@ yesler <- function(df, unit = NULL){
     mutate(
       yt = ifelse(
         (property_id %in% c("001", "1", "591", "738", "743") & !is.na(property_id)) |
-          (!is.na(!!address) & 
-              (str_detect(!!address, "1105 E F") | 
-                 str_detect(!!address, "1305 E F") | 
-                 str_detect(!!address, "820[:space:]*[E]*[:space:]*YESLER"))),
+          (!is.na(!!address) &
+             # Kebero Court
+             (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
+                # The Baldin
+                str_detect(!!address, "^1305[:space:]*[E]*[:space:]*F") |
+                # Hoa Mai
+                str_detect(!!address, "^221[:space:]*10TH[:space:]*AVE") |
+                # General new YT
+                str_detect(!!address, "^820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
       yt_old = ifelse(property_id %in% c("1", "001") & !is.na(property_id), 
                       1, 0),
       yt_new = ifelse(
         (property_id %in% c("591", "738", "743") & !is.na(property_id)) |
           (!is.na(!!address) & 
-             (str_detect(!!address, "1105 E F") | 
-                str_detect(!!address, "1305 E F") | 
-                str_detect(!!address, "820[:space:]*[E]*[:space:]*YESLER"))),
+             # Kebero Court
+             (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
+                # The Baldin
+                str_detect(!!address, "^1305[:space:]*[E]*[:space:]*F") |
+                # Hoa Mai
+                str_detect(!!address, "^221[:space:]*10TH[:space:]*AVE") |
+                # General new YT
+                str_detect(!!address, "^820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
       ss = ifelse(
         (property_id %in% 
