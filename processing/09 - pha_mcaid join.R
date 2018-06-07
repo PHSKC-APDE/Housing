@@ -5,15 +5,17 @@
 # Aim is to have a single row per contiguous time in a house per person
 #
 # STEPS:
-# Process raw KCHA data and load to SQL database
-# Process raw SHA data and load to SQL database
-# Bring in individual PHA datasets and combine into a single file
-# Deduplicate data and tidy up via matching process
-# Recode race and other demographics
-# Clean up addresses and geocode
-# Consolidate data rows
-# Add in final data elements and set up analyses
-# Join with Medicaid eligibility data and set up analyses  ### (THIS CODE) ###
+# 01 - Process raw KCHA data and load to SQL database
+# 02 - Process raw SHA data and load to SQL database
+# 03 - Bring in individual PHA datasets and combine into a single file
+# 04 - Deduplicate data and tidy up via matching process
+# 05 - Recode race and other demographics
+# 06 - Clean up addresses
+# 06a - Geocode addresses
+# 07 - Consolidate data rows
+# 08 - Add in final data elements and set up analyses
+# 09 - Join with Medicaid eligibility data ### (THIS CODE) ###
+# 10 - Set up joint housing/Medicaid analyses
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
@@ -201,9 +203,8 @@ pha_elig_merge <- pha_elig_merge %>%
          lname_h = lname_new.1, lnamesuf_h = lnamesuf_new_m6, 
          fname_h = fname_new.1, mname_h = mname_new_m6,
          dob_h = dob.1, dob_m = dobnew, agegrp_h = agegrp, adult_h = adult,
-         senior_h = senior, age12_h = age12, age13_h = age13, age14_h = age14, 
-         age15_h = age15, age16_h = age16, age17_h = age17,
-         gender_h = gender_new_m6, gender2_h = gender2, gender_m = gender_mx,
+         senior_h = senior, gender_h = gender_new_m6, 
+         gender2_h = gender2, gender_m = gender_mx,
          race_h = race_new, race_m = race_mx, 
          hisp_h = r_hisp_new, hisp_m = latino,
          disability_h = disability, disability2_h = disability2,
@@ -223,7 +224,7 @@ if ("X" %in% names(pha_elig_merge)) {
     select(
       # Name, SSN, and demog variables from housing data
       pid, ssn_h, lname_h, lnamesuf_h, fname_h, mname_h, dob_h, agegrp_h,
-      age12_h:age17_h, adult_h, senior_h, gender_h, gender2_h, citizen_h, 
+      adult_h, senior_h, gender_h, gender2_h, citizen_h, 
       disability_h, disability2_h, race_h, hisp_h, 
       # Household info from housing data
       mbr_num, hh_id_new_h, hh_ssn_h, hh_lname_h, hh_lnamesuf_h, hh_fname_h, 
@@ -263,7 +264,7 @@ if ("X" %in% names(pha_elig_merge)) {
     select(
       # Name, SSN, and demog variables from housing data
       pid, ssn_h, lname_h, lnamesuf_h, fname_h, mname_h, dob_h, agegrp_h,
-      age12_h:age17_h, adult_h, senior_h, gender_h, gender2_h, citizen_h, 
+      adult_h, senior_h, gender_h, gender2_h, citizen_h, 
       disability_h, disability2_h, race_h, hisp_h, 
       # Household info from housing data
       mbr_num, hh_id_new_h, hh_ssn_h, hh_lname_h, hh_lnamesuf_h, hh_fname_h, 
@@ -328,6 +329,7 @@ gc()
 # use housing data to fill in missing Medicaid info.
 pha_elig_merge <- pha_elig_merge %>%
   mutate(
+    dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"),
     race_c = case_when(!is.na(race_m) ~ race_m,
                             !is.na(race_h) ~ race_h),
     hisp_c = case_when(!is.na(hisp_m) ~ hisp_m,
@@ -567,11 +569,10 @@ gc()
 
 # Jointlist = variables to keep across all rows
 jointlist <- c("pid2", "mid", "ssn_m", "ssn_h", "lname_h", "fname_h", "mname_h",
-               "dob_h", "dob_m", "race_c", "hisp_c", "gender_c")
+               "dob_c", "race_c", "hisp_c", "gender_c")
 houselist <- c(
   # ID, name, and demog variables
-  "pid", "lnamesuf_h", "agegrp_h", "age12_h", "age13_h", "age14_h", 
-  "age15_h", "age16_h", "age17_h", "adult_h", "senior_h", 
+  "pid", "lnamesuf_h", "dob_h", "agegrp_h", "adult_h", "senior_h", 
   "gender_h", "gender2_h", "citizen_h", "disability_h", "disability2_h", 
   "race_h", "hisp_h",
   # Household info
@@ -615,7 +616,7 @@ if ("x_h" %in% names(pha_elig_merge)) {
 
 medlist <- c(
   # Name and demog variables
-  "lname_m", "fname_m", "mname_m", "gender_m", "race_m", "hisp_m",
+  "lname_m", "fname_m", "mname_m", "dob_m", "gender_m", "race_m", "hisp_m",
   # Coverage type
   "dual_elig_m", "cov_time_m",
   # Dates
@@ -636,7 +637,8 @@ pha_elig_merge_part2 <- pha_elig_merge %>%
   select(jointlist, medlist) %>%
   distinct()
 temp_ext_m <- temp_ext %>% filter(enroll_type == "m")
-merge2 <- left_join(temp_ext_m, pha_elig_merge_part2, by = c("pid2", "startdate_m", "enddate_m"))
+merge2 <- left_join(temp_ext_m, pha_elig_merge_part2, 
+                    by = c("pid2", "startdate_m", "enddate_m"))
 
 
 # All variables
@@ -644,11 +646,12 @@ pha_elig_merge_part3 <- pha_elig_merge %>%
   select(jointlist, houselist, medlist) %>%
   distinct()
 temp_ext_b <- temp_ext %>% filter(enroll_type == "b")
-merge3 <- left_join(temp_ext_b, pha_elig_merge_part3, by = c("pid2", "startdate_h", "enddate_h", "startdate_m", "enddate_m"))
+merge3 <- left_join(temp_ext_b, pha_elig_merge_part3, 
+                    by = c("pid2", "startdate_h", "enddate_h", "startdate_m", "enddate_m"))
 
 
 # Join into a single data frame
-pha_elig_final <- bind_rows(merge1, merge2, merge3) %>%
+pha_elig_join <- bind_rows(merge1, merge2, merge3) %>%
   arrange(pid2, startdate_c, enddate_c)
 
 
@@ -660,113 +663,12 @@ pha_elig_final <- bind_rows(merge1, merge2, merge3) %>%
 rm(list = ls(pattern = "pha_elig_merge_part"))
 rm(list = ls(pattern = "merge[0-9]"))
 rm(list = ls(pattern = "list$"))
+rm(list = ls(pattern = "temp_ext"))
+rm(pha_longitudinal)
+rm(list = c("elig", "elig_demog"))
+rm(pha_elig_merge)
 gc()
-
-
-#### SET UP VARIABLES FOR ANALYSES ####
-### Set up person-time each year
-# First set up intervals for each year
-i2012 <- interval(start = "2012-01-01", end = "2012-12-31")
-i2013 <- interval(start = "2013-01-01", end = "2013-12-31")
-i2014 <- interval(start = "2014-01-01", end = "2014-12-31")
-i2015 <- interval(start = "2015-01-01", end = "2015-12-31")
-i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
-i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
-
-# Person-time in housing, needs to be done separately to avoid errors
-pt_temp_h <- pha_elig_final %>%
-  distinct(pid2, startdate_h, enddate_h) %>%
-  filter(!is.na(startdate_h)) %>%
-  mutate(
-    pt12_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2012) / ddays(1)) + 1,
-    pt13_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2013) / ddays(1)) + 1,
-    pt14_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2014) / ddays(1)) + 1,
-    pt15_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2015) / ddays(1)) + 1,
-    pt16_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2016) / ddays(1)) + 1,
-    pt17_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2017) / ddays(1)) + 1
-  )
-
-pha_elig_final <- left_join(pha_elig_final, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"))
-rm(pt_temp_h)
-
-# Person-time in Medicaid, needs to be done separately to avoid errors
-pt_temp_m <- pha_elig_final %>%
-  filter(!is.na(startdate_m)) %>%
-  distinct(pid2, startdate_m, enddate_m) %>%
-  mutate(
-    pt12_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2012) / ddays(1)) + 1,
-    pt13_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2013) / ddays(1)) + 1,
-    pt14_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2014) / ddays(1)) + 1,
-    pt15_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2015) / ddays(1)) + 1,
-    pt16_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2016) / ddays(1)) + 1,
-    pt17_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2017) / ddays(1)) + 1
-  )
-
-pha_elig_final <- left_join(pha_elig_final, pt_temp_m, by = c("pid2", "startdate_m", "enddate_m"))
-rm(pt_temp_m)
-
-# Person-time in both, needs to be done separately to avoid errors
-pt_temp_o <- pha_elig_final %>%
-  filter(!is.na(startdate_o)) %>%
-  distinct(pid2, startdate_o, enddate_o) %>%
-  mutate(
-    pt12_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2012) / ddays(1)) + 1,
-    pt13_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2013) / ddays(1)) + 1,
-    pt14_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2014) / ddays(1)) + 1,
-    pt15_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2015) / ddays(1)) + 1,
-    pt16_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2016) / ddays(1)) + 1,
-    pt17_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2017) / ddays(1)) + 1
-  )
-
-pha_elig_final <- left_join(pha_elig_final, pt_temp_o, by = c("pid2", "startdate_o", "enddate_o"))
-rm(pt_temp_o)
-
-# Person-time specific to that interval, doesn't need to be done separately
-pha_elig_final <- pha_elig_final %>%
-  mutate(
-    pt12 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2012) / ddays(1)) + 1,
-    pt13 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2013) / ddays(1)) + 1,
-    pt14 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2014) / ddays(1)) + 1,
-    pt15 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2015) / ddays(1)) + 1,
-    pt16 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2016) / ddays(1)) + 1,
-    pt17 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2017) / ddays(1)) + 1
-  )
-
-
-### Fix up any NAs in the date fields
-# Otherwise SQL load fails
-pha_elig_final <- pha_elig_final %>%
-  mutate_at(vars(startdate_h, enddate_h, startdate_m, enddate_m, startdate_o,
-                 enddate_o, startdate_c, enddate_c, dob_h, dob_m, start_housing,
-                 start_pha, start_prog, hh_dob_h),
-            funs(if_else(. == "NA", NA, .)))
-
 
 
 #### Save point ####
-saveRDS(pha_elig_final, file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))
-
-
-#### Write to SQL for joining with claims ####
-dbRemoveTable(db.apde51, name = "housing_mcaid")
-system.time(dbWriteTable(db.apde51, name = "housing_mcaid", 
-             value = as.data.frame(pha_elig_final), overwrite = T,
-             field.types = c(
-               startdate_h = "date", enddate_h = "date", 
-               startdate_m = "date", enddate_m = "date", 
-               startdate_o = "date", enddate_o = "date", 
-               startdate_c = "date", enddate_c = "date",
-               dob_h = "date", dob_m = "date", hh_dob_h = "date",
-               move_in_date = 'date', start_housing = "date", 
-               start_pha = "date", start_prog = "date"))
-)
-
-
-#### Final clean up ####
-rm(list = ls(pattern = "temp_ext"))
-rm(list = ls(pattern = "i20"))
-rm(pha_elig_merge)
-rm(pha_longitudinal)
-rm(list = c("elig", "elig_join", "elig_demog", "elig_merge"))
-gc()
-
+saveRDS(pha_elig_join, file = paste0(housing_path, "/OrganizedData/pha_elig_join"))
