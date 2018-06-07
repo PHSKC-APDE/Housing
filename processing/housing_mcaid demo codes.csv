@@ -5,13 +5,13 @@ enroll_type,3,Both,b
 dual_elig_m,1,Dual eligible,Y
 dual_elig_m,2,Not dual eligible,N
 dual_elig_m,99,Unknown,NA
-agegrp,1,0–17,
-agegrp,2,18–24,
-agegrp,3,25–44,
-agegrp,4,45–61,
-agegrp,5,62–64,
+agegrp,1,0-17,
+agegrp,2,18-24,
+agegrp,3,25-44,
+agegrp,4,45-61,
+agegrp,5,62-64,
 agegrp,6,65+,
-agegrp,8,Children aged 3–6,
+agegrp,8,Children aged 3-6,
 agegrp,99,Unknown,NA
 gender_c,1,Female,1
 gender_c,2,Male,2
@@ -65,5 +65,5 @@ portfolio_final,14,Yesler Terrace,YESLER TERRACE
 portfolio_final,88,N/A,
 length_grp,0,Non-PHA,
 length_grp,1,<3 years,
-length_grp,2,3–<6 years,
+length_grp,2,3-<6 years,
 length_grp,3,6+ years,
