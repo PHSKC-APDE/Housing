@@ -1,0 +1,69 @@
+category,code,value,read_in_value
+agegrp,1,0-17,
+agegrp,2,18-24,
+agegrp,3,25-44,
+agegrp,4,45-61,
+agegrp,5,62-64,
+agegrp,6,65+,
+agegrp,8,Children aged 3-6,
+agegrp,99,Unknown,NA
+agency_new,0,Non-PHA,NA
+agency_new,1,KCHA,KCHA
+agency_new,2,SHA,SHA
+dual_elig_m,1,Dual eligible,Y
+dual_elig_m,2,Not dual eligible,N
+dual_elig_m,99,Unknown,NA
+enroll_type,1,Housing only,h
+enroll_type,2,Medicaid only,m
+enroll_type,3,Both,b
+gender_c,1,Female,1
+gender_c,2,Male,2
+gender_c,3,Multiple,3
+gender_c,99,Unknown,NA
+length_grp,0,Non-PHA,
+length_grp,1,<3 years,
+length_grp,2,3-<6 years,
+length_grp,3,6+ years,
+operator_type,0,Non-PHA,NA
+operator_type,1,Non-PHA operated,NON-PHA OPERATED
+operator_type,2,PHA operated,PHA OPERATED
+operator_type,88,N/A,
+portfolio_final,0,Non-PHA,NA
+portfolio_final,1,Birch Creek,BIRCH CREEK
+portfolio_final,2,Family,FAMILY
+portfolio_final,3,Greenbridge,GREENBRIDGE
+portfolio_final,4,High Point,HIGH POINT
+portfolio_final,5,Highrises/villages,HIGHRISES & VILLAGES
+portfolio_final,6,Lake City Court,LAKE CITY COURT
+portfolio_final,7,Mixed,MIXED
+portfolio_final,8,New Holly,NEWHOLLY
+portfolio_final,9,Rainier Vista,RAINIER VISTA
+portfolio_final,10,Scattered sites/special,SCATTERED SITES/SPECIAL PORTFOLIO/SPECIAL PROGRAMS
+portfolio_final,11,Senior housing,SENIOR
+portfolio_final,11,Senior housing,SENIOR HOUSING
+portfolio_final,12,Seola Gardens,SEOLA GARDENS
+portfolio_final,13,Valli Kee,VALLI KEE
+portfolio_final,14,Yesler Terrace,YESLER TERRACE
+portfolio_final,88,N/A,
+race_c,1,AI/AN,AI/AN
+race_c,2,Asian,Asian
+race_c,3,Black,Black
+race_c,4,Hispanic,Hispanic
+race_c,5,Multiple,Multiple
+race_c,6,NH/PI,NH/PI
+race_c,7,White,White
+race_c,99,Unknown,NA
+subsidy_type,0,Non-PHA,NA
+subsidy_type,1,Hard unit,HARD UNIT
+subsidy_type,2,Soft unit/tenant based,TENANT BASED/SOFT UNIT
+voucher_type_final,0,Non-PHA,NA
+voucher_type_final,1,Agency tenant-based,AGENCY TENANT-BASED VOUCHER
+voucher_type_final,2,FUP,FUP
+voucher_type_final,3,General tenant-based,GENERAL TENANT-BASED VOUCHER
+voucher_type_final,4,HASP,HASP
+voucher_type_final,5,Mod rehab,MOD REHAB
+voucher_type_final,6,Other (TI/DV),OTHER (TI/DV)
+voucher_type_final,7,Partner project-based,PARTNER PROJECT-BASED VOUCHER
+voucher_type_final,8,PHA operated,PHA OPERATED VOUCHER
+voucher_type_final,9,VASH,VASH
+voucher_type_final,88,N/A,
