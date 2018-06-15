@@ -11,10 +11,9 @@ Much of the code is specific to the Seattle Housing Authority and King County Ho
 - The KCHA and SHA folders contain code for analyses specific to that PHA.
 
 
-# Intructions for installing the housing package
-1) Clone this repository.
-2) Make sure devtools is installed (install.packages("devtools")).
-3) Type devtools::install_github("PHSKC-APDE/Housing")
+# Intructions for installing/updating the housing package
+1) Make sure devtools is installed (type install.packages("devtools"))
+2) Type devtools::install_github("PHSKC-APDE/Housing")
 
 
 
