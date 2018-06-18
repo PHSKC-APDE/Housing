@@ -318,7 +318,6 @@ system.time(dbWriteTable(db.apde51, name = "housing_mcaid_demo",
 
 #### Final clean up ####
 rm(list = ls(pattern = "i20"))
-rm(pha_elig_merge)
-rm(pha_longitudinal)
+rm(pha_elig_join)
 gc()
 

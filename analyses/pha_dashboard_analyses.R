@@ -10,7 +10,7 @@
 ##### Set up global parameter and call in libraries #####
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
-library(RODBC) # Used to connect to SQL server
+library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(housing) # contains many useful functions for analyzing housing/Medicaid data
 library(lubridate) # Used to manipulate dates
@@ -20,8 +20,8 @@ library(reshape2) # Used to reshape data
 
 
 ##### Connect to the SQL servers #####
-db.apde51 <- odbcConnect("PH_APDEStore51")
-db.claims51 <- odbcConnect("PHClaims51")
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
@@ -478,6 +478,7 @@ eventcount_zip_f <- function(df, event = NULL, year, agency = TRUE) {
   
   return(output)
 }
+
 
 ##### BRING IN DATA #####
 pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))

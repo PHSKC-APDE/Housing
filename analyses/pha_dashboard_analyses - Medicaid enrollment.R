@@ -68,7 +68,7 @@ temp <- pha_elig_sql %>%
       )
     ) %>%
   mutate_at(
-    vars(age12, age13, age14, age15, age16),
+    vars(age12, age13, age14, age15, age16, age17),
     funs(case_when(
       . < 18 ~ "<18",
       between(., 18, 24.99) ~ "18–24",
