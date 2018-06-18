@@ -45,14 +45,14 @@ portfolio_final,12,Seola Gardens,SEOLA GARDENS
 portfolio_final,13,Valli Kee,VALLI KEE
 portfolio_final,14,Yesler Terrace,YESLER TERRACE
 portfolio_final,88,N/A,
-race_c,1,AI/AN,AI/AN
-race_c,2,Asian,Asian
-race_c,3,Black,Black
-race_c,4,Hispanic,Hispanic
-race_c,5,Multiple,Multiple
-race_c,6,NH/PI,NH/PI
-race_c,7,White,White
-race_c,99,Unknown,NA
+ethnicity,1,AI/AN,AI/AN
+ethnicity,2,Asian,Asian
+ethnicity,3,Black,Black
+ethnicity,4,Hispanic,Hispanic
+ethnicity,5,Multiple,Multiple
+ethnicity,6,NH/PI,NH/PI
+ethnicity,7,White,White
+ethnicity,99,Unknown,NA
 subsidy_type,0,Non-PHA,NA
 subsidy_type,1,Hard unit,HARD UNIT
 subsidy_type,2,Soft unit/tenant based,TENANT BASED/SOFT UNIT
