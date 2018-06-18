@@ -57,35 +57,22 @@ yt_elig_final <- yt_elig_final %>%
       agency_new == "SHA" & !is.na(agency_new) & yt_new == 1 ~ "N",
       agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 1 ~ "S"
     ),
-    start_type = NA,
-    start_type = ifelse(pid2 != lag(pid2, 1) | is.na(lag(pid2, 1)), paste0("U", place),
-                        ifelse(pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)), paste0(lag(place, 1), place), start_type)),
-    end_type = NA,
-    end_type = ifelse((pid2 != lead(pid2, 1) | is.na(lead(pid2, 1))) & enddate_c < as.Date("2017-09-15"), paste0(place, "U"),
-                      ifelse(pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)), paste0(place, lead(place, 1)), end_type))
+    start_type = case_when(
+      pid2 != lag(pid2, 1) | is.na(lag(pid2, 1)) ~ paste0("U", place),
+      pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) ~ paste0(lag(place, 1), place)
+      ),
+    end_type = case_when(
+      pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)) ~ paste0(place, "U"),
+      pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) ~ paste0(place, lead(place, 1))
+    )
   )
 
 
 ### Age
-# Use Medicaid DOB unless missing
-yt_elig_final <- yt_elig_final %>%
-  mutate(dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"))
-
-yt_elig_final <- yt_elig_final %>%
-  mutate(age12 = round(interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
-         age13 = round(interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
-         age14 = round(interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
-         age15 = round(interval(start = dob_c, end = ymd(20151231)) / years(1), 1),
-         age16 = round(interval(start = dob_c, end = ymd(20161231)) / years(1), 1),
-         age17 = round(interval(start = dob_c, end = ymd(20171231)) / years(1), 1)
-  ) %>%
-  # Remove negative ages
-  mutate_at(vars(age12:age17), funs(ifelse(. < 0, 0.01, .)))
-
 # Make groups of ages
 yt_elig_final <- yt_elig_final %>%
   mutate_at(
-    vars(age12, age13, age14, age15, age16),
+    vars(age12, age13, age14, age15, age16, age17),
     funs(grp = case_when(
       . < 18 ~ "<18",
       between(., 18, 24.99) ~ "18–24",
@@ -100,17 +87,6 @@ yt_elig_final <- yt_elig_final %>%
 
 
 ### Time in housing
-yt_elig_final <- yt_elig_final %>%
-  mutate(length12 = round(interval(start = start_housing, end = ymd(20121231)) / years(1), 1),
-         length13 = round(interval(start = start_housing, end = ymd(20131231)) / years(1), 1),
-         length14 = round(interval(start = start_housing, end = ymd(20141231)) / years(1), 1),
-         length15 = round(interval(start = start_housing, end = ymd(20151231)) / years(1), 1),
-         length16 = round(interval(start = start_housing, end = ymd(20161231)) / years(1), 1),
-         length17 = round(interval(start = start_housing, end = ymd(20171231)) / years(1), 1)
-  ) %>%
-  # Remove negative ages
-  mutate_at(vars(length12:length17), funs(ifelse(. < 0, NA, .)))
-
 # Make groups of time in housing
 yt_elig_final <- yt_elig_final %>%
   mutate_at(
@@ -125,9 +101,14 @@ yt_elig_final <- yt_elig_final %>%
   )
 
 
+### Household income
+# Add in latest income for each calendar year
+
+
+
 ### Save point
 saveRDS(yt_elig_final, file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
-yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
+#yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
 
 
 

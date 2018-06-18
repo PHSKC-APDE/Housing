@@ -45,7 +45,7 @@ yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleanin
 #   n = not enrolled
 
 
-yt_elig_final <- yt_elig_final %>%
+yt_movement <- yt_elig_final %>%
   arrange(pid2, startdate_c, enddate_c) %>%
   mutate(
     # First ID the place for that row
@@ -171,17 +171,17 @@ yt_ss_moves_f <- function(df, year, place = "yt") {
 ### YT
 # Move ins and outs
 as.data.frame(data.table::rbindlist(
-  lapply(seq(2012, 2016), move_count_yt_f, df = yt_elig_final, place = "yt")
+  lapply(seq(2012, 2017), move_count_yt_f, df = yt_movement, place = "yt")
   ))
 
 # Movement from YT to SS
 as.data.frame(data.table::rbindlist(
-  lapply(seq(2012, 2016), yt_ss_moves_f, df = yt_elig_final, place = "yt")
+  lapply(seq(2012, 2017), yt_ss_moves_f, df = yt_movement, place = "yt")
 ))
 
 
 # Mean person-time at site
-yt_elig_final %>% filter(place == "Ym" | place == "Nm") %>% 
+yt_movement %>% filter(place == "Ym" | place == "Nm") %>% 
   distinct(pid2, pt12_h, pt13_h, pt14_h, pt15_h, pt16_h) %>% 
   summarise(mean12 = mean(pt12_h, na.rm = T), mean13 = mean(pt13_h, na.rm = T), 
             mean14 = mean(pt14_h, na.rm = T), mean15 = mean(pt15_h, na.rm = T), 
@@ -191,16 +191,16 @@ yt_elig_final %>% filter(place == "Ym" | place == "Nm") %>%
 ### Scattered sites
 # Move ins and outs
 as.data.frame(data.table::rbindlist(
-  lapply(seq(2012, 2016), move_count_yt_f, df = yt_elig_final, place = "ss")
+  lapply(seq(2012, 2016), move_count_yt_f, df = yt_movement, place = "ss")
 ))
 
 # Movement from SS to YT
 as.data.frame(data.table::rbindlist(
-  lapply(seq(2012, 2016), yt_ss_moves_f, df = yt_elig_final, place = "ss")
+  lapply(seq(2012, 2016), yt_ss_moves_f, df = yt_movement, place = "ss")
 ))
 
 # Mean person-time at site
-yt_elig_final %>% filter(place == "Sm") %>% 
+yt_movement %>% filter(place == "Sm") %>% 
   distinct(pid2, pt12_h, pt13_h, pt14_h, pt15_h, pt16_h) %>% 
   summarise(mean12 = mean(pt12_h, na.rm = T), mean13 = mean(pt13_h, na.rm = T), 
             mean14 = mean(pt14_h, na.rm = T), mean15 = mean(pt15_h, na.rm = T), 
@@ -237,60 +237,62 @@ period_place_f <- function(df, startdate = NULL, enddate = NULL, place = place,
   
   place <- enquo(place)
   
+
   # Recode place into smaller groups
   # Put SS first so the Sankey diagram sorts better
-  # 1 = SS and Medicaid (not dual)
-  # 2 = SS and dual or no Medicaid
-  # 3 = YT and Mediciad (not dual)
-  # 4 = YT and dual or no Medicaid
-  # 5 = Other SHA and Medicaid (not dual)
-  # 6 = Other SHA and dual or no Medicaid
+  # 1 = SS and Medicaid
+  # 2 = SS and not Medicaid
+  # 3 = YT and Mediciad
+  # 4 = YT and not Medicaid
+  # 5 = Other SHA and Medicaid
+  # 6 = Other SHA and not Medicaid
   # 7 = KCHA (all Medicaid statuses)
   # 8 = Medicaid only
   if(medicaid == T & kcha == T) {
     df <- df %>%
       mutate(place_new = case_when(
-        !!place == "Sm" ~ 1,
-        !!place %in% c("Sn", "Sd") ~ 2,
-        !!place %in% c("Ym", "Nm") ~ 3,
-        !!place %in% c("Yn", "Yd", "Nn", "Nd") ~ 4,
-        !!place == "Om" ~ 5,
-        !!place %in% c("On", "Od") ~ 6,
+        !!place %in% c("Sm", "Sd") ~ 1,
+        !!place %in% c("Sn") ~ 2,
+        !!place %in% c("Ym", "Yd", "Nm", "Nd") ~ 3,
+        !!place %in% c("Yn", "Nn") ~ 4,
+        !!place %in% c("Om", "Od") ~ 5,
+        !!place %in% c("On") ~ 6,
         !!place %in% c("Km", "Kd", "Kn") ~ 7,
         !!place %in% c("Um", "Ud") ~ 8
       ))
   } else if(medicaid == F & kcha == T) {
     df <- df %>%
       mutate(place_new = case_when(
-        !!place == "Sm" ~ 1,
-        !!place %in% c("Sn", "Sd") ~ 2,
-        !!place %in% c("Ym", "Nm") ~ 3,
-        !!place %in% c("Yn", "Yd", "Nn", "Nd") ~ 4,
-        !!place == "Om" ~ 5,
-        !!place %in% c("On", "Od") ~ 6,
+        !!place %in% c("Sm", "Sd") ~ 1,
+        !!place %in% c("Sn") ~ 2,
+        !!place %in% c("Ym", "Yd", "Nm", "Nd") ~ 3,
+        !!place %in% c("Yn", "Nn") ~ 4,
+        !!place %in% c("Om", "Od") ~ 5,
+        !!place %in% c("On") ~ 6,
         !!place %in% c("Km", "Kd", "Kn") ~ 7
       ))
   } else if(medicaid == T & kcha == F) {
     df <- df %>%
       mutate(place_new = case_when(
-        !!place == "Sm" ~ 1,
-        !!place %in% c("Sn", "Sd") ~ 2,
-        !!place %in% c("Ym", "Nm") ~ 3,
-        !!place %in% c("Yn", "Yd", "Nn", "Nd") ~ 4,
-        !!place == "Om" ~ 5,
-        !!place %in% c("On", "Od") ~ 6,
+        !!place %in% c("Sm", "Sd") ~ 1,
+        !!place %in% c("Sn") ~ 2,
+        !!place %in% c("Ym", "Yd", "Nm", "Nd") ~ 3,
+        !!place %in% c("Yn", "Nn") ~ 4,
+        !!place %in% c("Om", "Od") ~ 5,
+        !!place %in% c("On") ~ 6,
         !!place %in% c("Um", "Ud") ~ 8
       ))
   } else if(medicaid == F & kcha == F) {
     df <- df %>%
       mutate(place_new = case_when(
-        !!place == "Sm" ~ 1,
-        !!place %in% c("Sn", "Sd") ~ 2,
-        !!place %in% c("Ym", "Nm") ~ 3,
-        !!place %in% c("Yn", "Yd", "Nn", "Nd") ~ 4,
-        !!place == "Om" ~ 5,
-        !!place %in% c("On", "Od") ~ 6
+        !!place %in% c("Sm", "Sd") ~ 1,
+        !!place %in% c("Sn") ~ 2,
+        !!place %in% c("Ym", "Yd", "Nm", "Nd") ~ 3,
+        !!place %in% c("Yn", "Nn") ~ 4,
+        !!place %in% c("Om", "Od") ~ 5,
+        !!place %in% c("On") ~ 6
       ))
+    
   }
 
   # Set up time period and capture period used for output
@@ -319,7 +321,7 @@ period_place_f <- function(df, startdate = NULL, enddate = NULL, place = place,
 
 
 ### Try annual status
-movement <- period_place_f(yt_elig_final, period = "year", medicaid = F, kcha = F)
+movement <- period_place_f(yt_movement, period = "year", medicaid = T, kcha = T)
 movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
 
 # Get a source and target for everyone
@@ -328,8 +330,9 @@ date_id <- seq(0, length(date) - 1)
 dates <- data.frame(date_id, date)
 
 
+
 ### Try quarterly status
-movement <- period_place_f(yt_elig_final, period = "quarter", medicaid = F, kcha = F)
+movement <- period_place_f(yt_movement, period = "quarter", medicaid = F, kcha = F)
 movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
 
 # Get a source and target for everyone
@@ -339,7 +342,7 @@ dates <- data.frame(date_id, date)
 
 
 ### Try six-monthly status
-movement <- period_place_f(filter(yt_elig_final, yt_ever == 1 | ss_ever == 1), period = "biannual", medicaid = T, kcha = T)
+movement <- period_place_f(filter(yt_movement, yt_ever == 1 | ss_ever == 1), period = "biannual", medicaid = T, kcha = T)
 movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
 
 # Get a source and target for everyone
@@ -349,7 +352,7 @@ dates <- data.frame(date_id, date)
 
 
 
-# Make more readable enrollment types
+### Make more readable enrollment types
 type <- c("SS and Medicaid (not dual)", "SS and dual/no Medicaid",
           "YT and Mediciad (not dual)", "YT and dual/no Medicaid",
           "Other SHA and Medicaid (not dual)", "Other SHA and dual/Medicaid",
@@ -360,6 +363,19 @@ type <- c("SS/M", "SS + dual/no M",
           "KCHA", "M only",
           "Not enrolled")
 group <- c(1, 1, 2, 2, 3, 3, 4, 5, 6)
+
+
+type <- c("SS: Medicaid", "SS: no Medicaid",
+          "YT: Mediciad", "YT: no Medicaid",
+          "Other SHA: Medicaid", "Other SHA: no Medicaid",
+          "KCHA (all)", "Medicaid only")
+type <- c("SS: M", "SS: no M",
+          "YT: M", "YT: no M",
+          "SHA: M", "SHA: no M",
+          "KCHA", "M only",
+          "Not enrolled")
+group <- c(1, 1, 2, 2, 3, 3, 4, 5, 6)
+
 
 type <- c("SS and Medicaid (not dual)", "SS and dual/no Medicaid",
           "YT and Mediciad (not dual)", "YT and dual/no Medicaid",

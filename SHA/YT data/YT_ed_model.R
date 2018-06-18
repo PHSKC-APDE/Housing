@@ -12,9 +12,8 @@
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
-library(stringr) # Used to manipulate string data
 library(ipw) # Used to make marginal structural models
 
 
@@ -27,108 +26,85 @@ library(ipw) # Used to make marginal structural models
 # Goal is to create cohort of people who spent time at YT or SS
 # Min of 30 days in a year to be included
 
-# Temp - join with income data
-yt_ss <- left_join(yt_ss, sha_inc_trunc,
-                   by = c("ssn_h" = "ssn", "lname_h" = "lname", 
-                          "fname_h" = "fname", "dob_h" = "dob"))
-
-yt_ss <- yt_ss %>%
-  group_by(hhold_id_new, startdate_h) %>%
-  mutate(hhold_size_new = n_distinct(pid2)) %>%
-  ungroup() %>%
-  mutate_at(vars(starts_with("hh_inc_tot")), funs(cap = . / hhold_size_new))
-  
-
-
-# Things take too long to load after a restart or crash to store data on secure drive
-# saveRDS(yt_elig_ed, file = "K:/Housing/OrganizedData/SHA cleaning/temp_yt_elig_ed.Rda")
-# yt_elig_ed <- readRDS(file = "K:/Housing/OrganizedData/SHA cleaning/temp_yt_elig_ed.Rda")
-
-# Filter to only include YT and SS residents and relevant variables
-yt_ed <- yt_elig_ed %>%
-  filter(yt == 1 | ss == 1) %>%
-  select(pid2, startdate_c, enddate_c, enroll_type, agency_new, dual_elig_m, yt, ss,
-         race_c, hisp_c, gender_c, age12, length12, 
-         inc_12:inc_17, asset_inc_12:asset_inc_17, hh_inc_tot_12:hh_inc_tot_17,
-         hh_inc_tot_12_cap:hh_inc_tot_17_cap, hhold_size_new, pt12:pt16,
-         from_date, ed_year)
-
 # Apply code to ensure 30+ days at YT/SS
-yt_ed <- lapply(seq(12, 16), popcode_yt_f, df = yt_ed)
-yt_ed <- as.data.frame(data.table::rbindlist(yt_ed))
+yt_ed <- lapply(seq(12, 17), popcode_yt_f, df = yt_elig_ed)
+yt_ed <- as.data.frame(data.table::rbindlist(yt_ed)) %>%
+  arrange(pid2, startdate_c) %>%
+  rename(year = year_code)
 
 yt_ed <- yt_ed %>% filter(pop_code %in% c(1, 2))
 
-# Deduplicate ED visits and summarise ED visit counts
-yt_ed <- yt_ed %>% 
-  mutate_at(vars(from_date, ed_year),
-            funs(ifelse(!is.na(ed_year) & ed_year != year_code, NA, .))) %>%
-  filter(is.na(ed_year) | ed_year == year_code) %>%
-  distinct() %>%
-  mutate(from_date = as.Date(from_date, origin = "1970-01-01"))
 
+### Remove extra rows
+# Sum ED visits by year and YT (already have restricted to only ppl in housing
+# and Medicaid who were not duals and were at YT or SS - using popcode above)
 yt_ed_cnt <- yt_ed %>%
-  filter(!is.na(ed_year)) %>%
-  group_by(pid2, year_code) %>%
-  summarise(ed_cnt = n()) %>%
+  filter(ed_year == year) %>%
+  group_by(pid2, yt, year, ed_year) %>%
+  summarise_at(
+    vars(ed_cnt, ed_avoid),
+    funs(ifelse(is.na(sum(., na.rm = T)), NA, sum(., na.rm = T)))
+    ) %>%
   ungroup()
 
-yt_ed <- left_join(yt_ed, yt_ed_cnt, by = c("pid2", "year_code")) %>%
-  select(-from_date, -ed_year) %>%
-  mutate(ed_cnt = ifelse(is.na(ed_cnt), 0, ed_cnt)) %>%
+# Now sum person-time amd income by year and YT
+yt_pt_cnt <- yt_ed %>%
+  select(pid2, yt, year, starts_with("pt"), starts_with("hh_inc")) %>%
+  distinct() %>%
+  group_by(pid2, yt, year) %>%
+  mutate_at(
+    vars(starts_with("pt")),
+    funs(ifelse(is.na(sum(., na.rm = T)), NA, sum(., na.rm = T)))
+  ) %>%
+  mutate_at(
+    vars(starts_with("hh_inc")),
+    funs(ifelse(is.na(mean(., na.rm = T)), NA, mean(., na.rm = T)))
+  ) %>%
+  ungroup() %>%
   distinct()
 
-rm(yt_ed_cnt)
-
-# Drop unnecessary columns
-# Everyone should be SHA and enroll_type = b, no longer need start/end dates
+# Join back and restrict to relevant variables
 yt_ed <- yt_ed %>%
-  select(year_code, pid2, yt, ss, race_c:length12, 
-         # Keep just household income divided by hhold size for now
-         hh_inc_tot_12_cap:hh_inc_tot_16_cap,
-         pt12:pt16, pop_code, ed_cnt) %>%
-  rename(year = year_code)
+  distinct(pid2, year, yt, race_c, gender_c, age12, length12) %>%
+  left_join(., yt_pt_cnt, by = c("pid2", "yt", "year")) %>%
+  left_join(., yt_ed_cnt, by = c("pid2", "yt", "year")) %>%
+  mutate_at(vars(ed_cnt, ed_avoid),
+            funs(ifelse(is.na(.), 0, .))) %>%
+  filter(is.na(ed_year) | ed_year == year) %>%
+  select(-ed_year) %>%
+  distinct()
 
 
 # Group together time at YT or SS (mostly SS) in a year
 # Need to reshape data and get time in one column
 yt_ed <- melt(yt_ed,
-               id.vars = c("year", "pid2", "yt", "ss", "race_c", "hisp_c",
-                           "gender_c", "age12", "length12", "pop_code", "ed_cnt",
-                           "hh_inc_tot_12_cap", "hh_inc_tot_13_cap", 
-                           "hh_inc_tot_14_cap", "hh_inc_tot_15_cap", "hh_inc_tot_16_cap"),
+               id.vars = c("year", "pid2", "yt", "race_c", "gender_c", 
+                           "age12", "length12", "ed_cnt", "ed_avoid",
+                           "hh_inc_12_cap", "hh_inc_13_cap", "hh_inc_14_cap", 
+                           "hh_inc_15_cap", "hh_inc_16_cap", "hh_inc_17_cap"),
                variable.name = "pt_yr", value.name = "pt")
 
 # Format and summarize
 yt_ed <- yt_ed %>%
-  mutate(pt_year = as.numeric(paste0("20", str_sub(pt_yr, -2, -1)))) %>%
-  filter(year == pt_year) %>%
+  mutate(pt_yr = as.numeric(paste0("20", str_sub(pt_yr, -2, -1)))) %>%
+  filter(year == pt_yr) %>%
   arrange(pid2, year, pt) %>%
   select(-pt_yr)
 
 
 # Now do the same for income
 yt_ed <- melt(yt_ed,
-              id.vars = c("year", "pid2", "yt", "ss", "race_c", "hisp_c",
-                          "gender_c", "age12", "length12", "pop_code", "ed_cnt",
+              id.vars = c("year", "pid2", "yt", "race_c", "gender_c", 
+                          "age12", "length12", "ed_cnt", "ed_avoid",
                           "pt_year", "pt"),
               variable.name = "inc_yr", value.name = "inc")
 
 yt_ed <- yt_ed %>%
   mutate(inc_yr = as.numeric(paste0("20", str_sub(inc_yr, -6, -5)))) %>%
   filter(year == inc_yr) %>%
-  arrange(pid2, year, pt)
-
-
-
-yt_ed <- yt_ed %>%
-  group_by(pid2, year) %>%
-  mutate(ed_cnt = sum(ed_cnt),
-         pt = sum(pt)) %>%
-  ungroup() %>%
-  select(-pt_year, -inc_yr) %>%
-  distinct()
-
+  arrange(pid2, year, pt) %>%
+  select(-inc_yr)
+  
 
 ### Set up censoring
 yt_ed <- yt_ed %>%
@@ -140,22 +116,8 @@ yt_ed <- yt_ed %>%
                            (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0)) %>%
   ungroup()
 
-# Summary of censoring
-yt_ed %>% group_by(yt, year) %>% 
-  summarise(cens_l = sum(cens_l), cens_r = sum(cens_r), pop = n_distinct(pid2)) %>% 
-  mutate(pct_l = round(cens_l/pop*100,1), pct_r = round(cens_r/pop*100,1))
 
-
-### Review missingness
-yt_ed %>% filter(is.na(race_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(hisp_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(gender_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(age12)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(length12)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(inc)) %>% group_by(yt, year) %>% summarise(count= n())
-
-
-# Set up for modeling
+### Set up for modeling
 yt_ed2 <- yt_ed %>%
   arrange(pid2, yt, year) %>%
   group_by(pid2, yt) %>%
@@ -165,9 +127,25 @@ yt_ed2 <- yt_ed %>%
     year %in% c(2012, 2016) ~ ed_cnt / (pt / 366),
     TRUE ~ ed_cnt / (pt / 365)
     )) %>%
-  filter(!(is.na(race_c) | is.na(hisp_c) | is.na(gender_c) | 
+  filter(!(is.na(race_c) | is.na(gender_c) | 
              is.na(age12) | is.na(length12) | is.na(inc)))
 yt_ed2 <- as.data.frame(yt_ed2)
+
+#### END DATA SETUP ####
+
+
+#### BASIC STATS ####
+# Summary of censoring
+yt_ed %>% group_by(yt, year) %>% 
+  summarise(cens_l = sum(cens_l), cens_r = sum(cens_r), pop = n_distinct(pid2)) %>% 
+  mutate(pct_l = round(cens_l/pop*100,1), pct_r = round(cens_r/pop*100,1))
+
+### Review missingness
+yt_ed %>% filter(is.na(race_c)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ed %>% filter(is.na(gender_c)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ed %>% filter(is.na(age12)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ed %>% filter(is.na(length12)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ed %>% filter(is.na(inc)) %>% group_by(yt, year) %>% summarise(count= n())
 
 
 # Take a look at the rates
@@ -176,12 +154,95 @@ pastecs::stat.desc(yt_ed2$rate[yt_ed2$rate != 0])
 hist(yt_ed2$rate)
 hist(yt_ed2$rate[yt_ed2$rate != 0])
 
+
+### Plot ED visits over time
+yt_ed_sum <- yt_ed %>%
+  filter(year < 2017) %>%
+  group_by(yt, year) %>%
+  summarise(ed_cnt = sum(ed_cnt, na.rm = T),
+            pt = sum(pt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(rate = ed_cnt/pt * 100000,
+         yt = ifelse(yt == 1, "YT", "Scattered sites"))
+
+ggplot(data = yt_ed_sum, aes(x = year, y = rate)) +
+  geom_line(aes(color = yt, group = yt), size = 1.3) +
+  #ggtitle("Emergency department visit rates") +
+  xlab("Year") +
+  ylab("Rate (per 100,000 person-years") +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        panel.background = element_rect(fill = "grey95"))
+
+
+
+#### MODELS ####
+
+# Run simple negative binomial models
+crude <- MASS::glm.nb(ed_cnt ~ yt + as.factor(year) + offset(log(pt)), data = yt_ed2[yt_ed2$year < 2017, ])
+summary(crude)
+exp(crude$coefficients)
+
+ed_m1 <- MASS::glm.nb(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + inc + offset(log(pt)), 
+             data = yt_ed2[yt_ed2$year < 2017, ])
+summary(ed_m1)
+exp(ed_m1$coefficients)
+
+#### Run zero inflated model ####
+library(pscl)
+library(snow)
+
+
+summary(ed_zero <- zeroinfl(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + offset(log(pt)) |
+                              race_c + gender_c + age12 + length12 + offset(log(pt)),
+                            data = yt_ed2))
+
+
+# Look at 2012/2017
+yt_ed_12 <- yt_ed2 %>% filter(year == 2012)
+summary(zeroinfl(ed_cnt ~ yt + race_c + gender_c + age12 + length12 + offset(log(pt)) |
+                              race_c + gender_c + age12 + length12 + offset(log(pt)),
+                            data = yt_ed_12))
+
+
+# Compare zero-infalted model with ordinary Poisson
+vuong(ed_m1, ed_zero)
+
+
+### Bootstrap CIs
+dput(coef(ed_zero, "count"))
+dput(coef(ed_zero, "zero"))
+
+boot_zero_f <- function(data, i) {
+  m <- pscl::zeroinfl(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + offset(log(pt)) | 
+                  race_c + gender_c + age12 + length12 + offset(log(pt)),
+                data = data[i, ],
+                start = list(count = c(-6.013, -0.1316, 0.1035, 0.1047, 0.1593, 0.0444,
+                                       -0.1481, 0.9677, -0.3216, -0.8693, 0.3145,
+                                       0.1215, 0.4881, 0.4773, -0.5049, 0.0443,
+                                       0.3706, 0.5350, -0.2259, 0.0104, 0.0080),
+                             zero = c(-6.846, -10.826, 1.465,
+                                      0.7551, 0.9261, 0.7366, 0.8743,
+                                      0.8961, -0.6448, -13.447, 0.7879,
+                                      0.7159, -0.0497, 0.0041, 0.0600)))
+  as.vector(t(do.call(rbind, coef(summary(m)))[, 1:2]))
+}
+
+set.seed(10)
+ed_zero_boot <- boot(yt_ed2, boot_zero_f, R = 100, parallel = "snow", ncpus = 4)
+
+
+
+#### End zero-inflated section ####
+
 # Set up IPT weights and join back
 w1 <- ipwtm(exposure = yt, 
             family = "binomial",
             link = "logit",
-            numerator = ~ race_c + hisp_c + gender_c + age12 + length12,
-            denominator = ~ race_c + hisp_c + gender_c + age12 + length12 + inc + year,
+            numerator = ~ race_c + gender_c + age12 + length12,
+            denominator = ~ race_c + gender_c + age12 + length12 + inc + year,
             id = pid2,
             timevar = timevar,
             type = "all",
@@ -192,15 +253,21 @@ pastecs::stat.desc(w1$ipw.weights)
 
 
 # Set up weights for left- and right-censoring
-w_lc <- ipwtm(exposure = left_censor, 
+w_lc <- ipwtm(exposure = cens_l, 
               family = "binomial",
               link = "logit",
-              numerator = ~ race_c + hisp_c + gender_c + age12 + length12,
-              denominator = ~ race_c + hisp_c + gender_c + age12 + length12 + inc + year,
+              numerator = ~ race_c + gender_c + age12 + length12,
+              denominator = ~ race_c + gender_c + age12 + length12 + inc + year,
               id = pid2,
               timevar = timevar,
               type = "all",
               data = yt_ed2)
+
+# Check mean of weights near 1
+pastecs::stat.desc(w_lc$ipw.weights)
+
+
+# Combine weights
 
 
 

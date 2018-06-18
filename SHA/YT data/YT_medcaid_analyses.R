@@ -11,17 +11,17 @@
 ##### Set up global parameter and call in libraries #####
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
-library(RODBC) # Used to connect to SQL server
+library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
 library(epiR) # Used to calculate rates and other statistical measures
 
 
 #### Connect to the SQL servers ####
-db.claims51 <- odbcConnect("PHClaims51")
-db.apde51 <- odbcConnect("PH_APDEStore51")
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
 #### FUNCTIONS ####
@@ -201,11 +201,11 @@ eventcount_yt_f <- function(df, event = NULL, year) {
   } else if (str_detect(quo_name(event_quo), "inj")) {
     event_year <- quo(inj_year)
   }
-  
+
   output <- df %>%
     filter((!!event_year) == year | is.na((!!event_year)))  %>%
     group_by(agency_new, enroll_type, dual_elig_m, yt, ss) %>%
-    summarise(count = sum(!!event_quo)) %>%
+    summarise(count = sum(!!event_quo, na.rm = T)) %>%
     ungroup() %>%
     mutate(year = as.numeric(year)) %>%
     select(year, agency_new, enroll_type, dual_elig_m, yt, ss, count) %>%
@@ -280,35 +280,76 @@ yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SH
 yt_ss <- yt_elig_final %>% filter(yt == 1 | ss == 1)
 
 
-### Acute events
-# ED visits (using broad definition)
-ptm01 <- proc.time() # Times how long this query takes
-ed <- sqlQuery(db.claims51,
-               "SELECT DISTINCT id, from_date from PHClaims.dbo.v_ed_eli
-               WHERE edvisit = 1",
-               stringsAsFactors = F)
-proc.time() - ptm01
+#### TEMP SECTION ####
+# Move into yt_demog_setup eventually
+# Add in latest income for each calendar year
 
-#### TEMP ####
-# Things take too long to load after a restart or crash to store data on secure drive
-#saveRDS(ed, file = "K:/Housing/OrganizedData/SHA cleaning/temp_ed.Rda")
-# ed <- readRDS(file = "K:/Housing/OrganizedData/SHA cleaning/temp_ed.Rda")
+# Kludgy workaround for now, look upstream to better track annual income
+hh_inc_f <- function(df, year) {
+  pt <- rlang::sym(paste0("pt", quo_name(year)))
+  hh_inc_yr <- rlang::sym(paste0("hh_inc_", quo_name(year)))
+
+  df_inc <- df %>%
+    filter((!!pt) > 0) %>%
+    arrange(pid2, desc(startdate_c)) %>%
+    group_by(pid2) %>%
+    mutate((!!hh_inc_yr) := first(hh_inc)) %>%
+    ungroup() %>%
+    arrange(pid2, startdate_c) %>%
+    select(pid2, startdate_c, (!!hh_inc_yr))
+  
+  df <- left_join(df, df_inc, by = c("pid2", "startdate_c"))
+  
+  return(df)
+}
+
+yt_ss <- hh_inc_f(yt_ss, 12)
+yt_ss <- hh_inc_f(yt_ss, 13)
+yt_ss <- hh_inc_f(yt_ss, 14)
+yt_ss <- hh_inc_f(yt_ss, 15)
+yt_ss <- hh_inc_f(yt_ss, 16)
+yt_ss <- hh_inc_f(yt_ss, 17)
+
+
+### Set up income per capita
+yt_ss <- yt_ss %>%
+  group_by(hh_id_new_h, startdate_h) %>%
+  mutate(hh_size_new = n_distinct(pid2)) %>%
+  ungroup() %>%
+  mutate_at(vars(starts_with("hh_inc_1")), funs(cap = . / hh_size_new))
+
 #### END TEMP ####
 
 
-# Hospitalizations
-ptm01 <- proc.time() # Times how long this query takes
-hosp <- sqlQuery(db.claims51,
-               "SELECT DISTINCT ID, FR_SDT from PHClaims.dbo.Claims_Hosp",
-               stringsAsFactors = F)
-proc.time() - ptm01
 
-# Add columns useful for counting up events
+### Acute events
+# ED visits (using broad definition)
+system.time(
+  ed <- dbGetQuery(db.claims51,
+                     "SELECT id AS mid, from_date, ed, ed_avoid_ca
+                     FROM PHClaims.dbo.mcaid_claim_summary
+                     WHERE ed = 1")
+)
+
+# Reformat and add column useful for counting up events
+ed <- ed %>% 
+  mutate(from_date = as.Date(from_date, origin = "1970-01-01")) %>%
+  distinct()
+
+
+# Hospitalizations
+system.time(
+hosp <- dbGetQuery(db.claims51,
+                   "SELECT id AS mid, from_date, to_date, inpatient
+                   FROM PHClaims.dbo.mcaid_claim_summary
+                   WHERE inpatient = 1")
+)
+
+# Reformat and add column useful for counting up events
 hosp <- hosp %>% 
-  mutate(hosp = 1, 
-         from_date = as.Date(FR_SDT, origin = "1970-01-01"),
-         hosp_year = year(from_date)) %>%
-  select(ID, from_date, hosp_year, hosp)
+  mutate(from_date = as.Date(from_date, origin = "1970-01-01"),
+         to_date = as.Date(to_date, origin = "1970-01-01"),
+         hosp_year = year(from_date))
 
 
 ### Chronic conditions
@@ -336,56 +377,17 @@ inj <- inj %>%
   mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
 
 
-
-
-#### OLD MEDICAID CODE ####
-### Bring in ED visit data
-ptm01 <- proc.time() # Times how long this query takes (~65 secs)
-ed <- sqlQuery(db.claims51,
-               "SELECT DISTINCT mid, FROM_SRVC_DATE AS ed_from, TO_SRVC_DATE AS ed_to
-                     FROM (SELECT MEDICAID_RECIPIENT_ID AS mid, FROM_SRVC_DATE=convert(varchar(10), FROM_SRVC_DATE,1), 
-                           TO_SRVC_DATE=convert(varchar(10), TO_SRVC_DATE,1),
-                           REVENUE_CODE AS RCODE, PLACE_OF_SERVICE AS POS, PATIENT_STATUS_DESC AS STATUS, CLM_TYPE_CID AS CTYPE,
-                           CASE WHEN PATIENT_STATUS_DESC LIKE '%hospital%' THEN 1 ELSE 0 END AS DTH
-                           FROM dbo.NewClaims) a
-                     WHERE (RCODE LIKE '045[01269]' OR RCODE LIKE '0981' OR POS LIKE '%23%') AND DTH=0
-               ORDER BY mid, ed_from",
-               stringsAsFactors = FALSE)
-proc.time() - ptm01
-ed <- ed %>%  mutate_at(vars(ed_from, ed_to), funs(as.Date(., origin = "1970-01-01")))
-
-
-### Bring in asthma visit data
-ptm01 <- proc.time() # Times how long this query takes (~38 secs)
-asthma <- sqlQuery(db.claims51,
-               "SELECT DISTINCT mid, FROM_SRVC_DATE AS ast_from, TO_SRVC_DATE AS ast_to
-                FROM (SELECT MEDICAID_RECIPIENT_ID AS mid, FROM_SRVC_DATE, TO_SRVC_DATE,
-                      PRIMARY_DIAGNOSIS_CODE AS DX1, DIAGNOSIS_CODE_2 AS DX2, DIAGNOSIS_CODE_3 AS DX3,
-                      DIAGNOSIS_CODE_4 AS DX4,DIAGNOSIS_CODE_5 AS DX5, CLM_TYPE_CID
-                      FROM PHClaims.dbo.NewClaims) a
-                      WHERE (CLM_TYPE_CID = 31 OR CLM_TYPE_CID = 12 OR CLM_TYPE_CID = 23) AND
-                      ((DX1 LIKE '493%' OR DX1 LIKE 'J45%' OR DX1 LIKE 'J44%') OR 
-                        (DX2 LIKE '493%' OR DX2 LIKE 'J45%' OR DX2 LIKE 'J44%') OR 
-                        (DX3 LIKE '493%' OR DX3 LIKE 'J45%' OR DX3 LIKE 'J44%') OR 
-                        (DX4 LIKE '493%' OR DX4 LIKE 'J45%' OR DX4 LIKE 'J44%') OR 
-                        (DX5 LIKE '493%' OR DX5 LIKE 'J45%' OR DX5 LIKE 'J44%'))
-                ORDER BY mid, ast_from",
-               stringsAsFactors = FALSE)
-proc.time() - ptm01
-asthma <- asthma %>%  mutate_at(vars(ast_from, ast_to), funs(as.Date(., origin = "1970-01-01")))
-#### END OLD MEDICAID CODE ####
-
 #### END BRING IN DATA SECITON ####
 
 
 #### POPULATION DATA ####
 # Need to count up person time by agency, yt and ss
-yt_pop_enroll <- lapply(seq(12, 16), popcount_all_yt_f, df = yt_elig_final)
+yt_pop_enroll <- lapply(seq(12, 17), popcount_all_yt_f, df = yt_elig_final)
 yt_pop_enroll <- as.data.frame(data.table::rbindlist(yt_pop_enroll))
 
 
 # Make simplified version of enrollment
-yt_elig_simple <- lapply(seq(12, 16), popcode_sum_f, df = yt_elig_final, demogs = T)
+yt_elig_simple <- lapply(seq(12, 17), popcode_sum_f, df = yt_elig_final, demogs = T)
 yt_elig_simple <- as.data.frame(data.table::rbindlist(yt_elig_simple))
 
 
@@ -411,20 +413,16 @@ yt_hosp_cnt <- as.data.frame(data.table::rbindlist(yt_hosp_cnt)) %>%
 
 
 ### Join demographics and ED events
-# yt_elig_ed <- left_join(yt_elig_final, ed,
-#                          by = c("mid", "pid2", "startdate_c", "enddate_c")) %>%
-#   mutate_at(vars(ed_cnt, ed_pers, ed_avoid), funs(ifelse(is.na(.), 0, .)))
-
-
-yt_elig_ed <- left_join(yt_ss, ed, by = c("mid" = "id")) %>%
+yt_elig_ed <- left_join(yt_ss, ed, by = "mid") %>%
   mutate(
-    from_date = ifelse(from_date < startdate_c | from_date > enddate_c, NA, from_date),
-    from_date = as.Date(from_date, origin = "1970-01-01")
+    from_date = as.Date(ifelse(from_date < startdate_c | from_date > enddate_c, 
+                               NA, from_date), origin = "1970-01-01")
     ) %>%
   filter(is.na(from_date) | (from_date >= startdate_c & from_date <= enddate_c)) %>%
   distinct()
 
 yt_elig_ed <- yt_elig_ed %>% mutate(ed_year = year(from_date))
+
 
 # The code above creates rows with NA in the same period when there are ED visits
 # Need to strip out the NAs
@@ -433,20 +431,36 @@ yt_ed_cnt <- yt_elig_ed %>%
   group_by(pid2, startdate_c, ed_year) %>%
   summarise(ed_cnt = n()) %>%
   ungroup()
+yt_ed_avd_cnt <- yt_elig_ed %>%
+  filter(ed_avoid_ca == 1 & !is.na(ed_year)) %>%
+  group_by(pid2, ed_year) %>%
+  summarise(ed_avoid = n()) %>%
+  ungroup()
 
-yt_elig_ed <- left_join(yt_elig_ed, yt_ed_cnt, by = c("pid2", "startdate_c", "ed_year")) %>%
-  filter(!(is.na(ed_year) & ed_cnt > 0) | (is.na(ed_year) & is.na(ed_cnt)))
+yt_elig_ed <- left_join(yt_elig_ed, yt_ed_cnt, 
+                        by = c("pid2", "startdate_c", "ed_year")) %>%
+  left_join(., yt_ed_avd_cnt, by = c("pid2", "ed_year")) %>%
+  filter(!(is.na(ed_year) & ed_cnt > 0) | (is.na(ed_year) & is.na(ed_cnt))) %>%
+  select(-from_date, -ed, -ed_avoid_ca) %>%
+  distinct() %>%
+  group_by(pid2, startdate_c) %>%
+  mutate(rows = n()) %>%
+  ungroup() %>%
+  filter(!(is.na(ed_year) & rows > 1))
+
 rm(yt_ed_cnt)
+rm(yt_ed_avd_cnt)
+gc()
 
 
 # Run numbers for ED
-yt_ed_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_pers)
+yt_ed_pers <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_elig_ed, event = ed_pers)
 yt_ed_pers <- as.data.frame(data.table::rbindlist(yt_ed_pers)) %>%
   mutate(indicator = "Persons with ED visits")
-yt_ed_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_cnt)
+yt_ed_cnt <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_elig_ed, event = ed_cnt)
 yt_ed_cnt <- as.data.frame(data.table::rbindlist(yt_ed_cnt)) %>%
   mutate(indicator = "ED visits")
-yt_ed_avoid <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_ed, event = ed_avoid)
+yt_ed_avoid <- lapply(seq(12, 17), eventcount_yt_f, df = yt_elig_ed, event = ed_avoid)
 yt_ed_avoid <- as.data.frame(data.table::rbindlist(yt_ed_avoid)) %>%
   mutate(indicator = "Avoidable ED visits")
 
@@ -557,36 +571,7 @@ htn <- conditions %>% filter(HTN == 1) %>%
   rename(mid = ID, fr_sdt = FR_SDT, htn = HTN) %>%
   mutate(fr_sdt = as.Date(fr_sdt, origin = "1970-01-01"))
 
-ptm01 <- proc.time() # Times how long this query takes (~115 secs)
-ed <- sqlQuery(db.claims51,
-               "SELECT * FROM
-               (SELECT DISTINCT a.ID, a.FR_SDT, a.DX1, SUM(DTH) AS DTH, SUM(MEN) AS MEN
-                 FROM
-                 (SELECT MEDICAID_RECIPIENT_ID AS ID 
-                   ,CLM_TYPE_CID
-                   ,CONVERT(DECIMAL(12,2), PAID_AMT_H) AS PAID_AMT
-                   ,FR_SDT=convert(varchar(10), FROM_SRVC_DATE,1)
-                   ,PRIMARY_DIAGNOSIS_CODE AS DX1
-                   ,CASE WHEN PATIENT_STATUS_DESC LIKE '%hospital%' THEN 1 ELSE 0 END AS DTH
-                   ,CASE WHEN PRIMARY_DIAGNOSIS_CODE BETWEEN '290' AND '316' 
-                   OR PRIMARY_DIAGNOSIS_CODE LIKE 'F03' 
-                   OR PRIMARY_DIAGNOSIS_CODE BETWEEN 'F10' AND 'F69'
-                   OR PRIMARY_DIAGNOSIS_CODE BETWEEN 'F80' AND 'F99' THEN 1 ELSE 0 END AS MEN
-                   FROM PHClaims.dbo.NewClaims
-                   WHERE CLM_TYPE_CID IN(3,26,34) AND
-                   (REVENUE_CODE LIKE '045[01269]' OR REVENUE_CODE LIKE '0981' OR LINE_PRCDR_CODE LIKE '9928[1-5]' 
-                     OR (PLACE_OF_SERVICE LIKE '%23%' AND LINE_PRCDR_CODE BETWEEN '10021' AND '69990'))) a
-                 GROUP BY ID, FR_SDT, DX1) b
-               WHERE DTH=0 AND MEN=0
-               GROUP BY ID, FR_SDT, DX1, DTH, MEN
-               ORDER BY ID",
-               stringsAsFactors = FALSE)
-proc.time() - ptm01
 
-ed <- ed %>%
-  rename(mid = ID, ed_from = FR_SDT) %>%
-  mutate(ed = 1) %>%
-  select(mid, ed_from, ed)
 
 
 # Sum by year

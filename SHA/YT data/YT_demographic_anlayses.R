@@ -28,7 +28,8 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 
 #### Bring in combined PHA/Medicaid data with some demographics already run ####
-yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
+yt_elig_final <- readRDS(file = paste0(housing_path, 
+                                       "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
 
 
 ### Movements within data
@@ -51,7 +52,7 @@ yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleanin
 
 #### Look at demographics in 2012–2016 ####
 ### Annual counts
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "year", unit = hhold_id_new) %>%
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "year", unit = hh_id_new_h) %>%
   filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
   ungroup()
 
@@ -86,37 +87,41 @@ counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "enroll_
 
 
 ### Count for a given date
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "date", unit = hhold_id_new) %>%
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "date", unit = hh_id_new_h) %>%
   filter(yt == 1) %>%
   group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+  mutate(total = sum(count)) %>%
   ungroup()
 counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "date", unit = pid2) %>%
   filter(yt == 1) %>%
   group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+  mutate(total = sum(count)) %>%
   ungroup()
 
 
 ### Look at gender each year
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "gender2_h"), period = "date", unit = hhold_id_new) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "gender2_h"),
+       period = "date", unit = hh_id_new_h) %>%
+  filter(yt == 1 | ss == 1) %>%
+  group_by(date, yt) %>%
+  mutate(total = sum(count)) %>%
   ungroup() %>%
-  mutate(percent = count / total) %>%
-  select(gender2_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "gender2_h"), period = "date", unit = pid2) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+  mutate(percent = round(count / total*100, 1)) %>%
+  select(yt, gender2_h, date, period, count, total, percent) %>%
+  arrange(desc(yt), date)
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "gender2_h"), 
+       period = "date", unit = pid2) %>%
+  filter(yt == 1 | ss == 1) %>%
+  group_by(date, yt) %>%
+  mutate(total = sum(count)) %>%
   ungroup() %>%
-  mutate(percent = count / total) %>%
-  select(gender2_h, date, period, count, total, percent)
+  mutate(percent = round(count / total*100, 1)) %>%
+  select(yt, gender2_h, date, period, count, total, percent) %>%
+  arrange(desc(yt), date)
 
 
 ### Look at age groups each year
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "agegrp_h"), period = "date", unit = hhold_id_new) %>%
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "agegrp_h"), period = "date", unit = hh_id_new_h) %>%
   filter(yt == 1) %>%
   group_by(date) %>%
   mutate(total = sum(.$count)) %>%
@@ -154,29 +159,32 @@ rm(temp)
 
 
 ### Look at race each year
-f_phacount(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "race2"), period = "date", unit = hhold_id_new) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+f_phacount(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "race_h"), period = "date", unit = hh_id_new_h) %>%
+  filter(yt == 1 | ss == 1) %>%
+  group_by(date, yt) %>%
+  mutate(total = sum(count)) %>%
   ungroup() %>%
-  mutate(percent = count / total) %>%
-  select(race2, date, period, count, total, percent)
-f_phacount(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "race2"), period = "date", unit = pid2) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
+  mutate(percent = round(count / total*100, 1)) %>%
+  select(yt, race_h, date, period, count, total, percent) %>%
+  arrange(desc(yt), date)
+counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "race_h"),
+           period = "date", unit = pid2) %>%
+  filter(yt == 1 | ss == 1) %>%
+  group_by(date, yt) %>%
+  mutate(total = sum(count)) %>%
   ungroup() %>%
-  mutate(percent = count / total) %>%
-  select(race2, date, period, count, total, percent)
+  mutate(percent = round(count / total*100, 1)) %>%
+  select(yt, race_h, date, period, count, total, percent) %>%
+  arrange(desc(yt), date)
 
 
 
 #### Summarize for Tableau ####
 # Monthly
-race_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
-agegrp_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
-disability_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
-gender_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "month", agency = "sha", unit = hhold_id_new)
+race_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
+agegrp_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
+disability_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
+gender_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
 
 race_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = pid2)
 agegrp_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = pid2)
@@ -184,10 +192,10 @@ disability_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disabi
 gender_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "month", agency = "sha", unit = pid2)
 
 # Yearly
-race_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "year", agency = "sha", unit = hhold_id_new)
-agegrp_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "year", agency = "sha", unit = hhold_id_new)
-disability_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "year", agency = "sha", unit = hhold_id_new)
-gender_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "year", agency = "sha", unit = hhold_id_new)
+race_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
+agegrp_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
+disability_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
+gender_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
 
 race_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "year", agency = "sha", unit = pid2)
 agegrp_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "year", agency = "sha", unit = pid2)
@@ -203,7 +211,7 @@ gender_count <- bind_rows(gender_count_hh_yt, gender_count_ind_yt, gender_count_
 
 yt_count <- bind_rows(race_count, agegrp_count, disability_count, gender_count) %>%
   mutate(medicaid = car::recode(enroll_type, "'b' = 'Medicaid'; 'h' = 'No Medicaid'"),
-         unit = car::recode(unit, "'hhold_id_new' = 'Households'; 'pid2' = 'Individuals'"),
+         unit = car::recode(unit, "'hh_id_new_h' = 'Households'; 'pid2' = 'Individuals'"),
          date_yr = ifelse(period == "year", year(date), NA))
 
 write.xlsx(yt_count, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/YT enrollment count_", Sys.Date(), ".xlsx"))
