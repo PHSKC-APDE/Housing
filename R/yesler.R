@@ -55,7 +55,7 @@ yesler <- function(df, unit = NULL){
           (!is.na(!!address) &
              # Kebero Court
              (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
-                # The Baldin
+                # The Baldwin
                 str_detect(!!address, "^1305[:space:]*[E]*[:space:]*F") |
                 # Hoa Mai
                 str_detect(!!address, "^221[:space:]*10TH[:space:]*AVE") |
