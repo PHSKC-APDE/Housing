@@ -23,47 +23,112 @@
 # 
 ###############################################################################
 
+#### Set up global parameter and call in libraries ####
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # used to read in csv files and rename fields
 library(tidyverse) # Used to manipulate data
-library(reticulate) # used to pull in python-based address parser
 library(ggmap) # used to geocode addresses
+library(opencage) # used to geocode addresses (alternative)
 library(rgdal) # Used to convert coordinates between ESRI and Google output
+library(sf) # newer package for working with spatial data
 
 
-path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 bounds <- "& bounds=47,-122.7|48,-121"
+bounds_opencage <- c(-123, 46.8, -120.5, 48.5)
 
 
-### Import Python address parser
-addparser <- import("usaddress")
+#### BRING IN DATA ####
+pha_cleanadd <- readRDS(file.path(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
+
+### If addresses have already been geocoded, bring them in here
+# Initial geocoding results (differs from future approaches)
+esri_20170824 <- read.xlsx(file.path(housing_path, "Geocoding",
+                                            "PHA_addresses_matched_ESRI_2017-08-24.xlsx"))
+goog_20170824 <- readRDS(file.path(housing_path, "Geocoding",
+                                   "PHA_addresses_matched_google_2017-08-24.rds"))
 
 
-# file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
+#### PROCESS PREVIOUSLY GEOCODED DATA ####
+### Initial geocoding results (differs from future approaches) - 2017-08-24
+adds_matched_20170824 <- left_join(esri_20170824, goog_20170824, by = "FID")
+# Collapse to useful columns and select matching from each source as appropriate
+adds_matched_20170824 <- adds_matched_20170824 %>%
+  # Fix up truncated names
+  rename(unit_add_new = unit_add_n, 
+         unit_city_new = unit_city_, 
+         unit_state_new = unit_state, 
+         unit_zip_new = unit_zip_n, 
+         unit_concat_short = unit_conca) %>%
+  # Add metadata indicating where the geocode comes from and if ZIP centroid
+  mutate(
+    unit_zip_new = as.numeric(unit_zip_new),
+    check_esri = 1,
+    check_google = ifelse(!is.na(status), 1, 0),
+    check_opencage = 0,
+    geocode_source = ifelse(status == "OK" & !is.na(status), "google", "esri"),
+    zip_centroid = ifelse(geocode_source == "esri" & 
+                            Loc_name == "zip_5_digit_gc", 1, 0),
+    ### Move address and coordindate data into a single field
+    add_geocoded = ifelse(geocode_source == "esri", 
+                          toupper(Match_addr), 
+                          toupper(formatted_address)),
+    zip_geocoded = ifelse(geocode_source == "esri", ARC_ZIP, 
+                          str_sub(formatted_address,
+                                  str_locate(formatted_address, "[:digit:]{5},")[,1],
+                                  str_locate(formatted_address, "[:digit:]{5},")[,2]-1)),
+    lon = ifelse(geocode_source == "esri", POINT_X, long),
+    lat = ifelse(geocode_source == "esri", POINT_Y, lat)
+  ) %>%
+  select(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, unit_concat_short, 
+         check_esri, check_google, check_opencage, geocode_source, zip_centroid,
+         add_geocoded, zip_geocoded, lon, lat)
 
-#### Parse addresses (will be useful for geocoding) ####
 
-### Set up distinct addresses for parsing
-# Remove confidential addresses, those associated with ports, and those that can't be geocoded due to a lack of address)
+#### FIND NEW ADDRESSES ####
+# Remove confidential addresses, those associated with ports, 
+# and those that can't be geocoded due to a lack of address)
 adds <- pha_cleanadd %>%
   # Strip out apartment numbers and recreate unit_concat
   distinct(unit_add_new, unit_city_new, unit_state_new, unit_zip_new) %>%
-  mutate(unit_concat_short = paste(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, sep = ", ")) %>%
-  arrange(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, unit_concat_short) %>%
+  mutate(unit_concat_short = paste(unit_add_new, unit_city_new, 
+                                   unit_state_new, unit_zip_new, sep = ", ")) %>%
+  arrange(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, 
+          unit_concat_short) %>%
   filter(str_detect(unit_concat_short, "CONFI|PORTABLE|, , , 0|, , , NA") == FALSE & 
            unit_add_new != "PORT OUT")
 
-### Make empty list to add data to
-addlist = list()
-# Loop over addresses
-for (i in 1:nrow(adds)) {
-  add <- addparser$tag(adds$unit_concat_short[i])[1]
-  addlist[[i]] <- toString(add[[1]])
+
+# Anti_join to find new addresses
+adds_new <- anti_join(adds, adds_matched_20170824, by = "unit_concat_short")
+
+
+#### EXPORT DATA FOR GEOCODING ####
+write.xlsx(adds_new, file = paste0(housing_path,
+                                      "/Geocoding/PHA addresses for geocoding_",
+                                      Sys.Date(), ".xlsx"))
+
+
+#### BRING IN GEOCODED DATA FOR ADDITIONAL PROCESSING ####
+last_date <- readline(prompt = "When was the geocoding file last created 
+                      (use YYYY-MM-DD format)? ")
+latest_file <- paste0(housing_path, "Geocoding/PHA_addresses_geocoded_",
+                          last_date, ".shp")
+
+
+if (file.exists(latest_file)){
+  print("Found geocoded data")
+  adds_new_esri <- st_read(latest_file)
+} else {
+  stop("Check file names and that ESRI geocoding was run")
 }
 
-### Export data for geocoding
-write.xlsx(adds, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA addresses for geocoding_",
-                               Sys.Date(), ".xlsx"))
+
+
+
+
+
+
 
 
 
@@ -71,21 +136,11 @@ write.xlsx(adds, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/
 ### ArcMap doesn't get it all right so need to use Google to geocode remaining addresses
 
 # Bring in unmatched addresses
-adds_unmatched <- read.xlsx(paste0(path, "/Geocoding/PHA_addresses_unmatched.xlsx"))
+adds_unmatched <- read.xlsx(paste0(housing_path, "/Geocoding/PHA_addresses_unmatched.xlsx"))
 # Remove missing addresses
 adds_unmatched <- adds_unmatched %>% filter(unit_add_n != " ")
 
 
-### BING APPROACH
-# Set up columns for Bing maps processing
-adds_unmatched_bing <- adds_unmatched %>%
-  # Select and rename columns
-  select(FID, unit_add_n, unit_city_, unit_state, unit_zip_n) %>%
-  rename(Id = FID, `GeocodeRequest/Address/AddressLine` = unit_add_n, `GeocodeRequest/Address/Locality` = unit_city_,
-         `GeocodeRequest/Address/AdminDistrict` = unit_state, `GeocodeRequest/Address/PostalCode` = unit_zip_n)
-
-# Save combined file
-write.csv(adds_unmatched_bing, paste0(path, "/Geocoding/PHA_addresses_unmatched_bing.csv"), row.names = FALSE)
 
 
 ### GOOGLE APPROACH
@@ -153,7 +208,7 @@ for (ii in seq(startindex, length(addresses))){
 }
 
 # Load already completed geocoding
-geocoded <- readRDS(paste0(path, "/Geocoding/PHA_addresses_matched_google.rds"))
+geocoded <- readRDS(paste0(housing_path, "/Geocoding/PHA_addresses_matched_google.rds"))
 
 # Remove any duplicates made when the interrupted process restarted
 geocoded <- geocoded %>% distinct()
@@ -172,6 +227,9 @@ adds_matched_goog <- adds_matched_goog %>%
   mutate(status = ifelse(accuracy %in% c("bar", "beauty_salon", "church", "convenience_store", "dentist"), "ZERO_RESULTS", status)) %>%
   mutate_at(vars(lat, long, accuracy, formatted_address, address_type), 
             funs(ifelse(accuracy %in% c("bar", "beauty_salon", "church", "convenience_store", "dentist"), NA, .)))
+
+adds_matched_goog <- adds_matched_goog %>%
+  select(FID, lat, long, accuracy, formatted_address, address_type, status, index)
 
 #### NOW KEEPING EVERYTHING IN GOOGLE (ESRI 4326 FORMAT) ####
 # # Convert lat/long from Google to NAD_1983_HARN_StatePlane_Washington_North_FIPS_4601_Feet
