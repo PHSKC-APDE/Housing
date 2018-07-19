@@ -74,6 +74,8 @@ popcount <- function(df,
     agency <- quo(agency_new)
   } else if("agency" %in% names(df)) {
     agency <- quo(agency)
+  } else if("agency_num" %in% names(df)) {
+    agency <- quo(agency)
   } else {
     stop("No valid agency field specified")
   }
@@ -83,6 +85,8 @@ popcount <- function(df,
   } else if("enroll_type" %in% names(df)) {
     enroll <- quo(enroll_type)
   } else if("enrtype" %in% names(df)) {
+    enroll <- quo(enrtype)
+  } else if("enroll_type_num" %in% names(df)) {
     enroll <- quo(enrtype)
   } else {
     stop("No valid enrollment type field specified")
@@ -223,6 +227,7 @@ popcount <- function(df,
 
     # Allocate an individual to a PHA/program based on rules:
     # 1) Medicaid only and PHA only = Medicaid row with most time
+    #   (rationale is we can look at the health data for Medicaid portion at least)
     # 2) Medicaid only and PHA/Medicaid = PHA group with most person-time where
     #    person was enrolled in both housing and Medicaid
     # 3) Multiple PHAs = PHA group with most person-time for EACH PHA where
@@ -251,8 +256,6 @@ popcount <- function(df,
       group_by((!!unit)) %>%
       mutate(agency_sum = sum(agency_count, na.rm = T)) %>%
       ungroup()
-    
-    print(table(pop$agency_sum), useNA = 'always')
     
 
     # Filter so only rows meeting the rules above are kept
