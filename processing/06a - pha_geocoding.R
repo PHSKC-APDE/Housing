@@ -82,7 +82,10 @@ adds_matched_20170824 <- adds_matched_20170824 %>%
   ) %>%
   select(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, unit_concat_short, 
          check_esri, check_google, check_opencage, geocode_source, zip_centroid,
-         add_geocoded, zip_geocoded, lon, lat)
+         add_geocoded, zip_geocoded, lon, lat) %>%
+  # Keep only addresses that have been matched or checked across both geocoders
+  filter(!is.na(lon) | (is.na(lon) & check_esri == 1 & check_google == 1))
+
 
 
 #### FIND NEW ADDRESSES ####
@@ -110,178 +113,238 @@ write.xlsx(adds_new, file = paste0(housing_path,
 
 
 #### BRING IN GEOCODED DATA FOR ADDITIONAL PROCESSING ####
-last_date <- readline(prompt = "When was the geocoding file last created 
-                      (use YYYY-MM-DD format)? ")
-latest_file <- paste0(housing_path, "Geocoding/PHA_addresses_geocoded_",
-                          last_date, ".shp")
+# Use pop up window from rstudioapi if package installed
+# Otherwise use base R commance line prompt
+if ("rstudioapi" %in% installed.packages()[,"Package"]) {
+  last_date <- rstudioapi::showPrompt(title = last_date, 
+                                      message = "When was the geocoding file last created (use YYYY-MM-DD format)?")
+} else {
+last_date <- readline(prompt = "When was the geocoding file last created (use YYYY-MM-DD format)? ")
+}
 
+latest_file <- paste0(housing_path, "/Geocoding/PHA_addresses_geocoded_esri_",
+                          last_date, ".shp")
 
 if (file.exists(latest_file)){
   print("Found geocoded data")
-  adds_new_esri <- st_read(latest_file)
+  adds_new_esri <- st_read(latest_file, stringsAsFactors = F)
 } else {
   stop("Check file names and that ESRI geocoding was run")
 }
 
 
+### Add lat/long coordinates and convert back to data frame for easier merging below
+adds_new_esri <- st_transform(adds_new_esri, 4326)
+adds_new_esri <- adds_new_esri %>%
+  mutate(
+    check_esri = 1,
+    lon = st_coordinates(.)[,1],
+    lat = st_coordinates(.)[,2]
+    )
+ st_geometry(adds_new_esri) <- NULL
+
+### Pull out unmatched addresses
+adds_new_unmatched <- adds_new_esri %>% filter(Status == "U")
+
+### Run Opencage geocoder
+# Store API key temporarily
+# Sign up for a key here: https://opencagedata.com (2,500 limit per day)
+if ("rstudioapi" %in% installed.packages()[,"Package"]) {
+  opencage_key <- rstudioapi::askForPassword(prompt = 'Please enter API key: ')
+} else {
+  opencage_key <- readline(prompt = "Please enter API key: ")
+}
 
 
-
-
-
-
-
-
-##### Unmatched data #####
-### ArcMap doesn't get it all right so need to use Google to geocode remaining addresses
-
-# Bring in unmatched addresses
-adds_unmatched <- read.xlsx(paste0(housing_path, "/Geocoding/PHA_addresses_unmatched.xlsx"))
-# Remove missing addresses
-adds_unmatched <- adds_unmatched %>% filter(unit_add_n != " ")
-
-
-
-
-### GOOGLE APPROACH
-addresses <- paste0(adds_unmatched$unit_conca, ", USA")
-
-# Using function found here: https://www.shanelynn.ie/massive-geocoding-with-r-and-google-maps/
-#define a function that will process googles server responses for us.
-getGeoDetails <- function(address){
-  #use the gecode function to query google servers
-  geo_reply = geocode(address, output = 'all', messaging = TRUE, override_limit = TRUE)
-  #now extract the bits that we need from the returned list
-  answer <- data.frame(lat=NA, long=NA, accuracy=NA, formatted_address=NA, address_type=NA, status=NA)
-  answer$status <- geo_reply$status
+# Make a function to geocode and return results
+geocode_cage <- function(address) {
+  # Query open cage servers (make sure API key is stored)
+  geo_reply <- opencage_forward(address, key = opencage_key, 
+                                # Keep annotations to get Mercator coords
+                                no_annotations = F,
+                                # ensure the search is not stored on their servers
+                                no_record = T,
+                                # Remove bounds to look across the US
+                                #bounds = bounds_opencage,
+                                countrycode = "US")
   
-  #if we are over the query limit - want to pause for an hour
-  while(geo_reply$status == "OVER_QUERY_LIMIT"){
-    print("OVER QUERY LIMIT - Pausing for 1 hour at:") 
-    time <- Sys.time()
-    print(as.character(time))
-    Sys.sleep(60*60)
-    geo_reply = geocode(address, output='all', messaging=TRUE, override_limit=TRUE)
-    answer$status <- geo_reply$status
+  #Note how many attempts are left
+  print(paste0(geo_reply$rate_info$remaining, " tries remaining"))
+  
+  # If we are over the query limit - wait until the reset
+  while(geo_reply$rate_info$remaining < 1 & 
+        Sys.time() < geo_reply$rate_info$reset) {
+    print(paste0("No queries remaining - resume at: ", 
+                 geo_reply$rate_info$reset))
+    # Putting in several hours for now since the calc fails
+    #Sys.sleep(abs(geo_reply$rate_info$reset - Sys.time()))
+    Sys.sleep(60*60*24)
   }
   
-  #return Na's if we didn't get a match:
-  if (geo_reply$status != "OK"){
+  # Set up response for when answer is not specific enough
+  answer <- data.frame(lat = NA,
+                       lon = NA,
+                       x = NA_real_,
+                       y = NA_real_,
+                       formatted_address = NA,
+                       address_type = NA,
+                       confidence = NA)
+  
+  # Temporarily store results as a df to filter and sort
+  answer_tmp <- as.data.frame(geo_reply$results)
+  answer_tmp <- answer_tmp %>%
+    filter(components._type == "building") %>%
+    # Take the most confident (i.e., smallest bounding box)
+    arrange(desc(confidence)) %>%
+    slice(1)
+  
+  # Return NAs if we didn't get a match:
+  if (nrow(answer_tmp) == 0) {
     return(answer)
   }   
-  #else, extract what we need from the Google server reply into a dataframe:
-  answer$lat <- geo_reply$results[[1]]$geometry$location$lat
-  answer$long <- geo_reply$results[[1]]$geometry$location$lng   
-  if (length(geo_reply$results[[1]]$types) > 0){
-    answer$accuracy <- geo_reply$results[[1]]$types[[1]]
-  }
-  answer$address_type <- paste(geo_reply$results[[1]]$types, collapse=',')
-  answer$formatted_address <- geo_reply$results[[1]]$formatted_address
+  # Else, extract what we need into a dataframe:
+  answer <- answer %>%
+    mutate(
+      lat = answer_tmp$geometry.lat,
+      lon = answer_tmp$geometry.lng,
+      x = answer_tmp$annotations.Mercator.x,
+      y = answer_tmp$annotations.Mercator.y,
+      formatted_address = answer_tmp$formatted,
+      address_type = answer_tmp$components._type,
+      confidence = answer_tmp$confidence
+    )
   
   return(answer)
 }
 
-#initialise a dataframe to hold the results
-geocoded <- data.frame()
-# find out where to start in the address list (if the script was interrupted before):
+
+# Initialise a dataframe to hold the results
+adds_new_opencage <- data.frame()
+# Find out where to start in the address list (if the script was interrupted before):
 startindex <- 1
-#if a temp file exists - load it up and count the rows!
-tempfilename <- paste0(path, "/Geocoding/PHA_addresses_matched_google.rds")
-if (file.exists(tempfilename)){
+
+# Use this if nrow < 2,500 (otherwise see below)
+for (i in seq(startindex, nrow(adds_new_unmatched))) {
+  print(paste("Working on index", i, "of", nrow(adds_new_unmatched)))
+  #query the google geocoder - this will pause here if we are over the limit.
+  result <- geocode_cage(adds_new_unmatched$unit_conca[i])
+  result$index <- i
+  result$input_add <- adds_new_unmatched$unit_conca[i]
+  result$check_google <- 0
+  result$check_opencage <- 1
+  #append the answer to the results file.
+  adds_new_opencage <- rbind(adds_new_opencage, result)
+}
+
+
+#### This section only needed if working with >2,500 rows ####
+# If a temp file exists - load it up and count the rows!
+tempfile_cage <- paste0(housing_path, "/Geocoding/PHA_addresses_geocoded_opencage_", last_date, ".rds")
+if (file.exists(tempfile_cage)){
   print("Found temp file - resuming from index:")
-  geocoded <- readRDS(tempfilename)
-  startindex <- nrow(geocoded)
+  adds_new_opencage <- readRDS(tempfile_cage)
+  startindex <- nrow(adds_new_opencage)
   print(startindex)
 }
 
 # Start the geocoding process - address by address. geocode() function takes care of query speed limit.
-for (ii in seq(startindex, length(addresses))){
-  print(paste("Working on index", ii, "of", length(addresses)))
+for (i in seq(startindex, nrow(adds_new_unmatched))) {
+  print(paste("Working on index", i, "of", nrow(adds_new_unmatched)))
   #query the google geocoder - this will pause here if we are over the limit.
-  result = getGeoDetails(addresses[ii]) 
-  print(result$status)     
-  result$index <- ii
+  result <- geocode_cage(adds_new_unmatched$address[i])
+  result$index <- i
+  result$input_add <- adds_new_unmatched$unit_conca[i]
+  result$check_google <- 1
+  result$check_opencage <- 1
   #append the answer to the results file.
-  geocoded <- rbind(geocoded, result)
+  adds_new_opencage <- rbind(adds_new_opencage, result)
   #save temporary results as we are going along
-  saveRDS(geocoded, tempfilename)
+  saveRDS(adds_new_opencage, tempfile_cage)
 }
 
-# Load already completed geocoding
-geocoded <- readRDS(paste0(housing_path, "/Geocoding/PHA_addresses_matched_google.rds"))
+# Remove any duplicates that snuck in due to retarting the process
+adds_new_opencage <- adds_new_opencage %>% distinct()
+#### End section for large number of rows ####
 
-# Remove any duplicates made when the interrupted process restarted
-geocoded <- geocoded %>% distinct()
 
-# Join with address list
-adds_matched_goog <- bind_cols(adds_unmatched, geocoded)
 
-# Blank out coordinates when address is PORT OUT or address type is route
-adds_matched_goog <- adds_matched_goog %>%
-  mutate_at(vars(lat, long, accuracy, formatted_address, address_type), funs(ifelse(str_detect(unit_conca, "PORT OUT"), NA, .))) %>%
-  mutate_at(vars(lat, long, accuracy, formatted_address), funs(ifelse(address_type == 'route', NA, .))) %>%
-  mutate(status = ifelse(str_detect(unit_conca, "PORT OUT") | address_type == 'route', "ZERO_RESULTS", status))
-
-# Blank out specific mismatches
-adds_matched_goog <- adds_matched_goog %>%
-  mutate(status = ifelse(accuracy %in% c("bar", "beauty_salon", "church", "convenience_store", "dentist"), "ZERO_RESULTS", status)) %>%
-  mutate_at(vars(lat, long, accuracy, formatted_address, address_type), 
-            funs(ifelse(accuracy %in% c("bar", "beauty_salon", "church", "convenience_store", "dentist"), NA, .)))
-
-adds_matched_goog <- adds_matched_goog %>%
-  select(FID, lat, long, accuracy, formatted_address, address_type, status, index)
-
-#### NOW KEEPING EVERYTHING IN GOOGLE (ESRI 4326 FORMAT) ####
-# # Convert lat/long from Google to NAD_1983_HARN_StatePlane_Washington_North_FIPS_4601_Feet
-# # Remove blank coordinates
-# adds_matched_goog_sp <- adds_matched_goog %>% filter(!is.na(lat))
-# # Set up spatial data frame
-# coordinates(adds_matched_goog_sp) <- ~ long + lat
-# proj4string(adds_matched_goog_sp) <- CRS("+init=epsg:4326") # WGS 84 system used by Google Maps
-# # Convert to WA plane
-# adds_matched_goog_sp <- spTransform(adds_matched_goog_sp, CRS("+proj=lcc +lat_1=47.5 +lat_2=49.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000.0000000001 +y_0=0 +ellps=GRS80 +to_meter=0.3048006096012192 +no_defs"))
-# 
-# # Select relevant columns and extract coordinates
-# # NB. It seems like somewhere the lat/long, Y/X vectors were reversed. Need to check and fix.
-# adds_matched_goog <- as.data.frame(adds_matched_goog_sp)
-# adds_matched_goog <- adds_matched_goog %>%
-#   mutate(X = long, Y = lat) %>%
-#   select(FID, unit_conca:status, X, Y)
-#### END CRS CONVERSION ####
-
-#### Bring together ESRI and Google results ####
-# Bring in ESRI data
-adds_matched_esri <- read.xlsx(paste0(path, "/Geocoding/PHA_addresses_matched_ESRI.xlsx"))
-# Join
-adds_matched <- left_join(adds_matched_esri, adds_matched_goog, by = "FID")
+#### COMBINE NEW ESRI AND OPENCAGE RESULTS ####
+adds_new_combined_name <- paste0("adds_matched_", str_replace_all(last_date, "-", ""))
+adds_new_combined <- left_join(adds_new_esri, adds_new_opencage, 
+                                             by = c("unit_conca" = "input_add"))
 
 # Collapse to useful columns and select matching from each source as appropriate
-adds_matched <- adds_matched %>%
-  rename(unit_add_new = unit_add_n.x, unit_city_new = unit_city_.x, unit_state_new = unit_state.x, 
-         unit_zip_new = unit_zip_n.x, unit_concat = unit_conca.x, status_esri = Status.x, 
-         status_goog = status, score_esri = Score.x, addr_type_esri = Addr_type.x, addr_type_goog = address_type,
-         add_esri = Match_addr.x, add_goog = formatted_address, accuracy_goog = accuracy,
-         match_type_esri = Match_type.x, id_esri = FID) %>%
-  mutate(add_esri = toupper(add_esri),
-         add_goog = toupper(add_goog),
-         X = ifelse(status_goog == "OK" & !is.na(status_goog), long, POINT_X),
-         Y = ifelse(status_goog == "OK" & !is.na(status_goog), lat, POINT_Y),
-         formatted_address = ifelse(status_goog == "OK" & !is.na(status_goog), add_goog, add_esri),
-         source = ifelse(status_goog == "OK" & !is.na(status_goog), "Google", "ESRI")) %>%
-  select(unit_add_new:unit_concat, id_esri, status_esri:add_esri, addr_type_esri, add_esri, accuracy_goog, status_goog, 
-         addr_type_goog, add_goog, formatted_address, X, Y, source)
+adds_new_combined <- adds_new_combined %>%
+  # Fix up truncated names
+  rename(unit_add_new = unit_add_n, 
+         unit_city_new = unit_city_, 
+         unit_state_new = unit_state, 
+         unit_zip_new = unit_zip_n, 
+         unit_concat_short = unit_conca) %>%
+  # Add metadata indicating where the geocode comes from and if ZIP centroid
+  mutate(
+    check_google = ifelse(is.na(check_google), 0, check_google),
+    check_opencage = ifelse(is.na(check_opencage), 0, check_opencage),
+    geocode_source = ifelse(!is.na(index) & !is.na(lat.y), "opencage", "esri"),
+    zip_centroid = ifelse(geocode_source == "esri" & 
+                            Loc_name == "zip_5_digit_gc", 1, 0),
+    ### Move address and coordindate data into a single field
+    add_geocoded = ifelse(geocode_source == "esri", 
+                          toupper(Match_addr), 
+                          toupper(formatted_address)),
+    zip_geocoded = ifelse(geocode_source == "esri",
+                          str_sub(Match_addr,
+                                  str_locate(Match_addr, ", [:digit:]{5}")[,1]+2,
+                                  str_locate(Match_addr, ", [:digit:]{5}")[,2]), 
+                          str_sub(formatted_address,
+                                  str_locate(formatted_address, "[:digit:]{5},")[,1],
+                                  str_locate(formatted_address, "[:digit:]{5},")[,2]-1)),
+    lon = ifelse(geocode_source == "esri", lon.x, lon.y),
+    lat = ifelse(geocode_source == "esri", lat.x, lat.y)
+  ) %>%
+  select(unit_add_new, unit_city_new, unit_state_new, unit_zip_new, unit_concat_short, 
+         check_esri, check_google, check_opencage, geocode_source, zip_centroid,
+         add_geocoded, zip_geocoded, lon, lat)
+
+# Rename with dynamically created data frame name  
+assign(adds_new_combined_name, adds_new_combined)
+rm(adds_new_combined)
+
+# Save combined file for next time
+saveRDS(get(adds_new_combined_name), paste0(housing_path, "/Geocoding/", 
+                                            adds_new_combined_name, ".Rda"))
 
 
-# Next steps
-# Link to HRA and other spatial units
+#### COMBINE PREVIOUS GEOCODES WITH NEW GEOCODES ####
+# Note that there some addresses were run in the intial geocode that have since
+# been cleaned up, so the combined file below > number of distinct addresses
+# in the data (adds)
+
+# Add to this list as more sets of addresses are coded
+adds_matched_overall <- rbind(adds_matched_20170824, get(adds_new_combined_name)) %>%
+  select(-unit_concat_short)
 
 
 
-# Save data for now
-saveRDS(adds_matched, paste0(path, "/Geocoding/PHA_addresses_matched_combined.Rda"))
 
-rm(adds_matched_esri)
-rm(adds_matched_goog)
-rm(geocoded)
-rm(adds_unmatched)
+
+pha_cleanadd_coded <- left_join(pha_cleanadd, adds_matched_overall,
+                                by = c("unit_add_new", "unit_city_new",
+                                       "unit_state_new", "unit_zip_new"))
+
+
+#### SAVE DATA ####
+saveRDS(pha_cleanadd_coded, paste0(housing_path, 
+                             "/OrganizedData/pha_cleanadd_midpoint_geocoded.Rda"))
+
+rm(list = ls(pattern = ("adds")))
+rm(list = ls(pattern = ("esri")))
+rm(list = ls(pattern = ("goog")))
+rm(list = ls(pattern = ("bounds")))
+rm(result)
+rm(latest_file)
+rm(last_date)
+rm(opencage_key)
+rm(i)
+
 gc()

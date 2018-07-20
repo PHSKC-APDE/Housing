@@ -157,19 +157,20 @@ pha_cleanadd <- pha_cleanadd %>%
                            unit_add_new),
     # ID apartment numbers that need to move into the appropriate column (1, 2)
     # Also include addresses that end in a number as many seem to be apartments (3, 4)
-    unit_apt_move = if_else(unit_apt_new == "" & is.na(overridden) &
-                              str_detect(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")")) == TRUE,
-                            1, if_else(
-                              unit_apt_new != "" & is.na(overridden) &
-                                str_detect(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")")) == TRUE,
-                              2, if_else(unit_apt_new == "" & is.na(overridden) &
-                                           str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
-                                           str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,
-                                         3, if_else(unit_apt_new != "" & is.na(overridden) &
-                                                      str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
-                                                      str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE,
-                                                    4, 0
-                                         )))),
+    unit_apt_move = case_when(
+      unit_apt_new == "" & is.na(overridden) & 
+        str_detect(unit_add_new, paste0("[:space:]+(", 
+                                        paste(secondary, collapse = "|"), ")")) == TRUE ~ 1,
+      unit_apt_new != "" & is.na(overridden) &
+        str_detect(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")")) == TRUE ~ 2,
+      unit_apt_new == "" & is.na(overridden) &
+        str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
+        str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE ~ 3,
+      unit_apt_new != "" & is.na(overridden) &
+        str_detect(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$") == TRUE &
+        str_detect(unit_add_new, "PO BOX|PMB") == FALSE & str_detect(unit_add_new, "HWY 99$") == FALSE ~ 4,
+      TRUE ~ 0
+      ),
     # Move apartment numbers to unit_apt_new if that field currently blank
     unit_apt_new = if_else(unit_apt_move == 1,
                            str_sub(unit_add_new, str_locate(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")"))[, 1], 
@@ -184,18 +185,24 @@ pha_cleanadd <- pha_cleanadd %>%
                                          str_length(unit_add_new)),
                                  unit_apt_new, sep = " "),
                            unit_apt_new),
-    unit_apt_new = if_else(unit_apt_move == 4 & str_detect(unit_apt, "#") == FALSE,
-                           paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1], 
-                                         str_length(unit_add_new)), unit_apt_new, sep = " "),
-                           if_else(unit_apt_move == 4 & str_detect(unit_apt, "#") == TRUE,
-                                   paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1], 
-                                                 str_length(unit_add_new)), 
-                                         str_sub(unit_apt_new, str_locate(unit_apt_new, "[:digit:]")[, 1], str_length(unit_apt_new)),
-                                         sep = " "),
-                                   unit_apt_new)),
+    unit_apt_new = 
+      case_when(
+        unit_apt_move == 4 & str_detect(unit_apt, "#") == FALSE ~ 
+          paste(str_sub(unit_add_new, 
+                        str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1], 
+                        str_length(unit_add_new)), unit_apt_new, sep = " "),
+        unit_apt_move == 4 & str_detect(unit_apt, "#") == TRUE ~ 
+          paste(str_sub(unit_add_new, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1],
+                        str_length(unit_add_new)),
+                str_sub(unit_apt_new, str_locate(unit_apt_new, "[:digit:]")[, 1], str_length(unit_apt_new)),
+                sep = " "),
+        TRUE ~ unit_apt_new
+        ),
     # Remove apt data from the address field (this needs to happen after the above code)
     unit_add_new = if_else(unit_apt_move %in% c(1, 2),
-                           str_sub(unit_add_new, 1, str_locate(unit_add_new, paste0("[:space:]+(", paste(secondary, collapse = "|"), ")"))[, 1] - 1),
+                           str_sub(unit_add_new, 1, 
+                                   str_locate(unit_add_new, 
+                                              paste0("[:space:]+(", paste(secondary, collapse = "|"), ")"))[, 1] - 1),
                            unit_add_new),
     unit_add_new = if_else(unit_apt_move %in% c(3, 4),
                            str_sub(unit_add_new, 1, str_locate(unit_add_new, "[:space:]+[:alnum:]*[-]*[:digit:]+$")[, 1] - 1),
@@ -326,40 +333,19 @@ pha_cleanadd <- pha_cleanadd %>%
 rm(adds_specific)
 
 
-#### STOP HERE IF GEOCODING WILL BE RERUN ####
-#saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
+#### STOP HERE TO RUN GEOCODING ####
+saveRDS(pha_cleanadd, file = paste0(housing_path, 
+                                    "/OrganizedData/pha_cleanadd_midpoint.Rda"))
 
 
-#### START HERE IF GEOCODING HAS BEEN COMPLETED
+#### START HERE IF GEOCODING HAS BEEN COMPLETED ####
 ### Bring mid-point data back in
-#pha_cleanadd <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
+pha_cleanadd_geocoded <- readRDS(file = paste0(housing_path, 
+                                      "/OrganizedData/pha_cleanadd_midpoint_geocoded.Rda"))
 
-#### Merge with geocoded address data ####
-# The geocoded address data should have more accurate street names, ZIPs, etc.
-# Using these addresses will allow for better row consolidation below
-
-# Bring in data
-# adds_matched <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/Geocoding/PHA_addresses_matched_combined.Rda")
-# adds_matched <- adds_matched %>% mutate(unit_zip_new = as.numeric(unit_zip_new))
-# 
-# # Merge data
-# pha_cleanadd <- left_join(pha_cleanadd, adds_matched, by = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"))
-# pha_cleanadd <- pha_cleanadd %>% rename(unit_concat = unit_concat.x) %>%
-#   select(-unit_concat.y)
-
-# Parse out updated addresses (to come)
-# pha_cleanadd <- pha_cleanadd %>%
-#   mutate(unit_add_new2 = )
-# 
-
-# Remove temp files
-# rm(adds_matched)
-
-
-#### START HERE IF SKIPPING GEOCODING ####
 
 #### Merge KCHA development data now that addresses are clean #####
-pha_cleanadd <- pha_cleanadd %>%
+pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
   mutate(dev_city = paste0(unit_city_new, ", ", unit_state_new, " ", unit_zip_new),
     # Trim any white space
     dev_city = str_trim(dev_city)
@@ -367,7 +353,7 @@ pha_cleanadd <- pha_cleanadd %>%
 
 # HCV
 # Bring in data
-kcha_dev_adds <- fread(file = file.path(housing_path, "KCHA/Original data/", 
+kcha_dev_adds <- data.table::fread(file = file.path(housing_path, "KCHA/Original data/", 
                                         "Development Addresses_received_2017-07-21.csv"), 
                                         stringsAsFactors = FALSE)
 # Bring in variable name mapping table
@@ -415,12 +401,13 @@ kcha_dev_adds <- kcha_dev_adds %>%
 kcha_dev_adds <- kcha_dev_adds %>% distinct()
 
 
-pha_cleanadd <- left_join(pha_cleanadd, kcha_dev_adds, by = c("unit_add_new" = "dev_add", "dev_city"))
+pha_cleanadd_geocoded <- left_join(pha_cleanadd_geocoded, kcha_dev_adds, 
+                                by = c("unit_add_new" = "dev_add", "dev_city"))
 rm(kcha_dev_adds)
 
 # Sort out which values to keep
 # Based on KCHA input, using imported data
-pha_cleanadd <- pha_cleanadd %>%
+pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
   mutate(portfolio = ifelse(is.na(portfolio.y), portfolio.x, portfolio.y),
          property_name = ifelse(is.na(property_name.y), property_name.x, property_name.y),
          property_type = ifelse(is.na(property_type.y), property_type.x, property_type.y)) %>%
@@ -428,10 +415,11 @@ pha_cleanadd <- pha_cleanadd %>%
 
 
 #### Save point ####
-saveRDS(pha_cleanadd, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
+saveRDS(pha_cleanadd_geocoded, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
 
 rm(fields)
 rm(secondary)
 rm(secondary_init)
 rm(pha_recoded)
+rm(pha_cleanadd)
 gc()
