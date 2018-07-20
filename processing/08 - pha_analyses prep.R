@@ -63,7 +63,9 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     # Old address info
     unit_add:unit_zip,
     # New address info
-    unit_add_new:unit_zip_new, unit_concat,
+    unit_add_new:unit_zip_new, unit_concat, check_esri, check_google, 
+    check_opencage, geocode_source, zip_centroid, add_geocoded, zip_geocoded, 
+    lon, lat,
     # Property/portfolio info
     property_id, property_name, property_type, portfolio, portfolio_final,
     # Unit info

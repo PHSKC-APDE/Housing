@@ -36,9 +36,9 @@ library(tidyverse) # Used to manipulate data
 
 
 #### Bring in data and sort ####
-pha_cleanadd <- readRDS(file = paste0(housing_path, 
+pha_cleanadd_geocoded <- readRDS(file = paste0(housing_path, 
                                       "/OrganizedData/pha_cleanadd_final.Rda"))
-pha_cleanadd_sort <- pha_cleanadd %>%
+pha_cleanadd_sort <- pha_cleanadd_geocoded %>%
   arrange(pid, act_date, agency_new, prog_type)
 
 #### Create key variables ####
@@ -608,6 +608,7 @@ dfsize_head - nrow(pha_cleanadd_sort)
 #### Save point ####
 saveRDS(pha_cleanadd_sort, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
 saveRDS(drop_track, file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
+gc()
 # pha_cleanadd_sort <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_cleanadd_sort_mid-consolidation.Rda"))
 # drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track_mid-consolidation.Rda"))
 
