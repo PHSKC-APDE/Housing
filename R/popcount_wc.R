@@ -1,9 +1,9 @@
-#' Counting population and person-time in the joint PHA/Medicaid data
+#' Counting well-child population and person-time in the joint PHA/Medicaid data
 #' 
-#' \code{popcount} summarizes population data in the joint PHA/Medicaid data.
+#' \code{popcount_wc} summarizes population data in the joint PHA/Medicaid data.
 #' 
 #' This function takes the date range supplied by \code{\link{time_range}} and
-#' counts individuals enrolled and person time by group.
+#' counts individuals aged 3 to 6 years enrolled and person time by group.
 #' The function works for PHA data regardless of whether or not it has also
 #' been matched to Medicaid data.
 #' 
@@ -50,7 +50,7 @@
 #' @export
 
 
-popcount <- function(df, 
+popcount_wc <- function(df, 
                      group_var = c("agency_new"),
                      agency = NULL,
                      enroll = NULL,
@@ -65,8 +65,7 @@ popcount <- function(df,
   
   # Warn about missing unit of analysis
   if (missing(unit)) {
-    print("Attempting to use default unit of analysis (individuals (pid/pid2)). 
-          Possible options: pid, pid2, hhold_id_new")
+    print("Attempting to use default unit of analysis (individuals (pid/pid2)).")
   }
   
   # Set up quosures and other variables
@@ -103,8 +102,6 @@ popcount <- function(df,
     unit <- quo(pid2)
   } else if("pid" %in% names(df)) {
     unit <- quo(pid)
-  } else if("hhold_id_new" %in% names(df)) {
-    unit <- quo(hhold_id_new)
   } else {
     stop("No valid unit of analysis found")
   }
@@ -129,7 +126,7 @@ popcount <- function(df,
     stop("No valid enddate found")
   }
   
-
+  
   # Allow new age and length of time variables to be created if they don't exist
   # Will be recalculated below
   if (str_detect(paste(group_var, collapse = ""), "agegrp") &
@@ -148,28 +145,26 @@ popcount <- function(df,
   grouping_vars <- rlang::syms(group_var)
   print(paste0("Grouping by: ", paste(group_var, collapse = ", ")))
   
-  # Figure out which DOB field to use (if needed for age calcs)
-  if (str_detect(paste(grouping_vars, collapse = ""), "agegrp_h|adult|senior")) {
-    if(!missing(birth)) {
-      birth <- enquo(birth)
-    } else if("dob_c" %in% names(df)) {
-      birth <- quo(dob_c)
-    } else if("dob_h" %in% names(df)) {
-      birth <- quo(dob_h)
-    } else if("dob_m6" %in% names(df)) {
-      birth <- quo(dob_m6)
-    } else if("hh_dob_m6" %in% names(df)) {
-      birth <- quo(hh_dob_m6)
-    } else {
-      stop("No valid dob found")
-    }
+  # Figure out which DOB field to use (needed for age calcs)
+  if(!missing(birth)) {
+    birth <- enquo(birth)
+  } else if("dob_c" %in% names(df)) {
+    birth <- quo(dob_c)
+  } else if("dob_h" %in% names(df)) {
+    birth <- quo(dob_h)
+  } else if("dob_m6" %in% names(df)) {
+    birth <- quo(dob_m6)
+  } else if("hh_dob_m6" %in% names(df)) {
+    birth <- quo(hh_dob_m6)
+  } else {
+    stop("No valid dob found")
   }
   
   # Set up time period and capture period used for output
   timestart <- time_range(...)[[1]]
   timeend <- time_range(...)[[2]]
   period <- time_range(...)[[3]]
-
+  
   ### Should convert this to an apply function at some point
   # Make empty list to add data to
   templist = list()
@@ -178,29 +173,13 @@ popcount <- function(df,
     
     df_temp <- df
     
-    # Pull out heads of households if that is the level of analysis
-    if (quo_name(unit) == "hhold_id_new") {
-      df_temp <- df_temp %>% filter(mbr_num == 1)
-    }
+    # Recalculate age and restrict to 3-6-year-olds
+    df_temp <- df_temp %>% 
+      mutate(
+        age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1))
+        ) %>%
+      filter(!is.na(age_temp) & age_temp >= 3 & age_temp <= 6)
     
-    
-    # Recalculate age and age groups if they are one of the grouping variables
-    if (str_detect(paste(grouping_vars, collapse = ""), "agegrp_h|adult|senior")) {
-      df_temp <- df_temp %>% mutate(
-        age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1)),
-        adult = ifelse(age_temp >= 18, 1, 0),
-        senior = ifelse(age_temp >= 62, 1, 0),
-        agegrp_h = as.numeric(case_when(
-          age_temp < 18 ~ 1,
-          between(age_temp, 18, 24.99) ~ 2,
-          between(age_temp, 25, 44.99) ~ 3,
-          between(age_temp, 45, 61.99) ~ 4,
-          between(age_temp, 62, 64.99) ~ 5,
-          age_temp >= 65 ~ 6,
-          is.na(age_temp) ~ 99
-          )
-        ))
-      }
     
     # Recalculate length of stay groups if they are in the grouping variables
     if (str_detect(paste(grouping_vars, collapse = ""), "time_housing")) {
@@ -212,9 +191,9 @@ popcount <- function(df,
           between(time_housing_temp, 3, 5.99) ~ 2,
           time_housing_temp >= 6 ~ 3,
           TRUE ~ 99
-          )
+        )
         ))
-      }
+    }
     
     if (str_detect(paste(grouping_vars, collapse = ""), "time_pha")) {
       df_temp <- df_temp %>% mutate(
@@ -225,9 +204,9 @@ popcount <- function(df,
           between(time_pha_temp, 3, 5.99) ~ 2,
           time_pha_temp >= 6 ~ 3,
           TRUE ~ 99
-          )
+        )
         ))
-      }
+    }
     
     if (str_detect(paste(grouping_vars, collapse = ""), "time_prog")) {
       df_temp <- df_temp %>% mutate(
@@ -238,19 +217,18 @@ popcount <- function(df,
           between(time_prog_temp, 3, 5.99) ~ 2,
           time_prog_temp >= 6 ~ 3,
           TRUE ~ 99
-          )
+        )
         ))
-      }
+    }
     
     
     # Set up overlap between time period of interest and enrollment
     df_temp <- df_temp %>%
       mutate(
         overlap_amount = as.numeric(lubridate::intersect(
-          #time_int,
           lubridate::interval((!!start_var), (!!end_var)),
           lubridate::interval(timestart[i], timeend[i])) / ddays(1) + 1)
-        ) %>%
+      ) %>%
       # Remove any rows that don't overlap
       filter(!is.na(overlap_amount))
     
@@ -261,8 +239,8 @@ popcount <- function(df,
       summarise(pop_ever = n_distinct(!!unit),
                 pt_days = sum(overlap_amount)) %>%
       ungroup()
-
-
+    
+    
     # Allocate an individual to a PHA/program based on rules:
     # 1) Medicaid only and PHA only = Medicaid row with most time
     #   (rationale is we can look at the health data for Medicaid portion at least)
@@ -295,7 +273,7 @@ popcount <- function(df,
       mutate(agency_sum = sum(agency_count, na.rm = T)) %>%
       ungroup()
     
-
+    
     # Filter so only rows meeting the rules above are kept
     pop <- pop %>%
       filter((agency_sum == 4 & agency_count == 4) | 
@@ -310,7 +288,7 @@ popcount <- function(df,
       group_by(!!!(grouping_vars)) %>%
       summarise(pop = n_distinct(!!unit)) %>%
       ungroup()
-
+    
     
     # Join back to a single df
     templist[[i]] <- left_join(ever, pop, by = group_var) %>%
@@ -323,22 +301,13 @@ popcount <- function(df,
     mutate(pop = if_else(is.na(pop), 0, as.numeric(pop)),
            total_pop = sum(pop, na.rm = T),
            period = quo_name(period),
-           unit = quo_name(unit))
+           unit = quo_name(unit),
+           agegrp_h = 36)
   
   
   if(numeric == F) {
     phacount <- phacount %>%
-      mutate(
-        agegrp_h = case_when(
-          agegrp_h == 1 ~ "<18 years",
-          agegrp_h == 2 ~ "18 to <25 years",
-          agegrp_h == 3 ~ "25 to <45 years",
-          agegrp_h == 4 ~ "45 to <62 years",
-          agegrp_h == 5 ~ "62 to <65 years",
-          agegrp_h == 6 ~ "65+ years",
-          agegrp_h == 99 ~ NA_character_
-          )
-        )
+      mutate(agegrp_h = "3 to 6-year-olds")
     
     if("time_housing" %in% names(phacount)) {
       phacount <- phacount %>%
@@ -350,7 +319,7 @@ popcount <- function(df,
             time_housing == 99 ~ NA_character_
           )
         )
-      }
+    }
     
     if("time_pha" %in% names(phacount)) {
       phacount <- phacount %>%
@@ -362,7 +331,7 @@ popcount <- function(df,
             time_pha == 99 ~ NA_character_
           )
         )
-      }
+    }
     
     if("time_housing" %in% names(phacount)) {
       phacount <- phacount %>%
@@ -374,8 +343,8 @@ popcount <- function(df,
             time_prog == 99 ~ NA_character_
           )
         )
-      }
     }
-
+  }
+  
   return(phacount)
-}
+  }
