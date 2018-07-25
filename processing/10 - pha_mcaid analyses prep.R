@@ -39,12 +39,8 @@ db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
 ##### Bring in data #####
-pha_elig_join <- readRDS(file = paste0(housing_path, 
-                                        "/OrganizedData/pha_elig_join.Rda"))
-
-# Bring in code mapping table
-code_read <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/housing_mcaid%20demo%20codes%20read.csv"), 
-                   header = TRUE, stringsAsFactors = FALSE)
+pha_mcaid_join <- readRDS(file = paste0(housing_path, 
+                                        "/OrganizedData/pha_mcaid_join.Rda"))
 
 
 #### SET UP VARIABLES FOR ANALYSES ####
@@ -58,7 +54,7 @@ i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
 i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
 
 # Person-time in housing, needs to be done separately to avoid errors
-pt_temp_h <- pha_elig_join %>%
+pt_temp_h <- pha_mcaid_join %>%
   distinct(pid2, startdate_h, enddate_h) %>%
   filter(!is.na(startdate_h)) %>%
   mutate(
@@ -70,11 +66,11 @@ pt_temp_h <- pha_elig_join %>%
     pt17_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2017) / ddays(1)) + 1
   )
 
-pha_elig_final <- left_join(pha_elig_join, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"))
+pha_mcaid_final <- left_join(pha_mcaid_join, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"))
 rm(pt_temp_h)
 
 # Person-time in Medicaid, needs to be done separately to avoid errors
-pt_temp_m <- pha_elig_final %>%
+pt_temp_m <- pha_mcaid_final %>%
   filter(!is.na(startdate_m)) %>%
   distinct(pid2, startdate_m, enddate_m) %>%
   mutate(
@@ -86,11 +82,11 @@ pt_temp_m <- pha_elig_final %>%
     pt17_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2017) / ddays(1)) + 1
   )
 
-pha_elig_final <- left_join(pha_elig_final, pt_temp_m, by = c("pid2", "startdate_m", "enddate_m"))
+pha_mcaid_final <- left_join(pha_mcaid_final, pt_temp_m, by = c("pid2", "startdate_m", "enddate_m"))
 rm(pt_temp_m)
 
 # Person-time in both, needs to be done separately to avoid errors
-pt_temp_o <- pha_elig_final %>%
+pt_temp_o <- pha_mcaid_final %>%
   filter(!is.na(startdate_o)) %>%
   distinct(pid2, startdate_o, enddate_o) %>%
   mutate(
@@ -102,11 +98,11 @@ pt_temp_o <- pha_elig_final %>%
     pt17_o = (lubridate::intersect(interval(start = startdate_o, end = enddate_o), i2017) / ddays(1)) + 1
   )
 
-pha_elig_final <- left_join(pha_elig_final, pt_temp_o, by = c("pid2", "startdate_o", "enddate_o"))
+pha_mcaid_final <- left_join(pha_mcaid_final, pt_temp_o, by = c("pid2", "startdate_o", "enddate_o"))
 rm(pt_temp_o)
 
 # Person-time specific to that interval, doesn't need to be done separately
-pha_elig_final <- pha_elig_final %>%
+pha_mcaid_final <- pha_mcaid_final %>%
   mutate(
     pt12 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2012) / ddays(1)) + 1,
     pt13 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2013) / ddays(1)) + 1,
@@ -118,7 +114,7 @@ pha_elig_final <- pha_elig_final %>%
 
 
 ### Age
-pha_elig_final <- pha_elig_final %>%
+pha_mcaid_final <- pha_mcaid_final %>%
   mutate(age12 = round(lubridate::interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
          age13 = round(lubridate::interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
          age14 = round(lubridate::interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
@@ -131,7 +127,7 @@ pha_elig_final <- pha_elig_final %>%
 
 
 ### Length of time in housing
-pha_elig_final <- pha_elig_final %>%
+pha_mcaid_final <- pha_mcaid_final %>%
   mutate(length12 = round(interval(start = start_housing, end = ymd(20121231)) / years(1), 1),
          length13 = round(interval(start = start_housing, end = ymd(20131231)) / years(1), 1),
          length14 = round(interval(start = start_housing, end = ymd(20141231)) / years(1), 1),
@@ -144,15 +140,15 @@ pha_elig_final <- pha_elig_final %>%
 
 
 #### Save point ####
-saveRDS(pha_elig_final, file = paste0(housing_path, 
-                                      "/OrganizedData/pha_elig_final.Rda"))
+saveRDS(pha_mcaid_final, file = paste0(housing_path, 
+                                      "/OrganizedData/pha_mcaid_final.Rda"))
 
 
 #### Write to SQL for joining with claims ####
 # Write full data set here and stripped down numeric data below
 dbRemoveTable(db.apde51, name = "housing_mcaid")
 system.time(dbWriteTable(db.apde51, name = "housing_mcaid", 
-                         value = as.data.frame(pha_elig_final), overwrite = T,
+                         value = as.data.frame(pha_mcaid_final), overwrite = T,
                          field.types = c(
                            startdate_h = "date", enddate_h = "date", 
                            startdate_m = "date", enddate_m = "date", 
@@ -168,7 +164,7 @@ system.time(dbWriteTable(db.apde51, name = "housing_mcaid",
 #### Encode key demographics for analysis ####
 # Make main demogs used in analysis numeric to speed read/write to SQL and joins
 # Use lookup table to make numeric mappings - eventually, manual for now
-pha_elig_demo <- pha_elig_final %>%
+pha_mcaid_demo <- pha_mcaid_final %>%
   mutate(
     agency_num = case_when(
       is.na(agency_new) ~ 0,
@@ -275,26 +271,26 @@ lencode_f <- function(df, x) {
     )
 }
 
-pha_elig_demo <- agecode_f(pha_elig_demo, age12)
-pha_elig_demo <- agecode_f(pha_elig_demo, age13)
-pha_elig_demo <- agecode_f(pha_elig_demo, age14)
-pha_elig_demo <- agecode_f(pha_elig_demo, age15)
-pha_elig_demo <- agecode_f(pha_elig_demo, age16)
-pha_elig_demo <- agecode_f(pha_elig_demo, age17)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age12)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age13)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age14)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age15)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age16)
+pha_mcaid_demo <- agecode_f(pha_mcaid_demo, age17)
   
-pha_elig_demo <- lencode_f(pha_elig_demo, length12)
-pha_elig_demo <- lencode_f(pha_elig_demo, length13)
-pha_elig_demo <- lencode_f(pha_elig_demo, length14)
-pha_elig_demo <- lencode_f(pha_elig_demo, length15)
-pha_elig_demo <- lencode_f(pha_elig_demo, length16)
-pha_elig_demo <- lencode_f(pha_elig_demo, length17)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length12)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length13)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length14)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length15)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length16)
+pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length17)
 
 
 #### Restrict to just the columns needed ####
 # Just ID, date, DOB, numeric demogs, ZIP, and person-time here
-pha_elig_demo <- pha_elig_demo %>%
+pha_mcaid_demo <- pha_mcaid_demo %>%
   select(mid, pid2, startdate_c, enddate_c, 
-         dob_c, age12_num:age17_num,
+         dob_c, start_housing, age12_num:age17_num,
          agency_num, dual_elig_num, enroll_type_num, gender_c, ethn_num,
          length12_num:length17_num, operator_num, portfolio_num, 
          subsidy_num, voucher_num, unit_zip_h, pt12:pt17)
@@ -302,22 +298,23 @@ pha_elig_demo <- pha_elig_demo %>%
 
 
 #### Save point ####
-saveRDS(pha_elig_demo, file = paste0(housing_path, "/OrganizedData/pha_elig_demo.Rda"))
+saveRDS(pha_mcaid_demo, file = paste0(housing_path, "/OrganizedData/pha_mcaid_demo.Rda"))
 
 
 #### Write to SQL for joining with claims ####
 dbRemoveTable(db.apde51, name = "housing_mcaid_demo")
 system.time(dbWriteTable(db.apde51, name = "housing_mcaid_demo", 
-             value = as.data.frame(pha_elig_demo), overwrite = T,
+             value = as.data.frame(pha_mcaid_demo), overwrite = T,
              field.types = c(
                startdate_c = "date",
                enddate_c = "date",
-               dob_c = "date"))
+               dob_c = "date",
+               time_housing = "date"))
 )
 
 
 #### Final clean up ####
 rm(list = ls(pattern = "i20"))
-rm(pha_elig_join)
+rm(pha_mcaid_join)
 gc()
 
