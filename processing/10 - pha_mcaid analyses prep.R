@@ -258,14 +258,17 @@ agecode_f <- function(df, x) {
     )
 }
 
-lencode_f <- function(df, x) {
+lencode_f <- function(df, x, agency = agency_new) {
   col <- enquo(x)
+  agency <- enquo(agency)
+  
   varname <- paste(quo_name(col), "num", sep = "_")
   df %>%
     mutate(!!varname := case_when(
       (!!col) < 3 ~ 1,
       between((!!col), 3, 5.99) ~ 2,
       (!!col) >= 6 ~ 3,
+      is.na((!!agency)) | (!!agency) == "Non-PHA" ~ 0
       is.na((!!col)) ~ 99
     )
     )
@@ -290,7 +293,7 @@ pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length17)
 # Just ID, date, DOB, numeric demogs, ZIP, and person-time here
 pha_mcaid_demo <- pha_mcaid_demo %>%
   select(mid, pid2, startdate_c, enddate_c, 
-         dob_c, start_housing, age12_num:age17_num,
+         dob_c, start_housing, zip_c, age12_num:age17_num,
          agency_num, dual_elig_num, enroll_type_num, gender_c, ethn_num,
          length12_num:length17_num, operator_num, portfolio_num, 
          subsidy_num, voucher_num, unit_zip_h, pt12:pt17)
@@ -298,7 +301,8 @@ pha_mcaid_demo <- pha_mcaid_demo %>%
 
 
 #### Save point ####
-saveRDS(pha_mcaid_demo, file = paste0(housing_path, "/OrganizedData/pha_mcaid_demo.Rda"))
+saveRDS(pha_mcaid_demo, file = paste0(housing_path, 
+                                      "/OrganizedData/pha_mcaid_demo.Rda"))
 
 
 #### Write to SQL for joining with claims ####

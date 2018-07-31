@@ -155,7 +155,7 @@ system.time(
                                          
                                          FROM (
                                            SELECT DISTINCT a.id, a.dual, CONVERT(DATETIME, CAST(a.CLNDR_YEAR_MNTH as varchar(200)) + '01', 112) AS calmonth,
-                                           a.fromdate, a.todate, b.add1_new, b.city_new, b.state_new, b.zip_new
+                                           a.fromdate, a.todate, b.add1_new, b.city_new, b.state_new, IIF(b.zip_new IS NULL, a.zip, b.zip_new) AS zip_new
                                            
                                            from ( 
                                              SELECT MEDICAID_RECIPIENT_ID AS 'id', DUAL_ELIG AS 'dual', CLNDR_YEAR_MNTH,
@@ -381,6 +381,34 @@ pha_mcaid_merge <- pha_mcaid_merge %>%
   )
 
 
+
+#### Set up new variables ####
+### Make combined demographics
+# Logic: assume Medicaid is correct when there are conflicts 
+# (housing data likely to overestimate multiple race for example), 
+# use housing data to fill in missing Medicaid info.
+pha_mcaid_merge <- pha_mcaid_merge %>%
+  mutate(
+    ssn_c = case_when(!is.na(ssn_m) ~ as.character(ssn_m),
+                      !is.na(ssn_h) ~ ssn_h),
+    dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"),
+    race_c = case_when(!is.na(race_m) ~ race_m,
+                            !is.na(race_h) ~ race_h),
+    hisp_c = case_when(!is.na(hisp_m) ~ hisp_m,
+                       !is.na(hisp_h) ~ hisp_h),
+    gender_c = case_when(!is.na(gender_m) ~ gender_m,
+                       !is.na(gender_h) ~ gender_h)
+    )
+
+
+# Make new unique ID to anonymize data
+pha_mcaid_merge$pid2 <- group_indices(pha_mcaid_merge, mid, ssn_c, lname_h, fname_h, dob_c)
+
+
+#### Save point ####
+saveRDS(pha_mcaid_merge, file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
+#pha_mcaid_merge <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
+
 # Remove temporary data
 rm(list = ls(pattern = "pairs"))
 rm(list = ls(pattern = "pha_merge"))
@@ -392,37 +420,6 @@ rm(mcaid_demog)
 rm(mcaid_join)
 rm(mcaid_merge)
 gc()
-
-
-#### Set up new variables ####
-### Make combined demographics
-# Logic: assume Medicaid is correct when there are conflicts 
-# (housing data likely to overestimate multiple race for example), 
-# use housing data to fill in missing Medicaid info.
-# Exception is ZIP where take housing value
-pha_mcaid_merge <- pha_mcaid_merge %>%
-  mutate(
-    ssn_c = case_when(!is.na(ssn_m) ~ as.character(ssn_m),
-                      !is.na(ssn_h) ~ ssn_h),
-    dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"),
-    race_c = case_when(!is.na(race_m) ~ race_m,
-                            !is.na(race_h) ~ race_h),
-    hisp_c = case_when(!is.na(hisp_m) ~ hisp_m,
-                       !is.na(hisp_h) ~ hisp_h),
-    gender_c = case_when(!is.na(gender_m) ~ gender_m,
-                       !is.na(gender_h) ~ gender_h),
-    zip_c = case_when(!is.na(unit_zip_h) ~ as.integer(unit_zip_h),
-                      !is.na(unit_zip_m) ~ unit_zip_m)
-    )
-
-
-# Make new unique ID to anonymize data
-pha_mcaid_merge$pid2 <- group_indices(pha_mcaid_merge, mid, ssn_c, lname_h, fname_h, dob_c)
-
-
-#### Save point ####
-saveRDS(pha_mcaid_merge, file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
-#pha_mcaid_merge <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
 
 
 ##### Calculate overlapping periods #####
@@ -646,8 +643,7 @@ gc()
 
 # Jointlist = variables to keep across all rows
 jointlist <- c("pid2", "mid", "ssn_c", "lname_h", "fname_h", "mname_h",
-               "dob_c", "race_c", "hisp_c", "gender_c", "zip_c",
-               "startdate_h", "enddate_h", "startdate_m", "enddate_m")
+               "dob_c", "race_c", "hisp_c", "gender_c")
 
 houselist <- c(
   # ID, name, and demog variables
@@ -672,7 +668,7 @@ houselist <- c(
   "unit_id", "unit_type", "unit_year", "access_unit", "access_req", 
   "access_rec", "bed_cnt", "move_in_date",
   # Dates
-  "period", "start_housing", 
+  "startdate_h", "enddate_h", "period", "start_housing", 
   "start_pha", "start_prog", "time_housing", "time_pha", "time_prog",
   # Port info
   "port_in", "port_out_kcha", "port_out_sha", "cost_pha",
@@ -696,7 +692,9 @@ medlist <- c(
   # Coverage type
   "dual_elig_m",
   # Address info
-  "unit_add_m", "unit_city_m", "unit_state_m", "unit_zip_m")
+  "unit_add_m", "unit_city_m", "unit_state_m", "unit_zip_m",
+  # Dates
+  "startdate_m", "enddate_m")
 
 
 # Just the PHA demographics and merging variables
@@ -704,9 +702,8 @@ pha_mcaid_merge_part1 <- pha_mcaid_merge %>%
   select(jointlist, houselist) %>%
   distinct()
 temp_ext_h <- temp_ext %>% filter(enroll_type == "h")
-merge1 <- left_join(temp_ext_h, pha_mcaid_merge_part1, 
-                    #by = c("pid2", "startdate_h", "enddate_h"))
-by = c("pid2", "startdate_h", "enddate_h", "startdate_m", "enddate_m"))
+merge1 <- left_join(temp_ext_h, pha_mcaid_merge_part1,
+                    by = c("pid2", "startdate_h", "enddate_h"))
 
 
 # Just the Mediciad demographics and merging variables
@@ -715,8 +712,16 @@ pha_mcaid_merge_part2 <- pha_mcaid_merge %>%
   distinct()
 temp_ext_m <- temp_ext %>% filter(enroll_type == "m")
 merge2 <- left_join(temp_ext_m, pha_mcaid_merge_part2, 
-                    by = c("pid2", "startdate_h", "enddate_h", 
-                           "startdate_m", "enddate_m"))
+                    by = c("pid2", "startdate_m", "enddate_m"))
+# Deal with duplicate dates
+merge2 <- merge2 %>%
+  arrange(pid2, startdate_c, enddate_c, startdate_h, enddate_h, 
+          startdate_m, enddate_m, mid, ssn_c, lname_h, fname_h, mname_h, dob_c,
+          race_c, hisp_c, gender_c, lname_m, fname_m, mname_m, unit_add_m,
+          unit_zip_m) %>%
+  group_by(pid2, startdate_c, enddate_c) %>%
+  slice(1) %>%
+  ungroup()
 
 
 # All variables
@@ -733,17 +738,27 @@ merge3 <- left_join(temp_ext_b, pha_mcaid_merge_part3,
 pha_mcaid_join <- bind_rows(merge1, merge2, merge3) %>%
   arrange(pid2, startdate_c, enddate_c)
 
+# Make single ZIP var now that times are aligned
+pha_mcaid_join >- pha_mcaid_join %>%
+  mutate(
+    zip_c = case_when(!is.na(unit_zip_h) ~ as.integer(unit_zip_h),
+                  !is.na(unit_zip_m) ~ unit_zip_m)
+  )
+
+
+
 
 ### NB. This produces leads to 2 more rows than in the original temp_ext file
-  # Seems to be because of duplicate startdates and enddates in the 
-  # pha_mcaid_merge_part1 files. Need to further investigate this issue
+  # Seems to be because of duplicates in the pha_mcaid_merge_part1 file. 
+  # Need to further investigate this issue
 
 # Remove some temp data frames
-rm(list = ls(pattern = "pha_mcaid_merge"))
+rm(list = ls(pattern = "pha_mcaid_merge_"))
 rm(list = ls(pattern = "merge[0-9]"))
 rm(list = ls(pattern = "list$"))
 rm(list = ls(pattern = "temp_ext"))
 rm(pha_longitudinal)
+rm(pha_mcaid_merge)
 gc()
 
 
