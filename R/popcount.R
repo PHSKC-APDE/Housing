@@ -321,7 +321,6 @@ popcount <- function(df,
   
   phacount <- phacount %>%
     mutate(pop = if_else(is.na(pop), 0, as.numeric(pop)),
-           total_pop = sum(pop, na.rm = T),
            period = quo_name(period),
            unit = quo_name(unit))
   
