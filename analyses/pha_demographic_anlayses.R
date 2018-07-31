@@ -23,7 +23,7 @@ library(pastecs) # Used for summary statistics
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### Bring in data ####
-pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))
+pha_mcaid_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_mcaid_final.Rda"))
 # Or use SQL data and select only needed variables
 
 # Or just bring in PHA data without Medicaid matching
@@ -33,7 +33,7 @@ pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_f
 #### Set up variables for analysis ####
 
 # Set up presence/absence in housing, Medicaid, and both at December 31 each year
-pha_elig_demogs <- pha_elig_final %>%
+pha_mcaid_demogs <- pha_mcaid_final %>%
   mutate(
     # Enrolled in housing
     dec12_h = ifelse(startdate_c <= as.Date("2012-12-31", origin = "1970-01-01") &
@@ -76,30 +76,26 @@ pha_elig_demogs <- pha_elig_final %>%
   )
 
 
+eoy_pop_f <- function(df, year, housing = T) {
+  if (housing == TRUE) {
+    year_quo <- rlang::sym(paste0("dec", quo_name(year), "_h"))
+  } else {
+    year_quo <- rlang::sym(paste0("dec", quo_name(year), "_m"))
+  }
+  
+  output <- df %>% 
+    filter(!!year_quo == 1) %>% 
+    group_by(agency_new) %>% 
+    summarise(count = n_distinct(pid2)) %>%
+    mutate(year = paste0(20, year))
+  
+  return(output)
+}
 
-# Set up presence/absence in housing for the entire year (to allow comparisons with KCHA numbers)
-pha_elig_demogs <- pha_elig_demogs %>%
-  mutate(
-    # Enrolled in housing at all in that year
-    any12_h = ifelse(startdate_c <= as.Date("2012-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2012-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0),
-    any13_h = ifelse(startdate_c <= as.Date("2013-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2013-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0),
-    any14_h = ifelse(startdate_c <= as.Date("2014-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2014-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0),
-    any15_h = ifelse(startdate_c <= as.Date("2015-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2015-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0),
-    any16_h = ifelse(startdate_c <= as.Date("2016-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2016-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0),
-    any17_h = ifelse(startdate_c <= as.Date("2017-12-31", origin = "1970-01-01") &
-                       enddate_c >= as.Date("2017-01-01", origin = "1970-01-01") &
-                       enroll_type %in% c("b", "h"), 1, 0)
-  )
+eoy_pop <- as.data.frame(rbindlist(lapply(seq(12,17), 
+                                          eoy_pop_f, 
+                                          df = pha_mcaid_demogs, 
+                                          housing = T)))
 
 
 # Set up person-time each year
@@ -115,18 +111,18 @@ i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
 
 
 #### Save point ####
-#saveRDS(pha_elig_demogs, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_demogs.Rda")
-#pha_elig_demogs <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_elig_demogs.Rda")
+#saveRDS(pha_mcaid_demogs, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_mcaid_demogs.Rda")
+#pha_mcaid_demogs <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_mcaid_demogs.Rda")
 
 
 
 #### Optional: Output to Excel for use in Tableau ####
 # # Warning: makes huge file and takes a long time
-# temp <- pha_elig_demogs %>%
+# temp <- pha_mcaid_demogs %>%
 #   # Strip out identifying variables
 #   select(pid, gender_new_m6, race_h, disability, adult, senior, agency_new, major_prog:property_id, unit_zip_h, startdate_h:age16)
 # 
-# write.xlsx(temp, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/pha_elig_demogs_2017-08-09.xlsx")
+# write.xlsx(temp, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/pha_mcaid_demogs_2017-08-09.xlsx")
 
 #### End of optional section ####
 
@@ -552,98 +548,98 @@ rm(list = ls(pattern = "^agency"))
 #### Counts overall (older code) ####
 
 # In housing as at Dec 31
-pha_elig_demogs %>% filter(dec12_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec13_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec14_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec15_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec16_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec12_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec13_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec14_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec15_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec16_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
 
-pha_elig_demogs %>% filter(dec12_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec13_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec14_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec15_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec16_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec12_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec13_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec14_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec15_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec16_h == 1) %>% summarise(count = n_distinct(pid))
 
 # Ever in housing that year
-pha_elig_demogs %>% filter(any12_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any13_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any14_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any15_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any16_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any12_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any13_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any14_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any15_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any16_h == 1) %>% summarise(count = n_distinct(hh_id_new_h))
 
-pha_elig_demogs %>% filter(any12_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any13_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any14_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any15_h == 1) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any16_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any12_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any13_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any14_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any15_h == 1) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any16_h == 1) %>% summarise(count = n_distinct(pid))
 
 
 #### Counts of households ####
 # NB. Can't look at Mediciad numbers because different members within a household have different enrollment in Medicaid
 # In housing as at Dec 31
-pha_elig_demogs %>% filter(dec12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(dec16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(dec16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
 
 # Ever in housing that year
-pha_elig_demogs %>% filter(any12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
-pha_elig_demogs %>% filter(any16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
+pha_mcaid_demogs %>% filter(any16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(hh_id_new_h))
 
 
 #### Counts of people ####
 # In housing as at Dec 31
-pha_elig_demogs %>% filter(dec12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(dec16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(dec16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
 
 # Ever in housing that year
-pha_elig_demogs %>% filter(any12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
-pha_elig_demogs %>% filter(any16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any12_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any13_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any14_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any15_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
+pha_mcaid_demogs %>% filter(any16_h == 1) %>% group_by(agency_new) %>% summarise(count = n_distinct(pid))
 
 
 
 ### Enrolled in housing by program
-pha_elig_demogs %>% filter(dec12_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
+pha_mcaid_demogs %>% filter(dec12_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec13_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
+pha_mcaid_demogs %>% filter(dec13_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec14_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
+pha_mcaid_demogs %>% filter(dec14_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec15_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
+pha_mcaid_demogs %>% filter(dec15_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec16_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
+pha_mcaid_demogs %>% filter(dec16_h == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
 
 
 
 ### Enrolled in Medicaid
-pha_elig_demogs %>% filter(dec12_m == 1) %>% distinct(pid) %>% summarise(count = n())
-pha_elig_demogs %>% filter(dec13_m == 1) %>% distinct(pid) %>% summarise(count = n())
-pha_elig_demogs %>% filter(dec14_m == 1) %>% distinct(pid) %>% summarise(count = n())
-pha_elig_demogs %>% filter(dec15_m == 1) %>% distinct(pid) %>% summarise(count = n())
-pha_elig_demogs %>% filter(dec16_m == 1) %>% distinct(pid) %>% summarise(count = n())
+pha_mcaid_demogs %>% filter(dec12_m == 1) %>% distinct(pid) %>% summarise(count = n())
+pha_mcaid_demogs %>% filter(dec13_m == 1) %>% distinct(pid) %>% summarise(count = n())
+pha_mcaid_demogs %>% filter(dec14_m == 1) %>% distinct(pid) %>% summarise(count = n())
+pha_mcaid_demogs %>% filter(dec15_m == 1) %>% distinct(pid) %>% summarise(count = n())
+pha_mcaid_demogs %>% filter(dec16_m == 1) %>% distinct(pid) %>% summarise(count = n())
 
 
 ### Enrolled in both housing and Medicaid by housing
-pha_elig_demogs %>% filter(dec12_h == 1 & dec12_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
+pha_mcaid_demogs %>% filter(dec12_h == 1 & dec12_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec13_h == 1 & dec13_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
+pha_mcaid_demogs %>% filter(dec13_h == 1 & dec13_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec14_h == 1 & dec14_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
+pha_mcaid_demogs %>% filter(dec14_h == 1 & dec14_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec15_h == 1 & dec15_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
+pha_mcaid_demogs %>% filter(dec15_h == 1 & dec15_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
-pha_elig_demogs %>% filter(dec16_h == 1 & dec16_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
+pha_mcaid_demogs %>% filter(dec16_h == 1 & dec16_m == 1) %>% distinct(pid, .keep_all = TRUE) %>% group_by(agency_new, major_prog, prog_type_new, spec_purp_type) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count))
 
 
@@ -651,19 +647,19 @@ pha_elig_demogs %>% filter(dec16_h == 1 & dec16_m == 1) %>% distinct(pid, .keep_
 #### SHA ONLY ####
 ### As at Dec 31
 # Households
-temp12_sha <- pha_elig_demogs %>% filter(dec12_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp12_sha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_sha <- pha_elig_demogs %>% filter(dec13_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp13_sha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_sha <- pha_elig_demogs %>% filter(dec14_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp14_sha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_sha <- pha_elig_demogs %>% filter(dec15_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp15_sha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_sha <- pha_elig_demogs %>% filter(dec16_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp16_sha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & agency_new == "SHA") %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -671,19 +667,19 @@ sha_count_hh <- bind_rows(temp12_sha, temp13_sha, temp14_sha, temp15_sha, temp16
 sha_count_hh <- mutate(sha_count_hh, count_type = "Households")
 
 # Individuals
-temp12_sha <- pha_elig_demogs %>% filter(dec12_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp12_sha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_sha <- pha_elig_demogs %>% filter(dec13_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp13_sha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_sha <- pha_elig_demogs %>% filter(dec14_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp14_sha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_sha <- pha_elig_demogs %>% filter(dec15_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp15_sha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_sha <- pha_elig_demogs %>% filter(dec16_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp16_sha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & agency_new == "SHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -699,19 +695,19 @@ write.xlsx(sha_count, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedDat
 #### KCHA ONLY ####
 ### As at Dec 31
 # Households
-temp12_kcha <- pha_elig_demogs %>% filter(dec12_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(dec13_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(dec14_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(dec15_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(dec16_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -719,19 +715,19 @@ kcha_count_hh <- bind_rows(temp12_kcha, temp13_kcha, temp14_kcha, temp15_kcha, t
 kcha_count_hh <- mutate(kcha_count_hh, count_type = "Households")
 
 # Individuals
-temp12_kcha <- pha_elig_demogs %>% filter(dec12_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(dec13_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(dec14_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(dec15_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(dec16_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -746,19 +742,19 @@ kcha_count_dec <- bind_rows(kcha_count_hh, kcha_count_ind) %>%
 
 ### Any point during the year
 # Households
-temp12_kcha <- pha_elig_demogs %>% filter(any12_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(any12_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(any13_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(any13_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(any14_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(any14_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(any15_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(any15_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(any16_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(any16_h == 1 & agency_new == "KCHA" & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -766,19 +762,19 @@ kcha_count_fy_hh <- bind_rows(temp12_kcha, temp13_kcha, temp14_kcha, temp15_kcha
 kcha_count_fy_hh <- mutate(kcha_count_fy_hh, count_type = "Households")
 
 # Individuals
-temp12_kcha <- pha_elig_demogs %>% filter(any12_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(any12_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(any13_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(any13_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(any14_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(any14_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(any15_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(any15_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(any16_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(any16_h == 1 & agency_new == "KCHA") %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(major_prog, prog_type_new, spec_purp_type, portfolio_new, port_in) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -799,19 +795,19 @@ write.xlsx(kcha_count_list,
 #### KCHA WITH VARIOUS PORT IN/OUT COMBINATIONS ####
 ### As at Dec 31
 # Households
-temp12_kcha <- pha_elig_demogs %>% filter(dec12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(dec13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(dec14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(dec15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(dec16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -819,19 +815,19 @@ kcha_count_hh <- bind_rows(temp12_kcha, temp13_kcha, temp14_kcha, temp15_kcha, t
 kcha_count_hh <- mutate(kcha_count_hh, count_type = "Households")
 
 # Individuals
-temp12_kcha <- pha_elig_demogs %>% filter(dec12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(dec12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(dec13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(dec13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(dec14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(dec14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(dec15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(dec15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(dec16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(dec16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -844,19 +840,19 @@ kcha_count_dec <- bind_rows(kcha_count_hh, kcha_count_ind) %>%
 
 ### Any point during the year
 # Households
-temp12_kcha <- pha_elig_demogs %>% filter(any12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(any12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(any13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(any13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(any14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(any14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(any15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(any15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(any16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(any16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1) & mbr_num == 1) %>% distinct(hh_id_new_h, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -864,19 +860,19 @@ kcha_count_fy_hh <- bind_rows(temp12_kcha, temp13_kcha, temp14_kcha, temp15_kcha
 kcha_count_fy_hh <- mutate(kcha_count_fy_hh, count_type = "Households")
 
 # Individuals
-temp12_kcha <- pha_elig_demogs %>% filter(any12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp12_kcha <- pha_mcaid_demogs %>% filter(any12_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2012)
-temp13_kcha <- pha_elig_demogs %>% filter(any13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp13_kcha <- pha_mcaid_demogs %>% filter(any13_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2013)
-temp14_kcha <- pha_elig_demogs %>% filter(any14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp14_kcha <- pha_mcaid_demogs %>% filter(any14_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2014)
-temp15_kcha <- pha_elig_demogs %>% filter(any15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp15_kcha <- pha_mcaid_demogs %>% filter(any15_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2015)
-temp16_kcha <- pha_elig_demogs %>% filter(any16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
+temp16_kcha <- pha_mcaid_demogs %>% filter(any16_h == 1 & (agency_new == "KCHA" | port_out_kcha == 1)) %>% distinct(pid, .keep_all = TRUE) %>% 
   group_by(port_in, port_out_kcha, agency_new, prog_final, portfolio_final) %>% 
   summarise(count = n()) %>% mutate(total = sum(.$count), year = 2016)
 
@@ -903,7 +899,7 @@ gc()
 
 
 # Look at gender each year in housing
-pha_elig_demogs %>%
+pha_mcaid_demogs %>%
   filter(dec12_h == 1) %>%
   distinct(pid, .keep_all = TRUE) %>%
   group_by(agency_new, prog_type_new, prog_subtype) %>%
@@ -913,7 +909,7 @@ pha_elig_demogs %>%
             total = n()) %>%
   mutate(femaleper = female / total, maleper = male / total, unkper = unknown / total)
 
-pha_elig_demogs %>%
+pha_mcaid_demogs %>%
   filter(dec13_h == 1) %>%
   distinct(pid, .keep_all = TRUE) %>%
   group_by(agency_new) %>%
@@ -923,7 +919,7 @@ pha_elig_demogs %>%
             total = n()) %>%
   mutate(femaleper = female / total, maleper = male / total, unkper = unknown / total)
 
-pha_elig_demogs %>%
+pha_mcaid_demogs %>%
   filter(dec14_h == 1) %>%
   distinct(pid, .keep_all = TRUE) %>%
   group_by(agency_new) %>%
@@ -943,7 +939,7 @@ pha_demogs %>%
             total = n()) %>%
   mutate(femaleper = female / total, maleper = male / total, unkper = unknown / total)
 
-pha_elig_demogs %>%
+pha_mcaid_demogs %>%
   filter(dec16_h == 1) %>%
   distinct(pid, .keep_all = TRUE) %>%
   group_by(agency_new) %>%
