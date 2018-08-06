@@ -1,6 +1,6 @@
 #' Flags people who live at Yesler Terrace.
 #' 
-#' \code{yesler} creates a set of flags specific to SHA's Yesler Terrace.
+#' \code{yt_flag} creates a set of flags specific to SHA's Yesler Terrace.
 #' 
 #' This function creates a set of flags that are specific to Seattle Housing
 #' Authority's Yesler Terrace site. It is a convenient way to quickly add the 
@@ -8,26 +8,34 @@
 #' Once each person's addresses have been flagged as Yesler Terrace/scattered 
 #' sites or not, a new set of variables is made to indicate whether or not the 
 #' person has ever lived at Yesler Terrace/scattered sites.
-#' For now, it is assumed that the df has variables called property_id, 
-#' unit_add_new or unit_add_h, and a variable to group people on (pid or pid2).
+#' It is assumed that the df has variables for the property ID, property name, 
+#' address, and individual identifier (pid or pid2).
 #' 
 #' @param df A data frame
 #' @param unit A named variable that determines the unit to group by. Default is 
 #' pid2 (individuals) but pid should be used with housing-only data that has not
 #' been matched to Medicaid data.
+#' @param prop_id A named variable that specifies the property IDs used in 
+#' housing data. Default is property_id.
+#' @param prop_id A named variable that specifies the property name used in 
+#' housing data. Default is property_name.
+#' @param address A named varaible that specifies the unit address. 
+#' Default is unit_add_h.
 #' 
 #' @examples 
 #' \dontrun{
-#' yesler(pha_elig_demogs, unit = pid)
+#' yt_flag(pha_elig_demogs, unit = pid)
 #' }
 #' 
 #' @export
 
-yesler <- function(df, unit = NULL){
+yt_flag <- function(df, unit = NULL, prop_id = NULL, pop_name = NULL, 
+                    address = NULL){
   if (missing(unit)) {
     print("Attempting to use default grouping (pid2 then pid).")
   }
   
+  # Figure out which unit of analysis to use
   if(!missing(unit)) {
     unit <- enquo(unit)
   } else if("pid2" %in% names(df)) {
@@ -38,8 +46,28 @@ yesler <- function(df, unit = NULL){
     stop("No valid unit of analysis found")
   }
   
+  # Figure out which property ID field to use
+  if(!missing(prop_id)) {
+    prop_id <- enquo(prop_id)
+  } else if("property_id" %in% names(df)) {
+    prop_id <- quo(property_id)
+  } else {
+    stop("No valid property ID variable")
+  }
+  
+  # Figure out which property ID field to use
+  if(!missing(!!prop_name)) {
+    prop_name <- enquo(!!prop_name)
+  } else if("property_name" %in% names(df)) {
+    prop_name <- quo(property_name)
+  } else {
+    stop("No valid property name variable")
+  }
+  
   # Figure out which address field to use
-  if("unit_add_h" %in% names(df)) {
+  if(!missing(address)) {
+    address <- enquo(address)
+  } else if("unit_add_h" %in% names(df)) {
     address <- quo(unit_add_h)
   } else if("unit_add_new" %in% names(df)) {
     address <- quo(unit_add_new)
@@ -51,7 +79,7 @@ yesler <- function(df, unit = NULL){
   df <- df %>%
     mutate(
       yt = ifelse(
-        (property_id %in% c("001", "1", "591", "738", "743") & !is.na(property_id)) |
+        (!!prop_id %in% c("001", "1", "591", "738", "743") & !is.na(!!prop_id)) |
           (!is.na(!!address) &
              # Kebero Court
              (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
@@ -63,10 +91,10 @@ yesler <- function(df, unit = NULL){
                 # General new YT
                 str_detect(!!address, "^820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
-      yt_old = ifelse(property_id %in% c("1", "001") & !is.na(property_id), 
+      yt_old = ifelse(!!prop_id %in% c("1", "001") & !is.na(!!prop_id), 
                       1, 0),
       yt_new = ifelse(
-        (property_id %in% c("591", "738", "743") & !is.na(property_id)) |
+        (!!prop_id %in% c("591", "738", "743") & !is.na(!!prop_id)) |
           (!is.na(!!address) & 
              # Kebero Court
              (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
@@ -78,11 +106,11 @@ yesler <- function(df, unit = NULL){
                 str_detect(!!address, "^820[:space:]*[E]*[:space:]*YESLER"))),
         1, 0),
       ss = ifelse(
-        (property_id %in% 
+        (!!prop_id %in% 
            c("050", "051", "052", "053", "054", "055", "056", "057",
              "A42", "A43", "I42", "I43", "L42", "L43", "P42", "P43") &
-           !is.na(property_id)) |
-          (str_detect(property_name, "SCATTERED")),
+           !is.na(!!prop_id)) |
+          (str_detect(!!prop_name, "SCATTERED")),
         1, 0)
     )
   

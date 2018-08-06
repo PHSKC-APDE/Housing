@@ -1,7 +1,8 @@
-#' Counting enrollment in PHAs
+#' Counting enrollment in PHAs. - USE popcount INSTEAD
 #' 
 #' \code{counts} summarizes the number of enrollees in the PHA data.
 #' 
+#' This function is now deprecated in favor of \code{\link{popcount}}.
 #' This function takes the date range supplied by \code{\link{time_range}} and
 #' counts the number of individuals or households enrolled. Grouping options
 #' are available and set using \code{\link{group_vars}}.

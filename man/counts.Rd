@@ -90,6 +90,7 @@ This function is a way to centralize defining and importing conditions from
 the Medicaid claims data. This code will eventually be spun off into a 
 Medicaid analysis package.
 
+This function is now deprecated in favor of \code{\link{popcount}}.
 This function takes the date range supplied by \code{\link{time_range}} and
 counts the number of individuals or households enrolled. Grouping options
 are available and set using \code{\link{group_vars}}.
