@@ -41,10 +41,10 @@
 #' 
 #' @examples
 #' \dontrun{
-#' counts(pha_longitudinal)
-#' counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
+#' popcount(pha_longitudinal)
+#' popcount(pha_longitudinal, group_var = c("agency_new", "major_prog"),
 #' agency = "kcha", unit = hhold_id_new)
-#' counts(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
+#' popcount(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
 #' }
 #' 
 #' @export
@@ -233,7 +233,7 @@ popcount <- function(df,
       df_temp <- df_temp %>% mutate(
         time_prog_temp = 
           round(interval(start = start_prog, end = timeend[i]) / years(1), 1),
-        time_prog = as,numeric(case_when(
+        time_prog = as.numeric(case_when(
           time_prog_temp < 3 ~ 1,
           between(time_prog_temp, 3, 5.99) ~ 2,
           time_prog_temp >= 6 ~ 3,
