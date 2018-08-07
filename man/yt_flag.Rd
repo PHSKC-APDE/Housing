@@ -4,7 +4,7 @@
 \alias{yt_flag}
 \title{Flags people who live at Yesler Terrace.}
 \usage{
-yt_flag(df, unit = NULL, prop_id = NULL, pop_name = NULL,
+yt_flag(df, unit = NULL, prop_id = NULL, prop_name = NULL,
   address = NULL)
 }
 \arguments{

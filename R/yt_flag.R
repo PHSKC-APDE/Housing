@@ -29,7 +29,7 @@
 #' 
 #' @export
 
-yt_flag <- function(df, unit = NULL, prop_id = NULL, pop_name = NULL, 
+yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL, 
                     address = NULL){
   if (missing(unit)) {
     print("Attempting to use default grouping (pid2 then pid).")
@@ -56,8 +56,8 @@ yt_flag <- function(df, unit = NULL, prop_id = NULL, pop_name = NULL,
   }
   
   # Figure out which property ID field to use
-  if(!missing(!!prop_name)) {
-    prop_name <- enquo(!!prop_name)
+  if(!missing(prop_name)) {
+    prop_name <- enquo(prop_name)
   } else if("property_name" %in% names(df)) {
     prop_name <- quo(property_name)
   } else {

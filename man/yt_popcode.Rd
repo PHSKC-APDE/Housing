@@ -39,14 +39,14 @@ This function is specific to Seattle Housing Authority's data. It assigns a
 numeric code to each row in the data where person-time has accumulated for 
 that calendar year. Codes are assigned as follows:
 (#1-5 assume simultaneous Medicaid enrollment and not dual eligible):
-1) At least 30 days at YT that year = YT
-2) No YT but 30+ days at SS that year = SS
-3) No YT or SS but in SHA for 30+ days = SHA
-4) Not YT/SS/SHA but in KCHA for 30+ days = KCHA
-5) No 30+ days in any PHA = non-PHA Medicaid
-6-10) Same as #1-5 but only dual eligible
-11-15) Same as #1-5 but dual eligible is NA
-16-18) Only time in SHA (+/- YT and SS) and no Medicaid
+1) At least 30 days at YT that year = YT, 
+2) No YT but 30+ days at SS that year = SS, 
+3) No YT or SS but in SHA for 30+ days = SHA, 
+4) Not YT/SS/SHA but in KCHA for 30+ days = KCHA, 
+5) No 30+ days in any PHA = non-PHA Medicaid, 
+6-10) Same as #1-5 but only dual eligible, 
+11-15) Same as #1-5 but dual eligible is NA, 
+16-18) Only time in SHA (+/- YT and SS) and no Medicaid, 
 19) Only time in KCHA and no Medicaid
 
 If the min flag is true, only takes the smallest numeric code produced is 
