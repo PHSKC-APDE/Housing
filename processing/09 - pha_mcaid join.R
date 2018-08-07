@@ -576,18 +576,19 @@ temp_ext <- temp_ext %>%
           !(lead(enroll_type, 1) != "m" & lead(enddate_h, 1) == lead(startdate_h, 1)) &
           enroll_type != "b" & lead(enroll_type, 1) == "b" ~ 1,
         # Fix up other oddities when the date range is only one day
-        pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
+        pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
           startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
-          enddate_c <= lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
+          startdate_c == enddate_c & !is.na(startdate_c) & 
           enroll_type == "m" & lag(enroll_type, 1) %in% c("b", "h") ~ 1,
         pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
           startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
-          enddate_c >= lag(enddate_c, 1) & !is.na(lag(enddate_c, 1)) & 
+          startdate_c == enddate_c & !is.na(startdate_c) &
           startdate_h == lag(startdate_h, 1) & enddate_h == lag(enddate_h, 1) &
-          !is.na(startdate_h) & !is.na(lag(startdate_h, 1)) ~ 1,
+          !is.na(startdate_h) & !is.na(lag(startdate_h, 1)) &
+          enroll_type != "b" ~ 1,
         pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
           startdate_c == lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
-          enddate_c >= lead(enddate_c, 1) & !is.na(lead(enddate_c, 1)) & 
+          startdate_c == enddate_c & !is.na(startdate_c) &
           enroll_type == "m" & lead(enroll_type, 1) %in% c("b", "h") ~ 1,
         # Drop rows where the enddate_c < startdate_c due to 
         # both data sources' dates ending at the same time
@@ -734,19 +735,22 @@ merge3 <- left_join(temp_ext_b, pha_mcaid_merge_part3,
                            "startdate_m", "enddate_m"))
 
 
+# Remove joined frames after checking that rowcounts of <name>_part<n> 
+# and merge<n> are the same (or almost the same)
+rm(list = ls(pattern = "pha_mcaid_merge_"))
+gc()
+
 # Join into a single data frame
 pha_mcaid_join <- bind_rows(merge1, merge2, merge3) %>%
   arrange(pid2, startdate_c, enddate_c)
 
 # Make single ZIP var now that times are aligned
-pha_mcaid_join >- pha_mcaid_join %>%
-  mutate(
-    zip_c = case_when(!is.na(unit_zip_h) ~ as.integer(unit_zip_h),
-                  !is.na(unit_zip_m) ~ unit_zip_m)
+pha_mcaid_join <- pha_mcaid_join %>%
+  mutate(zip_c = case_when(
+    !is.na(unit_zip_h) ~ as.integer(unit_zip_h),
+    !is.na(unit_zip_m) ~ as.integer(unit_zip_m)
+    )
   )
-
-
-
 
 ### NB. This produces leads to 2 more rows than in the original temp_ext file
   # Seems to be because of duplicates in the pha_mcaid_merge_part1 file. 
@@ -763,4 +767,5 @@ gc()
 
 
 #### Save point ####
-saveRDS(pha_mcaid_join, file = paste0(housing_path, "/OrganizedData/pha_mcaid_join.Rda"))
+saveRDS(pha_mcaid_join, file = paste0(housing_path, 
+                                      "/OrganizedData/pha_mcaid_join.Rda"))

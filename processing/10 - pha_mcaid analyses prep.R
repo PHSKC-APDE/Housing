@@ -268,7 +268,7 @@ lencode_f <- function(df, x, agency = agency_new) {
       (!!col) < 3 ~ 1,
       between((!!col), 3, 5.99) ~ 2,
       (!!col) >= 6 ~ 3,
-      is.na((!!agency)) | (!!agency) == "Non-PHA" ~ 0
+      is.na((!!agency)) | (!!agency) == "Non-PHA" ~ 0,
       is.na((!!col)) ~ 99
     )
     )
