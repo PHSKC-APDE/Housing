@@ -2,16 +2,17 @@
 % Please edit documentation in R/popcount_wc.R
 \name{popcount_wc}
 \alias{popcount_wc}
-\title{Counting well-child population and person-time in the joint PHA/Medicaid data}
+\title{Counting population and person-time in the joint PHA/Medicaid data}
 \usage{
-popcount_wc(df, group_var = c("agency_new"), agency = NULL, enroll = NULL,
-  unit = NULL, startdate = NULL, enddate = NULL, birth = NULL,
-  length = NULL, numeric = TRUE, ...)
+popcount_wc(df, group_var = quos(agency_new), agency = NULL,
+  enroll = NULL, unit = NULL, startdate = NULL, enddate = NULL,
+  birth = NULL, length = NULL, numeric = TRUE, ...)
 }
 \arguments{
 \item{df}{A data frame}
 
-\item{group_var}{A set of variables to group counts by. Default is PH agency.}
+\item{group_var}{A set of variables to group counts by. Default is PH agency.
+Must be set as a quosure (use quos(<group1>, <group2>))}
 
 \item{agency}{A named variable that specifies the agency a person is in for 
 that period of time (usually KCHA, SHA, or NA/Medicaid only). Used to 
@@ -62,10 +63,10 @@ been matched to Medicaid data.
 }
 \examples{
 \dontrun{
-counts(pha_longitudinal)
-counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
+popcount(pha_longitudinal)
+popcount(pha_longitudinal, group_var = quos(agency_new, major_prog),
 agency = "kcha", unit = hhold_id_new)
-counts(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
+popcount(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
 }
 
 }

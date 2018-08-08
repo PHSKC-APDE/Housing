@@ -1,4 +1,4 @@
-#' Counting well-child population and person-time in the joint PHA/Medicaid data
+#' Counting population and person-time in the joint PHA/Medicaid data
 #' 
 #' \code{popcount_wc} summarizes population data in the joint PHA/Medicaid data.
 #' 
@@ -9,6 +9,7 @@
 #' 
 #' @param df A data frame
 #' @param group_var A set of variables to group counts by. Default is PH agency.
+#' Must be set as a quosure (use quos(<group1>, <group2>))
 #' @param agency A named variable that specifies the agency a person is in for 
 #' that period of time (usually KCHA, SHA, or NA/Medicaid only). Used to 
 #' allocate individuals who moved between multiple agencies/enrollment types 
@@ -41,17 +42,17 @@
 #' 
 #' @examples
 #' \dontrun{
-#' counts(pha_longitudinal)
-#' counts(pha_longitudinal, group_var = c("agency_new", "major_prog"),
+#' popcount(pha_longitudinal)
+#' popcount(pha_longitudinal, group_var = quos(agency_new, major_prog),
 #' agency = "kcha", unit = hhold_id_new)
-#' counts(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
+#' popcount(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
 #' }
 #' 
 #' @export
 
 
 popcount_wc <- function(df, 
-                     group_var = c("agency_new"),
+                     group_var = quos(agency_new),
                      agency = NULL,
                      enroll = NULL,
                      unit = NULL,
@@ -65,7 +66,8 @@ popcount_wc <- function(df,
   
   # Warn about missing unit of analysis
   if (missing(unit)) {
-    print("Attempting to use default unit of analysis (individuals (pid/pid2)).")
+    print("Attempting to use default unit of analysis (individuals (pid/pid2)). 
+          Possible options: pid, pid2, hhold_id_new")
   }
   
   # Set up quosures and other variables
@@ -102,6 +104,8 @@ popcount_wc <- function(df,
     unit <- quo(pid2)
   } else if("pid" %in% names(df)) {
     unit <- quo(pid)
+  } else if("hhold_id_new" %in% names(df)) {
+    unit <- quo(hhold_id_new)
   } else {
     stop("No valid unit of analysis found")
   }
@@ -142,22 +146,23 @@ popcount_wc <- function(df,
   }
   
   
-  grouping_vars <- rlang::syms(group_var)
   print(paste0("Grouping by: ", paste(group_var, collapse = ", ")))
   
-  # Figure out which DOB field to use (needed for age calcs)
-  if(!missing(birth)) {
-    birth <- enquo(birth)
-  } else if("dob_c" %in% names(df)) {
-    birth <- quo(dob_c)
-  } else if("dob_h" %in% names(df)) {
-    birth <- quo(dob_h)
-  } else if("dob_m6" %in% names(df)) {
-    birth <- quo(dob_m6)
-  } else if("hh_dob_m6" %in% names(df)) {
-    birth <- quo(hh_dob_m6)
-  } else {
-    stop("No valid dob found")
+  # Figure out which DOB field to use (if needed for age calcs)
+  if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior")) {
+    if(!missing(birth)) {
+      birth <- enquo(birth)
+    } else if("dob_c" %in% names(df)) {
+      birth <- quo(dob_c)
+    } else if("dob_h" %in% names(df)) {
+      birth <- quo(dob_h)
+    } else if("dob_m6" %in% names(df)) {
+      birth <- quo(dob_m6)
+    } else if("hh_dob_m6" %in% names(df)) {
+      birth <- quo(hh_dob_m6)
+    } else {
+      stop("No valid dob found")
+    }
   }
   
   # Set up time period and capture period used for output
@@ -171,18 +176,34 @@ popcount_wc <- function(df,
   
   for (i in 1:length(timestart)) {
     
-    df_temp <- df
-    
     # Recalculate age and restrict to 3-6-year-olds
-    df_temp <- df_temp %>% 
+    df_temp <- df %>% 
       mutate(
         age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1))
         ) %>%
       filter(!is.na(age_temp) & age_temp >= 3 & age_temp <= 6)
     
     
+    # Recalculate age and age groups if they are one of the grouping variables
+    if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior")) {
+      df_temp <- df_temp %>% mutate(
+        age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1)),
+        adult = ifelse(age_temp >= 18, 1, 0),
+        senior = ifelse(age_temp >= 62, 1, 0),
+        agegrp_h = as.numeric(case_when(
+          age_temp < 18 ~ 1,
+          between(age_temp, 18, 24.99) ~ 2,
+          between(age_temp, 25, 44.99) ~ 3,
+          between(age_temp, 45, 61.99) ~ 4,
+          between(age_temp, 62, 64.99) ~ 5,
+          age_temp >= 65 ~ 6,
+          is.na(age_temp) ~ 99
+        )
+        ))
+    }
+    
     # Recalculate length of stay groups if they are in the grouping variables
-    if (str_detect(paste(grouping_vars, collapse = ""), "time_housing")) {
+    if (str_detect(paste(group_var, collapse = ""), "time_housing")) {
       df_temp <- df_temp %>% mutate(
         time_housing_temp = 
           round(interval(start = start_housing, end = timeend[i]) / years(1), 1),
@@ -195,7 +216,7 @@ popcount_wc <- function(df,
         ))
     }
     
-    if (str_detect(paste(grouping_vars, collapse = ""), "time_pha")) {
+    if (str_detect(paste(group_var, collapse = ""), "time_pha")) {
       df_temp <- df_temp %>% mutate(
         time_pha_temp = 
           round(interval(start = start_pha, end = timeend[i]) / years(1), 1),
@@ -208,11 +229,11 @@ popcount_wc <- function(df,
         ))
     }
     
-    if (str_detect(paste(grouping_vars, collapse = ""), "time_prog")) {
+    if (str_detect(paste(group_var, collapse = ""), "time_prog")) {
       df_temp <- df_temp %>% mutate(
         time_prog_temp = 
           round(interval(start = start_prog, end = timeend[i]) / years(1), 1),
-        time_prog = as,numeric(case_when(
+        time_prog = as.numeric(case_when(
           time_prog_temp < 3 ~ 1,
           between(time_prog_temp, 3, 5.99) ~ 2,
           time_prog_temp >= 6 ~ 3,
@@ -226,6 +247,7 @@ popcount_wc <- function(df,
     df_temp <- df_temp %>%
       mutate(
         overlap_amount = as.numeric(lubridate::intersect(
+          #time_int,
           lubridate::interval((!!start_var), (!!end_var)),
           lubridate::interval(timestart[i], timeend[i])) / ddays(1) + 1)
       ) %>%
@@ -235,7 +257,7 @@ popcount_wc <- function(df,
     # Count a person if they were in that group at any point in the period
     # Also count person time accrued in each group (in days)
     ever <- df_temp %>%
-      group_by(!!!(grouping_vars)) %>%
+      group_by(!!!(group_var)) %>%
       summarise(pop_ever = n_distinct(!!unit),
                 pt_days = sum(overlap_amount)) %>%
       ungroup()
@@ -285,13 +307,13 @@ popcount_wc <- function(df,
                (agency_sum == 2 & agency_count == 2) |
                agency_sum == 3 |
                agency_sum == 0) %>%
-      group_by(!!!(grouping_vars)) %>%
+      group_by(!!!(group_var)) %>%
       summarise(pop = n_distinct(!!unit)) %>%
       ungroup()
     
     
     # Join back to a single df
-    templist[[i]] <- left_join(ever, pop, by = group_var) %>%
+    templist[[i]] <- left_join(ever, pop, by = sapply(group_var, quo_name)) %>%
       mutate(date = timestart[i])
   }
   
@@ -299,7 +321,6 @@ popcount_wc <- function(df,
   
   phacount <- phacount %>%
     mutate(pop = if_else(is.na(pop), 0, as.numeric(pop)),
-           total_pop = sum(pop, na.rm = T),
            period = quo_name(period),
            unit = quo_name(unit),
            agegrp_h = 36)
