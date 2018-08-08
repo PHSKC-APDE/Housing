@@ -219,122 +219,32 @@ eventcount_yt_f <- function(df, event = NULL, year) {
   return(output)
 }
 
-### Lin's definition of chronic diseases
-# Does not merge with pop data in SQL but brings everything in per ID
-conditions_lin_nomerge_f <- function(year) {
-  
-  query <- paste0(
-    "SELECT ID,
-    CASE WHEN HTN1 > 0 OR HTN2 > 1 THEN 1 ELSE 0 END AS HTN,
-    CASE WHEN DIA1 > 0 OR DIA2 > 1 THEN 1 ELSE 0 END AS DIA,
-    CASE WHEN AST1 > 0 OR AST2 > 1 THEN 1 ELSE 0 END AS AST,
-    CASE WHEN COP1 > 0 OR COP2 > 1 THEN 1 ELSE 0 END AS COP,
-    CASE WHEN IHD1 > 0 OR IHD2 > 1 THEN 1 ELSE 0 END AS IHD,
-    CASE WHEN DEP > 0 THEN 1 ELSE 0 END AS DEP,
-    CASE WHEN MEN > 0 THEN 1 ELSE 0 END AS MEN
-    FROM 
-    (SELECT DISTINCT ID, SUM(HTN1) AS HTN1, SUM(HTN2) AS HTN2,
-    SUM(DIA1) AS DIA1, SUM(DIA2) AS DIA2, SUM(DEP) AS DEP,
-    SUM(AST1) AS AST1, SUM(AST2) AS AST2, SUM(MEN) AS MEN,
-    SUM(COP1) AS COP1, SUM(COP2) AS COP2
-    FROM
-    (SELECT ID,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND HTN>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS HTN1,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND HTN>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS HTN2,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND AST>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS AST1,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND AST>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS AST2,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND COP>0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS COP1,
-    CASE WHEN YEAR(FR_SDT) = ", year, 
-    " AND COP>0 AND CLMT IN(3,26,27,28,34) THEN 1 ELSE 0 END AS COP2,
-    CASE WHEN YEAR(FR_SDT) = ", year, " AND DEP>0 THEN 1 ELSE 0 END AS DEP,
-    CASE WHEN YEAR(FR_SDT) = ", year, " AND MEN>0 THEN 1 ELSE 0 END AS MEN,
-    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
-    AND DIA > 0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS DIA1,
-    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
-    AND DIA > 0 AND CLMT IN(3,26,27,28,34)  THEN 1 ELSE 0 END AS DIA2,
-    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
-    AND IHD > 0 AND CLMT IN(31,33,12,23) THEN 1 ELSE 0 END AS IHD1,
-    CASE WHEN YEAR(FR_SDT) IN(", year-1, ",", year, ") 
-    AND IHD > 0 AND CLMT IN(3,26,27,28,34)  THEN 1 ELSE 0 END AS IHD2
-    FROM [PH\\SONGL].[tCond_all]
-    WHERE YEAR(FR_SDT) <= ", year, ") a
-    GROUP BY ID) b
-    ")
-  
-  output <- sqlQuery(db.apde51, query, stringsAsFactors = FALSE)
-  output <- mutate(output, cond_year = as.numeric(year))
-  return(output)
-}
 
 
 #### BRING IN DATA ####
 ### Bring in linked housing/Medicaid elig data with YT already designated
-yt_elig_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_elig_final.Rds")
+yt_mcaid_final <- readRDS("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/yt_mcaid_final.Rds")
 
 # Filter to only include YT and SS residents
-yt_ss <- yt_elig_final %>% filter(yt == 1 | ss == 1)
-
-
-#### TEMP SECTION ####
-# Move into yt_demog_setup eventually
-# Add in latest income for each calendar year
-
-# Kludgy workaround for now, look upstream to better track annual income
-hh_inc_f <- function(df, year) {
-  pt <- rlang::sym(paste0("pt", quo_name(year)))
-  hh_inc_yr <- rlang::sym(paste0("hh_inc_", quo_name(year)))
-
-  df_inc <- df %>%
-    filter((!!pt) > 0) %>%
-    arrange(pid2, desc(startdate_c)) %>%
-    group_by(pid2) %>%
-    mutate((!!hh_inc_yr) := first(hh_inc)) %>%
-    ungroup() %>%
-    arrange(pid2, startdate_c) %>%
-    select(pid2, startdate_c, (!!hh_inc_yr))
-  
-  df <- left_join(df, df_inc, by = c("pid2", "startdate_c"))
-  
-  return(df)
-}
-
-yt_ss <- hh_inc_f(yt_ss, 12)
-yt_ss <- hh_inc_f(yt_ss, 13)
-yt_ss <- hh_inc_f(yt_ss, 14)
-yt_ss <- hh_inc_f(yt_ss, 15)
-yt_ss <- hh_inc_f(yt_ss, 16)
-yt_ss <- hh_inc_f(yt_ss, 17)
-
-
-### Set up income per capita
-yt_ss <- yt_ss %>%
-  group_by(hh_id_new_h, startdate_h) %>%
-  mutate(hh_size_new = n_distinct(pid2)) %>%
-  ungroup() %>%
-  mutate_at(vars(starts_with("hh_inc_1")), funs(cap = . / hh_size_new))
-
-#### END TEMP ####
+yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
 
 
 
 ### Acute events
 # ED visits (using broad definition)
 system.time(
-  ed <- dbGetQuery(db.claims51,
-                     "SELECT id AS mid, from_date, ed, ed_avoid_ca
-                     FROM PHClaims.dbo.mcaid_claim_summary
-                     WHERE ed = 1")
+  ed <- dbGetQuery(db.claims51, 
+                      "SELECT id, tcn, from_date, to_date, ed, ed_avoid_ca
+                      FROM dbo.mcaid_claim_summary
+                      WHERE ed = 1")
 )
 
+
 # Reformat and add column useful for counting up events
-ed <- ed %>% 
-  mutate(from_date = as.Date(from_date, origin = "1970-01-01")) %>%
+ed <- ed %>%
+  mutate_at(vars(from_date, to_date), funs(as.Date(., origin = "1970-01-01"))) %>%
   distinct()
+
 
 
 # Hospitalizations
@@ -380,20 +290,21 @@ inj <- inj %>%
 #### END BRING IN DATA SECITON ####
 
 
+
 #### POPULATION DATA ####
 # Need to count up person time by agency, yt and ss
-yt_pop_enroll <- lapply(seq(12, 17), popcount_all_yt_f, df = yt_elig_final)
+yt_pop_enroll <- lapply(seq(12, 17), popcount_all_yt_f, df = yt_mcaid_final)
 yt_pop_enroll <- as.data.frame(data.table::rbindlist(yt_pop_enroll))
 
 
 # Make simplified version of enrollment
-yt_elig_simple <- lapply(seq(12, 17), popcode_sum_f, df = yt_elig_final, demogs = T)
-yt_elig_simple <- as.data.frame(data.table::rbindlist(yt_elig_simple))
+yt_mcaid_simple <- lapply(seq(12, 17), popcode_sum_f, df = yt_mcaid_final, demogs = T)
+yt_mcaid_simple <- as.data.frame(data.table::rbindlist(yt_mcaid_simple))
 
 
 #### ACUTE EVENTS ####
 ### Join demographics and hospitalization events
-yt_elig_hosp <- left_join(yt_ss, hosp, by = c("mid" = "ID")) %>%
+yt_mcaid_hosp <- left_join(yt_ss, hosp, by = c("mid" = "ID")) %>%
   mutate(
     from_date = ifelse(from_date < startdate_c | from_date > enddate_c, NA, from_date),
     from_date = as.Date(from_date, origin = "1970-01-01")
@@ -404,16 +315,16 @@ yt_elig_hosp <- left_join(yt_ss, hosp, by = c("mid" = "ID")) %>%
 # Run numbers for hospitalizations
 
 
-yt_hosp_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_hosp, event = hosp_pers)
+yt_hosp_pers <- lapply(seq(12, 16), eventcount_yt_f, df = yt_mcaid_hosp, event = hosp_pers)
 yt_hosp_pers <- as.data.frame(data.table::rbindlist(yt_hosp_pers)) %>%
   mutate(indicator = "Persons with hospitalization")
-yt_hosp_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_hosp, event = hosp_cnt)
+yt_hosp_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_mcaid_hosp, event = hosp_cnt)
 yt_hosp_cnt <- as.data.frame(data.table::rbindlist(yt_hosp_cnt)) %>%
   mutate(indicator = "Hospitalizations")
 
 
 ### Join demographics and ED events
-yt_elig_ed <- left_join(yt_ss, ed, by = "mid") %>%
+yt_mcaid_ed <- left_join(yt_ss, ed, by = c("mid" = "id")) %>%
   mutate(
     from_date = as.Date(ifelse(from_date < startdate_c | from_date > enddate_c, 
                                NA, from_date), origin = "1970-01-01")
@@ -421,23 +332,23 @@ yt_elig_ed <- left_join(yt_ss, ed, by = "mid") %>%
   filter(is.na(from_date) | (from_date >= startdate_c & from_date <= enddate_c)) %>%
   distinct()
 
-yt_elig_ed <- yt_elig_ed %>% mutate(ed_year = year(from_date))
+yt_mcaid_ed <- yt_mcaid_ed %>% mutate(ed_year = year(from_date))
 
 
 # The code above creates rows with NA in the same period when there are ED visits
 # Need to strip out the NAs
-yt_ed_cnt <- yt_elig_ed %>%
+yt_ed_cnt <- yt_mcaid_ed %>%
   filter(!is.na(ed_year)) %>%
   group_by(pid2, startdate_c, ed_year) %>%
   summarise(ed_cnt = n()) %>%
   ungroup()
-yt_ed_avd_cnt <- yt_elig_ed %>%
+yt_ed_avd_cnt <- yt_mcaid_ed %>%
   filter(ed_avoid_ca == 1 & !is.na(ed_year)) %>%
   group_by(pid2, ed_year) %>%
   summarise(ed_avoid = n()) %>%
   ungroup()
 
-yt_elig_ed <- left_join(yt_elig_ed, yt_ed_cnt, 
+yt_mcaid_ed <- left_join(yt_mcaid_ed, yt_ed_cnt, 
                         by = c("pid2", "startdate_c", "ed_year")) %>%
   left_join(., yt_ed_avd_cnt, by = c("pid2", "ed_year")) %>%
   filter(!(is.na(ed_year) & ed_cnt > 0) | (is.na(ed_year) & is.na(ed_cnt))) %>%
@@ -454,25 +365,25 @@ gc()
 
 
 # Run numbers for ED
-yt_ed_pers <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_elig_ed, event = ed_pers)
+yt_ed_pers <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_mcaid_ed, event = ed_pers)
 yt_ed_pers <- as.data.frame(data.table::rbindlist(yt_ed_pers)) %>%
   mutate(indicator = "Persons with ED visits")
-yt_ed_cnt <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_elig_ed, event = ed_cnt)
+yt_ed_cnt <- lapply(seq(2012, 2017), eventcount_yt_f, df = yt_mcaid_ed, event = ed_cnt)
 yt_ed_cnt <- as.data.frame(data.table::rbindlist(yt_ed_cnt)) %>%
   mutate(indicator = "ED visits")
-yt_ed_avoid <- lapply(seq(12, 17), eventcount_yt_f, df = yt_elig_ed, event = ed_avoid)
+yt_ed_avoid <- lapply(seq(12, 17), eventcount_yt_f, df = yt_mcaid_ed, event = ed_avoid)
 yt_ed_avoid <- as.data.frame(data.table::rbindlist(yt_ed_avoid)) %>%
   mutate(indicator = "Avoidable ED visits")
 
 
 ### Join demographics and injury events
-yt_elig_inj <- left_join(yt_elig_final, inj, by = "mid") %>%
+yt_mcaid_inj <- left_join(yt_mcaid_final, inj, by = "mid") %>%
   filter(is.na(fr_sdt) | (fr_sdt >= startdate_c & fr_sdt <= enddate_c))
 # Set things up to count by demographics
-yt_elig_inj <- yt_elig_inj %>%
+yt_mcaid_inj <- yt_mcaid_inj %>%
   mutate(inj_year = year(fr_sdt),
          inj = ifelse(is.na(inj), 0, inj))
-yt_elig_inj <- yt_elig_inj %>%
+yt_mcaid_inj <- yt_mcaid_inj %>%
   group_by(mid, pid2, startdate_c, enddate_c, inj_year) %>%
   mutate(inj_cnt = sum(inj)) %>%
   ungroup() %>%
@@ -480,24 +391,24 @@ yt_elig_inj <- yt_elig_inj %>%
   distinct()
 
 # Run numbers for injuries
-yt_inj_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_elig_inj, event = inj_cnt)
+yt_inj_cnt <- lapply(seq(12, 16), eventcount_yt_f, df = yt_mcaid_inj, event = inj_cnt)
 yt_inj_cnt <- as.data.frame(data.table::rbindlist(yt_inj_cnt)) %>%
   mutate(indicator = "Unintentional injuries")
 
 
 ### Clean up files to save memory
-rm(yt_elig_hosp)
-rm(yt_elig_ed)
-rm(yt_elig_inj)
+rm(yt_mcaid_hosp)
+rm(yt_mcaid_ed)
+rm(yt_mcaid_inj)
 gc()
 
 
 #### CHRONIC CONDITIONS ####
 # Allocate each person for each year
-yt_elig_pop <- lapply(seq(12, 16), popcode_yt_f, df = yt_elig_final)
-yt_elig_pop <- as.data.frame(data.table::rbindlist(yt_elig_pop))
+yt_mcaid_pop <- lapply(seq(12, 16), popcode_yt_f, df = yt_mcaid_final)
+yt_mcaid_pop <- as.data.frame(data.table::rbindlist(yt_mcaid_pop))
 
-yt_conditions_elig <- left_join(yt_elig_pop, conditions, 
+yt_conditions_elig <- left_join(yt_mcaid_pop, conditions, 
                              by = c("year" = "cond_year", "mid" = "ID")) %>%
   mutate_at(vars(HTN, DIA, AST, COP, IHD, DEP, MEN, INJ),
             funs(ifelse(is.na(.), 0, .)))
@@ -597,7 +508,7 @@ htn_yr <- conditions %>% filter(HTN == 1) %>%
 # This section is used to created a specific dataset of people who have lived in Yesler Terrace or a scattered site
 # Code for more general SHA linkage is beyong this section
 
-yt_ss <- yt_elig_final %>%
+yt_ss <- yt_mcaid_final %>%
   filter(yt_ever == 1 | ss_ever == 1)
 
 # Make a list of unique Medicaid IDs in the data
@@ -649,28 +560,28 @@ yt_ss_joined <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedD
 
 #### JOIN PHA/ELIG TABLE WITH CLAIMS ####
 # Set up interval for enrollment
-yt_elig_final <- yt_elig_final %>%
+yt_mcaid_final <- yt_mcaid_final %>%
   mutate(int_c = interval(startdate_c, enddate_c))
 
-pha_ast <- left_join(yt_elig_final, ast, by = "mid") %>%
+pha_ast <- left_join(yt_mcaid_final, ast, by = "mid") %>%
   # Remove visits that fall outside of enrollment period
   filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
   #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
   distinct()
 
-pha_inj <- left_join(yt_elig_final, inj, by = "mid") %>%
+pha_inj <- left_join(yt_mcaid_final, inj, by = "mid") %>%
   # Remove visits that fall outside of enrollment period
   filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
   #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
   distinct()
 
-pha_htn <- left_join(yt_elig_final, htn, by = "mid") %>%
+pha_htn <- left_join(yt_mcaid_final, htn, by = "mid") %>%
   # Remove visits that fall outside of enrollment period
   filter((fr_sdt >= startdate_c & fr_sdt <= enddate_c) | is.na(fr_sdt)) %>%
   #select(pid2, pt12_o:pt16_o, yt, yt_old, age12_h, race_c, hisp_c, gender_c, start_housing, year, count) %>%
   distinct()
 
-yt_claims_ed <- left_join(yt_elig_final, ed, by = "mid") %>%
+yt_claims_ed <- left_join(yt_mcaid_final, ed, by = "mid") %>%
   # Remove visits that fall outside of enrollment period
   mutate_at(vars(ed_from, ed), funs(ifelse(ed_from >= startdate_c & ed_from <= enddate_c, ., NA))) %>%
   # Make year of service var
@@ -686,13 +597,13 @@ yt_claims_ed <- left_join(yt_elig_final, ed, by = "mid") %>%
 
 
 
-yt_claims_asthma <- left_join(yt_elig_final, asthma, by = "mid") %>%
+yt_claims_asthma <- left_join(yt_mcaid_final, asthma, by = "mid") %>%
   # Make year of service var
   mutate(ast_year = year(ast_from))
 
 
 # Do both in one go
-yt_claims <- left_join(yt_elig_final, ed, by = "mid") %>%
+yt_claims <- left_join(yt_mcaid_final, ed, by = "mid") %>%
   left_join(., asthma, by = "mid") %>%
   mutate(ed_year = year(ed_from), ast_year = year(ast_from))
 

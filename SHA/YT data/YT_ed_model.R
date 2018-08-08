@@ -27,7 +27,7 @@ library(ipw) # Used to make marginal structural models
 # Min of 30 days in a year to be included
 
 # Apply code to ensure 30+ days at YT/SS
-yt_ed <- lapply(seq(12, 17), popcode_yt_f, df = yt_elig_ed)
+yt_ed <- lapply(seq(12, 17), popcode_yt_f, df = yt_mcaid_ed)
 yt_ed <- as.data.frame(data.table::rbindlist(yt_ed)) %>%
   arrange(pid2, startdate_c) %>%
   rename(year = year_code)
@@ -49,7 +49,9 @@ yt_ed_cnt <- yt_ed %>%
 
 # Now sum person-time amd income by year and YT
 yt_pt_cnt <- yt_ed %>%
-  select(pid2, yt, year, starts_with("pt"), starts_with("hh_inc")) %>%
+  select(pid2, yt, year, pt12, pt13, pt14, pt15, pt16, pt17, 
+         hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap, hh_inc_15_cap, 
+         hh_inc_16_cap, hh_inc_17_cap) %>%
   distinct() %>%
   group_by(pid2, yt, year) %>%
   mutate_at(
@@ -57,7 +59,7 @@ yt_pt_cnt <- yt_ed %>%
     funs(ifelse(is.na(sum(., na.rm = T)), NA, sum(., na.rm = T)))
   ) %>%
   mutate_at(
-    vars(starts_with("hh_inc")),
+    vars(starts_with("hh_inc_1")),
     funs(ifelse(is.na(mean(., na.rm = T)), NA, mean(., na.rm = T)))
   ) %>%
   ungroup() %>%
@@ -95,8 +97,7 @@ yt_ed <- yt_ed %>%
 # Now do the same for income
 yt_ed <- melt(yt_ed,
               id.vars = c("year", "pid2", "yt", "race_c", "gender_c", 
-                          "age12", "length12", "ed_cnt", "ed_avoid",
-                          "pt_year", "pt"),
+                          "age12", "length12", "ed_cnt", "ed_avoid", "pt"),
               variable.name = "inc_yr", value.name = "inc")
 
 yt_ed <- yt_ed %>%
@@ -112,7 +113,7 @@ yt_ed <- yt_ed %>%
   group_by(pid2) %>%
   mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
                            (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
-         cens_r = ifelse((is.na(lead(year, 1)) & year < 2016) | 
+         cens_r = ifelse((is.na(lead(year, 1)) & year < 2017) | 
                            (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0)) %>%
   ungroup()
 
@@ -157,7 +158,7 @@ hist(yt_ed2$rate[yt_ed2$rate != 0])
 
 ### Plot ED visits over time
 yt_ed_sum <- yt_ed %>%
-  filter(year < 2017) %>%
+  filter(year < 2018) %>%
   group_by(yt, year) %>%
   summarise(ed_cnt = sum(ed_cnt, na.rm = T),
             pt = sum(pt, na.rm = T)) %>%

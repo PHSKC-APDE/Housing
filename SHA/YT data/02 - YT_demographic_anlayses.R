@@ -1,11 +1,16 @@
 ###############################################################################
-# Code to join examine demographics of Yesler Terrace residents
+# OVERVIEW:
+# Code to examine Yesler Terrace and Scattered sites data (housing and health)
+#
+# STEPS:
+# 01 - Set up YT parameters in combined PHA/Medicaid data
+# 02 - Conduct demographic analyses and produce visualizations ### (THIS CODE) ###
+# 03 - Bring in health conditions and join to demographic data
+# 04 - Conduct health condition analyses (multiple files)
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2017-06-30
-#
-# NOTE THAT THIS CODE IS A WORK IN PROGRESS
 #
 ###############################################################################
 
@@ -16,11 +21,9 @@ options(max.print = 700, scipen = 100, digits = 5)
 
 library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
-library(stringr) # Used to manipulate string data
 library(lubridate) # Used to manipulate dates
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 library(pastecs) # Used for summary statistics
-library(ggplot2) # Used to make plots
 library(ggmap) # Used to incorporate Google maps data
 library(rgdal) # Used to convert coordinates between ESRI and Google output
 
@@ -28,8 +31,17 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 
 #### Bring in combined PHA/Medicaid data with some demographics already run ####
-yt_elig_final <- readRDS(file = paste0(housing_path, 
-                                       "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
+yt_mcaid_final <- readRDS(file = paste0(housing_path, 
+                                       "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+
+# Retain only people living at YT or SS
+yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
+
+
+#### Analyses in this code ####
+# 1) General demographics of people in YT and SS at any point each year
+# 2) Counts and demographics of people in YT at the end of each year
+# X) Movement patterns in the data (Sankey and maps)
 
 
 ### Movements within data
@@ -50,136 +62,66 @@ yt_elig_final <- readRDS(file = paste0(housing_path,
 
 
 
-#### Look at demographics in 2012–2016 ####
+#### 1) Demographics of people in YT/SS at any point in the year, 2012–2017 ####
+
 ### Annual counts
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "year", unit = hh_id_new_h) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup()
+# Write function to look over all demogs of interest
+yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
 
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup()
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "gender2_h"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(gender2_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "agegrp_h"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(agegrp_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "race_h"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(race_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "disability_h"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(disability_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "time_prog"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(time_prog, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "enroll_type"), period = "year", unit = pid2) %>%
-  filter(yt == 1) %>% group_by(date) %>% mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>% select(enroll_type, date, period, count, total, percent)
+  unit2 <- enquo(unit)
+  
+  result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2017,
+                     period = period, unit = !!unit2) %>%
+    mutate(year = year(date)) %>%
+    group_by(year, yt) %>%
+    mutate(total = sum(pop, na.rm = T)) %>%
+    ungroup %>%
+    mutate(percent = round(pop / total*100, 1)) %>%
+    select(year, yt, !!!group, pop, pt_days, total, percent, unit, period)
+    
+  return(result)
+}
+
+overall <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
+
+hholds <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = hh_id_new_h)
+overall <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
+enroll <- yt_demogs_f(df = yt_ss, group = quos(yt, enroll_type), unit = pid2)
+gender <- yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2)
+age <- yt_demogs_f(df = yt_ss, group = quos(yt, agegrp_h), unit = pid2)
+race <- yt_demogs_f(df = yt_ss, group = quos(yt, race_c), unit = pid2)
+los <- yt_demogs_f(df = yt_ss, group = quos(yt, time_housing), unit = pid2)
 
 
-
-### Count for a given date
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "date", unit = hh_id_new_h) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(count)) %>%
-  ungroup()
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt"), period = "date", unit = pid2) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(count)) %>%
-  ungroup()
-
-
-### Look at gender each year
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "gender2_h"),
-       period = "date", unit = hh_id_new_h) %>%
-  filter(yt == 1 | ss == 1) %>%
-  group_by(date, yt) %>%
-  mutate(total = sum(count)) %>%
-  ungroup() %>%
-  mutate(percent = round(count / total*100, 1)) %>%
-  select(yt, gender2_h, date, period, count, total, percent) %>%
-  arrange(desc(yt), date)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "gender2_h"), 
-       period = "date", unit = pid2) %>%
-  filter(yt == 1 | ss == 1) %>%
-  group_by(date, yt) %>%
-  mutate(total = sum(count)) %>%
-  ungroup() %>%
-  mutate(percent = round(count / total*100, 1)) %>%
-  select(yt, gender2_h, date, period, count, total, percent) %>%
-  arrange(desc(yt), date)
-
-
-### Look at age groups each year
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "agegrp_h"), period = "date", unit = hh_id_new_h) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
-  mutate(percent = count / total) %>%
-  select(agegrp_h, date, period, count, total, percent)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "agegrp_h"), period = "date", unit = pid2) %>%
-  filter(yt == 1) %>%
-  group_by(date) %>%
-  mutate(total = sum(.$count)) %>%
-  ungroup() %>%
-  mutate(percent = count / total) %>%
-  select(agegrp_h, date, period, count, total, percent)
+popcount(yt_ss, group_var = quos(yt), period = "date")
+popcount2(yt_ss, group_var = quos(yt), period = "date")
 
 ### Look at age median and mean each year
-temp <- yt_elig_final %>%
-  filter(agency_new == "SHA") %>%
+temp <- yt_ss %>% select(pid2, yt, matches("age1[0-9]?$"), matches("pt1[0-9]?_h")) %>% 
   distinct(pid2, .keep_all = TRUE)
 
-stat.desc(temp$age12[temp$dec12_h == 1 & temp$yt == 1], basic = F)
-stat.desc(temp$age12[temp$dec12_h == 1 & temp$yt == 0], basic = F)
+stat.desc(temp$age12[temp$pt12_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age12[temp$pt12_h > 30 & temp$yt == 0], basic = F)
 
-stat.desc(temp$age13[temp$dec13_h == 1 & temp$yt == 1], basic = F)
-stat.desc(temp$age13[temp$dec13_h == 1 & temp$yt == 0], basic = F)
+stat.desc(temp$age13[temp$pt13_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age13[temp$pt13_h > 30 & temp$yt == 0], basic = F)
 
-stat.desc(temp$age14[temp$dec14_h == 1 & temp$yt == 1], basic = F)
-stat.desc(temp$age14[temp$dec14_h == 1 & temp$yt == 0], basic = F)
+stat.desc(temp$age14[temp$pt14_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age14[temp$pt14_h > 30 & temp$yt == 0], basic = F)
 
-stat.desc(temp$age15[temp$dec15_h == 1 & temp$yt == 1], basic = F)
-stat.desc(temp$age15[temp$dec15_h == 1 & temp$yt == 0], basic = F)
+stat.desc(temp$age15[temp$pt15_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age15[temp$pt15_h > 30 & temp$yt == 0], basic = F)
 
-stat.desc(temp$age16[temp$dec16_h == 1 & temp$yt == 1], basic = F)
-stat.desc(temp$age16[temp$dec16_h == 1 & temp$yt == 0], basic = F)
+stat.desc(temp$age16[temp$pt16_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age16[temp$pt16_h > 30 & temp$yt == 0], basic = F)
+
+stat.desc(temp$age17[temp$pt17_h > 30 & temp$yt == 1], basic = F)
+stat.desc(temp$age17[temp$pt17_h > 30 & temp$yt == 0], basic = F)
 
 rm(temp)
 
 
-### Look at race each year
-f_phacount(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "race_h"), period = "date", unit = hh_id_new_h) %>%
-  filter(yt == 1 | ss == 1) %>%
-  group_by(date, yt) %>%
-  mutate(total = sum(count)) %>%
-  ungroup() %>%
-  mutate(percent = round(count / total*100, 1)) %>%
-  select(yt, race_h, date, period, count, total, percent) %>%
-  arrange(desc(yt), date)
-counts(yt_elig_final, agency = "sha", group_var = c("agency_new", "yt", "ss", "race_h"),
-           period = "date", unit = pid2) %>%
-  filter(yt == 1 | ss == 1) %>%
-  group_by(date, yt) %>%
-  mutate(total = sum(count)) %>%
-  ungroup() %>%
-  mutate(percent = round(count / total*100, 1)) %>%
-  select(yt, race_h, date, period, count, total, percent) %>%
-  arrange(desc(yt), date)
-
-
-
-#### Summarize for Tableau ####
+### Summarize for Tableau
 # Monthly
 race_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
 agegrp_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)

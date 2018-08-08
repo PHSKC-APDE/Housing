@@ -1,11 +1,16 @@
 ###############################################################################
-# Code to join examine demographics of Yesler Terrace residents
+# OVERVIEW:
+# Code to examine Yesler Terrace and Scattered sites data (housing and health)
+#
+# STEPS:
+# 01 - Set up YT parameters in combined PHA/Medicaid data ### (THIS CODE) ###
+# 02 - Conduct demographic analyses and produce visualizations
+# 03 - Bring in health conditions and join to demographic data
+# 04 - Conduct health condition analyses (multiple files)
 #
 # Alastair Matheson (PHSKC-APDE)
 # alastair.matheson@kingcounty.gov
 # 2017-06-30
-#
-# NOTE THAT THIS CODE IS A WORK IN PROGRESS
 #
 ###############################################################################
 
@@ -16,17 +21,18 @@ options(max.print = 700, scipen = 100, digits = 5)
 
 library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
-library(dplyr) # Used to manipulate data
+library(tidyverse) # Used to manipulate data
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### Bring in combined PHA/Medicaid data with some demographics already run ####
-pha_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_elig_final.Rda"))
+pha_mcaid_final <- readRDS(file = paste0(housing_path, 
+                                         "/OrganizedData/pha_mcaid_final.Rda"))
 
 
 #### Set up key variables ####
 ### Yesler Terrace and scattered sites indicators
-yt_elig_final <- yesler(pha_elig_final)
+yt_mcaid_final <- yt_flag(pha_mcaid_final, unit = pid2)
 
 ### Movements within data
 # Use simplified system for describing movement
@@ -45,7 +51,7 @@ yt_elig_final <- yesler(pha_elig_final)
 #   Y = YT address (old unit)
 
 
-yt_elig_final <- yt_elig_final %>%
+yt_mcaid_final <- yt_mcaid_final %>%
   arrange(pid2, startdate_c, enddate_c) %>%
   mutate(
     # First ID the place for that row
@@ -70,7 +76,7 @@ yt_elig_final <- yt_elig_final %>%
 
 ### Age
 # Make groups of ages
-yt_elig_final <- yt_elig_final %>%
+yt_mcaid_final <- yt_mcaid_final %>%
   mutate_at(
     vars(age12, age13, age14, age15, age16, age17),
     funs(grp = case_when(
@@ -88,7 +94,7 @@ yt_elig_final <- yt_elig_final %>%
 
 ### Time in housing
 # Make groups of time in housing
-yt_elig_final <- yt_elig_final %>%
+yt_mcaid_final <- yt_mcaid_final %>%
   mutate_at(
     vars(length12, length13, length14, length15, length16),
     funs(grp = case_when(
@@ -103,21 +109,44 @@ yt_elig_final <- yt_elig_final %>%
 
 ### Household income
 # Add in latest income for each calendar year
+# Kludgy workaround for now, look upstream to better track annual income
+hh_inc_f <- function(df, year) {
+  pt <- rlang::sym(paste0("pt", quo_name(year)))
+  hh_inc_yr <- rlang::sym(paste0("hh_inc_", quo_name(year)))
+  
+  df_inc <- df %>%
+    filter((!!pt) > 0) %>%
+    arrange(pid2, desc(startdate_c)) %>%
+    group_by(pid2) %>%
+    mutate((!!hh_inc_yr) := first(hh_inc)) %>%
+    ungroup() %>%
+    arrange(pid2, startdate_c) %>%
+    select(pid2, startdate_c, (!!hh_inc_yr))
+  
+  df <- left_join(df, df_inc, by = c("pid2", "startdate_c"))
+  
+  return(df)
+}
+
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 12)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 13)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 14)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 15)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 16)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 17)
+
+
+### Set up income per capita
+yt_mcaid_final <- yt_mcaid_final %>%
+  group_by(hh_id_new_h, startdate_h) %>%
+  mutate(hh_size_new = n_distinct(pid2)) %>%
+  ungroup() %>%
+  mutate_at(vars(starts_with("hh_inc_1")), funs(cap = . / hh_size_new))
 
 
 
 ### Save point
-saveRDS(yt_elig_final, file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
-#yt_elig_final <- readRDS(file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_elig_final.Rds"))
-
-
-
-#### Output to Excel for use in Tableau ####
-# temp <- yt_elig_final
-# # Strip out identifying variables
-# temp <- temp %>% select(pid, gender_new_m6, race2, adult, senior, disability, DUAL_ELIG, COVERAGE_TYPE_IND, agency_new, 
-#                         startdate_h:enddate_o, startdate_c:enroll_type, yt:age16) %>%
-#   arrange(pid, startdate_c, enddate_c)
-# 
-# 
-# write.xlsx(temp, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/yt_elig_demogs.xlsx")
+saveRDS(yt_mcaid_final, file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+rm(pha_mcaid_final)
+rm(hh_inc_f)
+gc()
