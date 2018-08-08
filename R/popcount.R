@@ -32,11 +32,14 @@
 #' not present then the next default is enddate.
 #' @param birth A named variable that determines which date of birth field to 
 #' use when calculating age (normally dob_c or dob_h but can also use 
-#' hh_dob_m6 if calculating age at the household level).
+#' hh_dob_m6 if calculating age at the household level). Only needed if using an
+#' age grouping or the well-child flag.
 #' @param length A named variable that determines which start date to 
 #' use when calculating length of time in housing (normally start_housing).
 #' @param numeric Determine whether to recode age and length of time groups to
 #' be numeric or remain as character.
+#' @param wc Choose whether to just run pop counts for the well-child indicator
+#' age group (ages 3-6 years)
 #' @param ... Additional arguments for the \code{\link{time_range}} function
 #' (yearmin, yearmax, period, and date).
 #' 
@@ -51,16 +54,17 @@
 #' @export
 
 
-popcount <- function(df, 
-                      group_var = quos(agency_new),
-                      agency = NULL,
-                      enroll = NULL,
-                      unit = NULL,
-                      startdate = NULL,
-                      enddate = NULL,
-                      birth = NULL,
-                      length = NULL,
-                      numeric = TRUE,
+popcount <- function(df,
+                     group_var = quos(agency_new),
+                     agency = NULL,
+                     enroll = NULL,
+                     unit = NULL,
+                     startdate = NULL,
+                     enddate = NULL,
+                     birth = NULL,
+                     length = NULL,
+                     numeric = TRUE,
+                     wc = FALSE,
                       ...) {
   
   
@@ -149,7 +153,9 @@ popcount <- function(df,
   print(paste0("Grouping by: ", paste(group_var, collapse = ", ")))
   
   # Figure out which DOB field to use (if needed for age calcs)
-  if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior")) {
+  # Required if looking at well-child age
+  if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior") |
+      wc == TRUE) {
     if(!missing(birth)) {
       birth <- enquo(birth)
     } else if("dob_c" %in% names(df)) {
@@ -185,7 +191,8 @@ popcount <- function(df,
     
     
     # Recalculate age and age groups if they are one of the grouping variables
-    if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior")) {
+    if (str_detect(paste(group_var, collapse = ""), "agegrp_h|adult|senior") &
+        wc == FALSE) {
       df_temp <- df_temp %>% mutate(
         age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1)),
         adult = ifelse(age_temp >= 18, 1, 0),
@@ -200,6 +207,15 @@ popcount <- function(df,
           is.na(age_temp) ~ 99
         )
         ))
+    }
+    
+    if (wc == TRUE) {
+      df_temp <- df_temp %>%
+        mutate(
+          age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1))
+          ) %>%
+        filter(!is.na(age_temp) & age_temp >= 3 & age_temp <= 6) %>%
+        mutate(agegrp_h = 8)
     }
     
     # Recalculate length of stay groups if they are in the grouping variables
@@ -322,22 +338,29 @@ popcount <- function(df,
   phacount <- phacount %>%
     mutate(pop = if_else(is.na(pop), 0, as.numeric(pop)),
            period = quo_name(period),
-           unit = quo_name(unit))
+           unit = quo_name(unit),
+           wc_flag = if_else(wc == TRUE, 1, 0))
   
   
   if(numeric == F) {
-    phacount <- phacount %>%
-      mutate(
-        agegrp_h = case_when(
-          agegrp_h == 1 ~ "<18 years",
-          agegrp_h == 2 ~ "18 to <25 years",
-          agegrp_h == 3 ~ "25 to <45 years",
-          agegrp_h == 4 ~ "45 to <62 years",
-          agegrp_h == 5 ~ "62 to <65 years",
-          agegrp_h == 6 ~ "65+ years",
-          agegrp_h == 99 ~ NA_character_
+    if (wc == FALSE) {
+      phacount <- phacount %>%
+        mutate(
+          agegrp_h = case_when(
+            agegrp_h == 1 ~ "<18 years",
+            agegrp_h == 2 ~ "18 to <25 years",
+            agegrp_h == 3 ~ "25 to <45 years",
+            agegrp_h == 4 ~ "45 to <62 years",
+            agegrp_h == 5 ~ "62 to <65 years",
+            agegrp_h == 6 ~ "65+ years",
+            agegrp_h == 99 ~ NA_character_
+          )
         )
-      )
+    } else if (wc == TRUE) {
+      phacount <- phacount %>%
+        mutate(agegrp_h == "Children aged 3-6")
+    }
+
     
     if("time_housing" %in% names(phacount)) {
       phacount <- phacount %>%

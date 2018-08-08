@@ -6,7 +6,7 @@
 \usage{
 popcount(df, group_var = quos(agency_new), agency = NULL, enroll = NULL,
   unit = NULL, startdate = NULL, enddate = NULL, birth = NULL,
-  length = NULL, numeric = TRUE, ...)
+  length = NULL, numeric = TRUE, wc = FALSE, ...)
 }
 \arguments{
 \item{df}{A data frame}
@@ -41,13 +41,17 @@ not present then the next default is enddate.}
 
 \item{birth}{A named variable that determines which date of birth field to 
 use when calculating age (normally dob_c or dob_h but can also use 
-hh_dob_m6 if calculating age at the household level).}
+hh_dob_m6 if calculating age at the household level). Only needed if using an
+age grouping or the well-child flag.}
 
 \item{length}{A named variable that determines which start date to 
 use when calculating length of time in housing (normally start_housing).}
 
 \item{numeric}{Determine whether to recode age and length of time groups to
 be numeric or remain as character.}
+
+\item{wc}{Choose whether to just run pop counts for the well-child indicator
+age group (ages 3-6 years)}
 
 \item{...}{Additional arguments for the \code{\link{time_range}} function
 (yearmin, yearmax, period, and date).}
