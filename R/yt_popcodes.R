@@ -61,7 +61,7 @@ yt_popcode <- function(df, year, year_pre = "pt", year_suf = NULL,
   
   if (nchar(str(year)) == 2) {
     year_num = as.numeric(paste0(20, year))
-  } else if (nchar(str(year)) == 2) {
+  } else if (nchar(str(year)) == 4) {
     year_num = as.numeric(year)
   } else {
     stop("Invalid year format. Should be 2 or 4 digits")

@@ -93,18 +93,7 @@ yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL,
         1, 0),
       yt_old = ifelse(!!prop_id %in% c("1", "001") & !is.na(!!prop_id), 
                       1, 0),
-      yt_new = ifelse(
-        (!!prop_id %in% c("591", "738", "743") & !is.na(!!prop_id)) |
-          (!is.na(!!address) & 
-             # Kebero Court
-             (str_detect(!!address, "^1105[:space:]*[E]*[:space:]*F") |
-                # The Baldin
-                str_detect(!!address, "^1305[:space:]*[E]*[:space:]*F") |
-                # Hoa Mai
-                str_detect(!!address, "^221[:space:]*10TH[:space:]*AVE") |
-                # General new YT
-                str_detect(!!address, "^820[:space:]*[E]*[:space:]*YESLER"))),
-        1, 0),
+      yt_new = ifelse(yt == 1 & yt_old == 0, 1, 0),
       ss = ifelse(
         (!!prop_id %in% 
            c("050", "051", "052", "053", "054", "055", "056", "057",
