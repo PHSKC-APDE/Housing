@@ -5,6 +5,7 @@
 # STEPS:
 # 01 - Set up YT parameters in combined PHA/Medicaid data
 # 02 - Conduct demographic analyses and produce visualizations ### (THIS CODE) ###
+# 03 - Analyze movement patterns and geographic elements (optional)
 # 03 - Bring in health conditions and join to demographic data
 # 04 - Conduct health condition analyses (multiple files)
 #
@@ -13,6 +14,11 @@
 # 2017-06-30
 #
 ###############################################################################
+
+
+#### Analyses in this code ####
+# 1) General demographics of people in YT and SS at any point each year
+# 2) Drop off in number of people each year (i.e,. how much person-time, cut-off points)
 
 
 #### Set up global parameter and call in libraries ####
@@ -24,13 +30,17 @@ library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(pastecs) # Used for summary statistics
-library(ggmap) # Used to incorporate Google maps data
-library(rgdal) # Used to convert coordinates between ESRI and Google output
+library(medicaid) # helpful counting functions
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 
-#### Bring in combined PHA/Medicaid data with some demographics already run ####
+#### BRING IN DATA ###
+### Code for mapping field values
+demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/housing_mcaid%20demo%20codes.csv"), 
+                       header = TRUE, stringsAsFactors = FALSE)
+
+### Bring in combined PHA/Medicaid data with some demographics already run ####
 yt_mcaid_final <- readRDS(file = paste0(housing_path, 
                                        "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
 
@@ -38,181 +48,295 @@ yt_mcaid_final <- readRDS(file = paste0(housing_path,
 yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
 
 
-#### Analyses in this code ####
-# 1) General demographics of people in YT and SS at any point each year
-# 2) Counts and demographics of people in YT at the end of each year
-# X) Movement patterns in the data (Sankey and maps)
+#### FUNCTIONS ####
+# Relabel function
+relabel_f <- function(df) {
+  
+  # Turn this into a loop/apply at some point
+  
+  if ("agency" %in% names(df)) {
+    df$agency <- demo_codes$agency_new[match(df$agency, demo_codes$code)]
+  }
+  if ("enroll_type" %in% names(df)) {
+    df$enroll_type <- demo_codes$enroll_type[match(df$enroll_type, demo_codes$code)]
+  }
+  if ("dual" %in% names(df)) {
+    df$dual <- demo_codes$dual_elig_m[match(df$dual, demo_codes$code)]
+  }
+  if ("age_group" %in% names(df)) {
+    df$age_group <- demo_codes$agegrp[match(df$age_group, demo_codes$code)]
+  }
+  if ("gender" %in% names(df)) {
+    df$gender <- demo_codes$gender_c[match(df$gender, demo_codes$code)]
+  }
+  if ("ethn" %in% names(df)) {
+    df$ethn <- demo_codes$race_c[match(df$ethn, demo_codes$code)]
+  }
+  if ("voucher" %in% names(df)) {
+    df$voucher <- demo_codes$voucher_type_final[match(df$voucher, demo_codes$code)]
+  }
+  if ("subsidy" %in% names(df)) {
+    df$subsidy <- demo_codes$subsidy_type[match(df$subsidy, demo_codes$code)]
+  }
+  if ("operator" %in% names(df)) {
+    df$operator <- demo_codes$operator_type[match(df$operator, demo_codes$code)]
+  }
+  if ("portfolio" %in% names(df)) {
+    df$portfolio <- demo_codes$portfolio_final[match(df$portfolio, demo_codes$code)]
+  }
+  if ("length" %in% names(df)) {
+    df$length <- demo_codes$length_grp[match(df$length, demo_codes$code)]
+  }
+  
+  return(df)
+}
 
+# Write function to look over all demogs of interest
+yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
+  
+  unit2 <- enquo(unit)
+  origin <- "1970-01-01"
+  
+  result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2017,
+                     period = period, unit = !!unit2) %>%
+    mutate(date = ifelse(
+      period == "year", year(date),
+      ifelse(period == "quarter", quarter(date, with_year = T),
+             ifelse(period == "month", format(as.Date(date), "%Y-%m"),
+                    date)))
+    ) %>%
+    # case_when throwing evaluation error due to formats
+    # mutate(date = case_when(
+    #   period == "year" ~ year(date),
+    #   period == "quarter" ~ quarter(date, with_year = T),
+    #   period == "month" ~ as.Date(date, format = "%y%m"),
+    #   period == "date" ~ date,
+    #   TRUE ~ date
+    # )) %>%
+    group_by(date, yt) %>%
+    mutate(total = sum(pop, na.rm = T)) %>%
+    ungroup %>%
+    mutate(percent = round(pop / total*100, 1)) %>%
+    select(date, yt, !!!group, pop, pt_days, total, percent, unit, period)
+  
+  return(result)
+}
 
-### Movements within data
-# Use simplified system for describing movement
+# Summarise age using different persont-time thresholds
+# use long = T to generate output for Tableau
+age_summ_f <- function(df, year = 12, cutoff = 0, long = F) {
+  
+  ptx <- rlang::sym(paste0("pt", year, "_h"))
+  agex <- rlang::sym(paste0("age", year))
+  
+  if (long == F) {
+    output <- df %>%
+      filter(!!ptx > cutoff) %>%
+      distinct(pid2, yt, .keep_all = T) %>%
+      group_by(yt) %>%
+      summarise(median = median(!!agex, na.rm = T), 
+                mean = mean(!!agex, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(year = as.numeric(paste0(20, year))) %>%
+      select(year, yt, median, mean)
+  } else {
+    output <- df %>%
+      filter(!!ptx > cutoff) %>%
+      distinct(pid2, yt, .keep_all = T) %>%
+      group_by(yt) 
+    
+    median <- output %>%
+      summarise(data = median(!!agex, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(group = "Median (years)")
+    
+    mean <- output %>%
+      summarise(data = mean(!!agex, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(group = "Mean (years)")
+    
+    
+    output <- bind_rows(median, mean) %>%
+      mutate(date = as.numeric(paste0(20, year)),
+             category = "Age") %>%
+      select(date, yt, category, group, data)
+  }
+  
+  return(output)
+}
 
-# First letter of start_type describes previous address,
-# Second letter of start_type describes current address
-
-# First letter of end_type describes current address,
-# Second letter of end_type describes next address
-
-#   K = KCHA
-#   N = YT address (new unit)
-#   O = non-YT, non-scattered site SHA unit
-#   S = SHA scattered site
-#   U = unknown (i.e., new into SHA system, mostly people who only had Medicaid but not PHA coverage)
-#   Y = YT address (old unit)
 
 
 
 #### 1) Demographics of people in YT/SS at any point in the year, 2012–2017 ####
-
 ### Annual counts
-# Write function to look over all demogs of interest
-yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
+yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt), unit = hh_id_new_h)
 
-  unit2 <- enquo(unit)
-  
-  result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2017,
-                     period = period, unit = !!unit2) %>%
-    mutate(year = year(date)) %>%
-    group_by(year, yt) %>%
-    mutate(total = sum(pop, na.rm = T)) %>%
-    ungroup %>%
-    mutate(percent = round(pop / total*100, 1)) %>%
-    select(year, yt, !!!group, pop, pt_days, total, percent, unit, period)
-    
-  return(result)
-}
-
-overall <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
-
-hholds <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = hh_id_new_h)
-overall <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
-enroll <- yt_demogs_f(df = yt_ss, group = quos(yt, enroll_type), unit = pid2)
-gender <- yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2)
-age <- yt_demogs_f(df = yt_ss, group = quos(yt, agegrp_h), unit = pid2)
-race <- yt_demogs_f(df = yt_ss, group = quos(yt, race_c), unit = pid2)
-los <- yt_demogs_f(df = yt_ss, group = quos(yt, time_housing), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt, enroll_type), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt, agegrp_h), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt, race_c), unit = pid2)
+yt_demogs_f(df = yt_ss, group = quos(yt, time_housing), unit = pid2)
 
 
-popcount(yt_ss, group_var = quos(yt), period = "date")
-popcount2(yt_ss, group_var = quos(yt), period = "date")
+### Create summary stats for Tableau
+total <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2) %>%
+  mutate(category = "Total",
+         group = "Enrolled at any point in the year",
+         data = pop)
+gender <- yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2) %>%
+  mutate(category = "Gender", group = gender_c, data = percent)
+gender$group <- demo_codes$gender_c[match(gender$group, demo_codes$code)]
+ethn <- yt_demogs_f(df = yt_ss, group = quos(yt, ethn), unit = pid2) %>%
+  mutate(category = "Race/ethnicity", group = ethn, data = percent)
+age <- bind_rows(lapply(seq(12,17), age_summ_f, df = yt_ss, cutoff = 0, long = T))
 
-### Look at age median and mean each year
-temp <- yt_ss %>% select(pid2, yt, matches("age1[0-9]?$"), matches("pt1[0-9]?_h")) %>% 
-  distinct(pid2, .keep_all = TRUE)
+summ_stat <- bind_rows(total, gender, ethn, age) %>%
+  select(date, yt, category, group, data)
 
-stat.desc(temp$age12[temp$pt12_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age12[temp$pt12_h > 30 & temp$yt == 0], basic = F)
-
-stat.desc(temp$age13[temp$pt13_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age13[temp$pt13_h > 30 & temp$yt == 0], basic = F)
-
-stat.desc(temp$age14[temp$pt14_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age14[temp$pt14_h > 30 & temp$yt == 0], basic = F)
-
-stat.desc(temp$age15[temp$pt15_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age15[temp$pt15_h > 30 & temp$yt == 0], basic = F)
-
-stat.desc(temp$age16[temp$pt16_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age16[temp$pt16_h > 30 & temp$yt == 0], basic = F)
-
-stat.desc(temp$age17[temp$pt17_h > 30 & temp$yt == 1], basic = F)
-stat.desc(temp$age17[temp$pt17_h > 30 & temp$yt == 0], basic = F)
-
-rm(temp)
-
-
-### Summarize for Tableau
-# Monthly
-race_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
-agegrp_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
-disability_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
-gender_count_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "month", agency = "sha", unit = hh_id_new_h)
-
-race_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "month", agency = "sha", unit = pid2)
-agegrp_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "month", agency = "sha", unit = pid2)
-disability_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "month", agency = "sha", unit = pid2)
-gender_count_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "month", agency = "sha", unit = pid2)
-
-# Yearly
-race_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
-agegrp_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
-disability_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
-gender_count_yr_hh_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "year", agency = "sha", unit = hh_id_new_h)
-
-race_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "race2", "enroll_type"), period = "year", agency = "sha", unit = pid2)
-agegrp_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "agegrp", "enroll_type"), period = "year", agency = "sha", unit = pid2)
-disability_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "disability2", "enroll_type"), period = "year", agency = "sha", unit = pid2)
-gender_count_yr_ind_yt <- f_phacount(yt_elig_final, group_var = c("yt", "gender2", "enroll_type"), period = "year", agency = "sha", unit = pid2)
-
-# Combine files
-race_count <- bind_rows(race_count_hh_yt, race_count_ind_yt, race_count_yr_hh_yt, race_count_yr_ind_yt) %>% mutate(category = "Race", group = race2)
-agegrp_count <- bind_rows(agegrp_count_hh_yt, agegrp_count_ind_yt, agegrp_count_yr_hh_yt, agegrp_count_yr_ind_yt) %>% mutate(category = "Age group", group = agegrp)
-disability_count <- bind_rows(disability_count_hh_yt, disability_count_ind_yt, disability_count_yr_hh_yt, disability_count_yr_ind_yt) %>% 
-  mutate(category = "Disability", group = disability2)
-gender_count <- bind_rows(gender_count_hh_yt, gender_count_ind_yt, gender_count_yr_hh_yt, gender_count_yr_ind_yt) %>% mutate(category = "Gender", group = gender2)
-
-yt_count <- bind_rows(race_count, agegrp_count, disability_count, gender_count) %>%
-  mutate(medicaid = car::recode(enroll_type, "'b' = 'Medicaid'; 'h' = 'No Medicaid'"),
-         unit = car::recode(unit, "'hh_id_new_h' = 'Households'; 'pid2' = 'Individuals'"),
-         date_yr = ifelse(period == "year", year(date), NA))
-
-write.xlsx(yt_count, file = paste0("//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/YT enrollment count_", Sys.Date(), ".xlsx"))
-
-
-rm(list = ls(pattern = "^race"))
-rm(list = ls(pattern = "^age"))
-rm(list = ls(pattern = "^disability"))
-rm(list = ls(pattern = "^gender"))
+rm(total, gender, ethn, age)
 gc()
 
 
-#### Look at drop off by year ####
 
-# Pull out person time for each year (eventually fold into function below)
-yt12 <- yt_elig_final %>%
-  filter((yt == 1 | ss == 1) & !is.na(pt12) & enroll_type == "b") %>%
-  select(pid2, startdate_c, enddate_c, pt12, yt, enroll_type) %>%
-  # Sum up time in that year
-  group_by(pid2, yt) %>% mutate(pt_t = sum(pt12)) %>% ungroup() %>%
-  select(-startdate_c, -enddate_c, -pt12) %>% distinct()
+### Create line-level summaries for Tableau
+# Monthly household
+count_hh_mth <- yt_demogs_f(df = yt_ss, 
+                            group = quos(yt, enroll_type, dual_elig_m, gender_c, 
+                                         agegrp_h, ethn, time_housing), 
+                            unit = hh_id_new_h,
+                            period = "month")
 
-yt13 <- yt_elig_final %>%
-  filter((yt == 1 | ss == 1) & !is.na(pt13) & enroll_type == "b") %>%
-  select(pid2, startdate_c, enddate_c, pt13, yt, enroll_type) %>%
-  # Sum up time in that year
-  group_by(pid2, yt) %>% mutate(pt_t = sum(pt13)) %>% ungroup() %>%
-  select(-startdate_c, -enddate_c, -pt13) %>% distinct()
+# Monthly individual
+count_pid_mth <- yt_demogs_f(df = yt_ss, 
+                            group = quos(yt, enroll_type, dual_elig_m, gender_c, 
+                                         agegrp_h, ethn, time_housing), 
+                            unit = pid2,
+                            period = "month")
 
-yt14 <- yt_elig_final %>%
-  filter((yt == 1 | ss == 1) & !is.na(pt14) & enroll_type == "b" & dual_elig_m == "N") %>%
-  select(pid2, startdate_c, enddate_c, pt14, yt, enroll_type) %>%
-  # Sum up time in that year
-  group_by(pid2, yt) %>% mutate(pt_t = sum(pt14)) %>% ungroup() %>%
-  select(-startdate_c, -enddate_c, -pt14) %>% distinct()
+# Annual household
+count_hh_yr <- yt_demogs_f(df = yt_ss, 
+                            group = quos(yt, enroll_type, dual_elig_m, gender_c, 
+                                         agegrp_h, ethn, time_housing), 
+                            unit = hh_id_new_h,
+                            period = "year") %>%
+  mutate(date = as.character(date))
 
-yt15 <- yt_elig_final %>%
-  filter((yt == 1 | ss == 1) & !is.na(pt15) & enroll_type == "b") %>%
-  select(pid2, startdate_c, enddate_c, pt15, yt, enroll_type) %>%
-  # Sum up time in that year
-  group_by(pid2, yt) %>% mutate(pt_t = sum(pt15)) %>% ungroup() %>%
-  select(-startdate_c, -enddate_c, -pt15) %>% distinct()
-
-yt16 <- yt_elig_final %>%
-  filter((yt == 1 | ss == 1) & !is.na(pt16) & enroll_type == "b" & dual_elig_m == "N") %>%
-  select(pid2, startdate_c, enddate_c, pt16, yt, enroll_type) %>%
-  # Sum up time in that year
-  group_by(pid2, yt) %>% mutate(pt_t = sum(pt16)) %>% ungroup() %>%
-  select(-startdate_c, -enddate_c, -pt16) %>% distinct()
+# Annual individual
+count_pid_yr <- yt_demogs_f(df = yt_ss, 
+                             group = quos(yt, enroll_type, dual_elig_m, gender_c, 
+                                          agegrp_h, ethn, time_housing), 
+                             unit = pid2,
+                             period = "year") %>%
+  mutate(date = as.character(date))
 
 
+# Combine files
+yt_counts <- bind_rows(count_hh_mth, count_pid_mth, count_hh_yr, count_pid_yr)
 
+# Convert a few numerical values to string
+yt_counts$gender_c <- demo_codes$gender_c[match(yt_counts$gender_c, demo_codes$code)]
+yt_counts$agegrp_h <- demo_codes$agegrp[match(yt_counts$agegrp_h, demo_codes$code)]
+yt_counts$time_housing <- demo_codes$length_grp[match(yt_counts$time_housing, demo_codes$code)]
+
+
+# Collapse to a single total
+tabloop_total <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
+                           fixed = list_var(unit, date, period, enroll_type, dual_elig_m),
+                           loop = list_var(yt)) %>%
+  filter(pt_days_sum > 0) %>%
+  mutate(yt = as.numeric(group),
+         group_cat = "Total",
+         group = "Total")
+  
+tabloop_gender <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
+                              fixed = list_var(yt, unit, date, period, enroll_type, dual_elig_m),
+                              loop = list_var(gender_c)) %>%
+  filter(!(period == "month" & !str_detect(date, "-")))
+
+tabloop_age <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
+                             fixed = list_var(yt, unit, date, period, enroll_type, dual_elig_m),
+                             loop = list_var(agegrp_h)) %>%
+  filter(pt_days_sum > 0)
+
+tabloop_ethn <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
+                         fixed = list_var(yt, unit, date, period, enroll_type, dual_elig_m),
+                         loop = list_var(ethn)) %>%
+  filter(pt_days_sum > 0)
+
+tabloop_time <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
+                         fixed = list_var(yt, unit, date, period, enroll_type, dual_elig_m),
+                         loop = list_var(time_housing)) %>%
+  filter(pt_days_sum > 0)
+
+# Join dfs
+yt_counts_final <- bind_rows(tabloop_total, tabloop_gender, tabloop_age, 
+                             tabloop_ethn, tabloop_time)
+
+rm(list = ls(pattern = "^count_"))
+rm(list = ls(pattern = "^tabloop_"))
+gc()
+
+
+### Write Tableau=ready output
+# Set up Excel file for export
+wb_output <- createWorkbook()
+addWorksheet(wb_output, "yt_stats")
+addWorksheet(wb_output, "yt_demogs")
+
+# Add data
+writeData(wb_output, sheet = "yt_stats", x = summ_stat)
+writeData(wb_output, sheet = "yt_demogs", x = yt_counts_final)
+
+# Export workbook
+saveWorkbook(wb_output, file = paste0(housing_path, 
+                                      "/OrganizedData/Summaries/YT/YT enrollment count_", 
+                                      Sys.Date(), ".xlsx"),
+             overwrite = T)
+
+
+rm(list = ls(pattern = "^yt_count"))
+rm(summ_stat)
+gc()
+
+
+
+#### 2) Look at drop off by year ####
 # Make function to show the proportion of people still enrolled after x days
 # Group results by YT (yt = 1) or SS (yt = 0)
-surv_f <- function(df, x) {
-  df %>%
-    group_by(yt) %>%
-    mutate(num = ifelse(pt_t >= x, 1, 0)) %>%
-    summarise(prop = sum(num)/n())
+surv_f <- function(df, year = 2012) {
+  
+  # Set up year-related variables
+  ptx <- rlang::sym(paste0("pt", year-2000))
+  
+  if (year %in% c(2012, 2016)) {
+    max_day <- 366
+  } else {
+    max_day <- 365
+  }
+  
+  # Pull out person time for each year
+  df <- df %>%
+    filter((yt == 1 | ss == 1) & !is.na(!!ptx) & 
+             enroll_type == "b" & dual_elig_m == "N") %>%
+    select(pid2, startdate_c, enddate_c, !!ptx, yt, enroll_type) %>%
+    # Sum up time in that year
+    group_by(pid2, yt) %>% 
+    mutate(pt_t = sum(!!ptx, na.rm = T)) %>% 
+    ungroup() %>%
+    select(-startdate_c, -enddate_c, -!!ptx) %>% 
+    distinct()
+  
+  survx <- lapply(1:max_day, function(x) {
+    doy <- df %>%
+      group_by(yt) %>%
+      mutate(num = ifelse(pt_t >= x, 1, 0)) %>%
+      summarise(prop = sum(num)/n())
+    })
+  
+  survx <- bind_rows(survx)
+  return(survx)
 }
 
 # Set up number of days in a year
@@ -220,14 +344,15 @@ yr_leap <- data.frame(days = rep(1:366, each = 2))
 yr <- data.frame(days = rep(1:365, each = 2))
 
 # Apply function to all years
-surv12 <- cbind(yr_leap, bind_rows(lapply(1:366, surv_f, df = yt12)), year = 2012)
-surv13 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt13)), year = 2013)
-surv14 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt14)), year = 2014)
-surv15 <- cbind(yr, bind_rows(lapply(1:365, surv_f, df = yt15)), year = 2015)
-surv16 <- cbind(yr_leap, bind_rows(lapply(1:366, surv_f, df = yt16)), year = 2016)
+surv12 <- cbind(yr_leap, surv_f(df = yt_ss, year = 2012), year = 2012)
+surv13 <- cbind(yr, surv_f(df = yt_ss, year = 2013), year = 2013)
+surv14 <- cbind(yr, surv_f(df = yt_ss, year = 2014), year = 2014)
+surv15 <- cbind(yr, surv_f(df = yt_ss, year = 2015), year = 2015)
+surv16 <- cbind(yr_leap, surv_f(df = yt_ss, year = 2016), year = 2016)
+surv17 <- cbind(yr, surv_f(df = yt_ss, year = 2017), year = 2017)
 
 # Merge into single df
-surv <- bind_rows(surv12, surv13, surv14, surv15, surv16) %>%
+surv <- bind_rows(surv12, surv13, surv14, surv15, surv16, surv17) %>%
   mutate(year = as.factor(year),
          yt = factor(yt, levels = c(0, 1), labels = c("SS", "YT")))
 
@@ -238,6 +363,9 @@ ggplot(surv, aes(x = days, y = prop)) +
   geom_hline(yintercept = 0.9, linetype = "dashed", color = "#767F8B") +
   geom_vline(xintercept = 300, linetype = "dashed", color = "#767F8B") +
   facet_wrap( ~ yt, ncol = 1)
+
+rm(list = ls(pattern = "surv1"))
+rm(yr, yr_leap)
 
 
 ### Compare demographics by different cutoff groups
@@ -399,24 +527,5 @@ rm(temp)
 
 
 
-
-
-
-#### Mapping ####
-### Look at location to make geocoding looks ok
-yt_mapdata <- yt_elig_final %>% filter(dec12_h == 1 & yt == 1 & !is.na(X) & !is.na(Y)) %>% mutate(northing = X, easting = Y)
-yt_mapdata2 <- yt_mapdata %>% filter(str_detect(unit_concat, "110 8TH")) %>% select(unit_concat, X, Y) %>% mutate(northing = X, easting = Y)
-# Convert spatial coordinates to one that can go on Google maps (they are stored in 1983 HARN State Plane WA N FIPS 4601)
-coordinates(yt_mapdata) <- ~ easting + northing
-proj4string(yt_mapdata) <- CRS("+proj=lcc +lat_1=47.5 +lat_2=49.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000.0000000001 +y_0=0 +ellps=GRS80 +to_meter=0.3048006096012192 +no_defs")
-yt_mapdata <- spTransform(yt_mapdata, CRS("+init=epsg:4326"))
-
-mean(yt_mapdata$easting, na.rm = T)
-mean(yt_mapdata$northing, na.rm = T)
-
-# Add basemap
-yt_map <- get_map(location = c(lon = mean(yt_mapdata$easting, na.rm = T), lat = mean(yt_mapdata$northing, na.rm = T)), zoom = 16, crop = T)
-
-ggmap(yt_map) + geom_point(data = as.data.frame(coordinates(yt_mapdata)), aes(x = easting, y = northing))
 
 

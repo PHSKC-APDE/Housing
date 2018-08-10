@@ -28,20 +28,45 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### FUNCTIONS ####
 # Relabel function
-relabel_f <- function(data) {
-  data$agency <- demo_codes$agency_new[match(data$agency, demo_codes$code)]
-  data$enroll_type <- demo_codes$enroll_type[match(data$enroll_type, demo_codes$code)]
-  data$dual <- demo_codes$dual_elig_m[match(data$dual, demo_codes$code)]
-  data$age_group <- demo_codes$agegrp[match(data$age_group, demo_codes$code)]
-  data$gender <- demo_codes$gender_c[match(data$gender, demo_codes$code)]
-  data$ethn <- demo_codes$race_c[match(data$ethn, demo_codes$code)]
-  data$voucher <- demo_codes$voucher_type_final[match(data$voucher, demo_codes$code)]
-  data$subsidy <- demo_codes$subsidy_type[match(data$subsidy, demo_codes$code)]
-  data$operator <- demo_codes$operator_type[match(data$operator, demo_codes$code)]
-  data$portfolio <- demo_codes$portfolio_final[match(data$portfolio, demo_codes$code)]
-  data$length <- demo_codes$length_grp[match(data$length, demo_codes$code)]
+relabel_f <- function(df) {
   
-  return(data)
+  # Turn this into a loop/apply at some point
+  
+  if ("agency" %in% names(df)) {
+    df$agency <- demo_codes$agency_new[match(df$agency, demo_codes$code)]
+  }
+  if ("enroll_type" %in% names(df)) {
+    df$enroll_type <- demo_codes$enroll_type[match(df$enroll_type, demo_codes$code)]
+  }
+  if ("dual" %in% names(df)) {
+    df$dual <- demo_codes$dual_elig_m[match(df$dual, demo_codes$code)]
+  }
+  if ("age_group" %in% names(df)) {
+    df$age_group <- demo_codes$agegrp[match(df$age_group, demo_codes$code)]
+  }
+  if ("gender" %in% names(df)) {
+    df$gender <- demo_codes$gender_c[match(df$gender, demo_codes$code)]
+  }
+  if ("ethn" %in% names(df)) {
+    df$ethn <- demo_codes$race_c[match(df$ethn, demo_codes$code)]
+  }
+  if ("voucher" %in% names(df)) {
+    df$voucher <- demo_codes$voucher_type_final[match(df$voucher, demo_codes$code)]
+  }
+  if ("subsidy" %in% names(df)) {
+    df$subsidy <- demo_codes$subsidy_type[match(df$subsidy, demo_codes$code)]
+  }
+  if ("operator" %in% names(df)) {
+    df$operator <- demo_codes$operator_type[match(df$operator, demo_codes$code)]
+  }
+  if ("portfolio" %in% names(df)) {
+    df$portfolio <- demo_codes$portfolio_final[match(df$portfolio, demo_codes$code)]
+  }
+  if ("length" %in% names(df)) {
+    df$length <- demo_codes$length_grp[match(df$length, demo_codes$code)]
+  }
+  
+  return(df)
 }
 
 ### Population ###

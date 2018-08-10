@@ -126,6 +126,20 @@ pha_mcaid_final <- pha_mcaid_final %>%
   mutate_at(vars(age12:age17), funs(ifelse(. < 0, 0.01, .)))
 
 
+### Race/ethnicity
+pha_mcaid_final <- pha_mcaid_final %>%
+  mutate(ethn = case_when(
+    hisp_c == 1 & !is.na(hisp_c) ~ "Hispanic",
+    str_detect(race_c, "AIAN|AI/AN") ~ "AI/AN",
+    str_detect(race_c, "Asian") ~ "Asian",
+    str_detect(race_c, "Black") ~ "Black",
+    str_detect(race_c, "Multiple") ~ "Multiple",
+    str_detect(race_c, "NHPI|NH/PI") ~ "NH/PI",
+    str_detect(race_c, "White") ~ "White",
+    str_detect(race_c, "Other") ~ "Other"
+  ))
+  
+
 ### Length of time in housing
 pha_mcaid_final <- pha_mcaid_final %>%
   mutate(length12 = round(interval(start = start_housing, end = ymd(20121231)) / years(1), 1),

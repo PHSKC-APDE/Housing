@@ -5,6 +5,7 @@
 # STEPS:
 # 01 - Set up YT parameters in combined PHA/Medicaid data ### (THIS CODE) ###
 # 02 - Conduct demographic analyses and produce visualizations
+# 03 - Analyze movement patterns and geographic elements (optional)
 # 03 - Bring in health conditions and join to demographic data
 # 04 - Conduct health condition analyses (multiple files)
 #
@@ -146,7 +147,8 @@ yt_mcaid_final <- yt_mcaid_final %>%
 
 
 ### Save point
-saveRDS(yt_mcaid_final, file = paste0(housing_path, "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+saveRDS(yt_mcaid_final, file = paste0(housing_path, 
+                                      "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
 rm(pha_mcaid_final)
 rm(hh_inc_f)
 gc()
