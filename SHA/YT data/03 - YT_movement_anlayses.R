@@ -266,6 +266,109 @@ period_place_f <- function(df, startdate = NULL, enddate = NULL,
 }
 
 
+sankey_data_setup_f <- function(df, period = c("year", "quarter", "binannual"), 
+                                medicaid = T, kcha = T, ...) {
+  
+  # Set up parameters to send to function
+  period2 <- period
+  medicaid2 <- medicaid
+  kcha2 <- kcha
+  
+  
+  movement <- period_place_f(df, period = period2,
+                             place = place,
+                             enroll = enroll_type, 
+                             medicaid = medicaid2,
+                             kcha = kcha2)
+  
+  # Get a source and target for everyone
+  date <- as.Date(time_range(period = period2)[[1]], origin = "1970-01-01")
+  date_id <- seq(0, length(date) - 1)
+  dates <- data.frame(date_id, date)
+  
+  
+  # Make more readable enrollment types
+  if (medicaid == T & kcha == T) {
+    type <- c("SS: M", "SS: no M",
+              "YT: M", "YT: no M",
+              "SHA: M", "SHA: no M",
+              "KCHA", "M only",
+              "Not enrolled")
+    group <- c(1, 1, 2, 2, 3, 3, 4, 5, 6)
+  } else if (medicaid == T & kcha == F) {
+    type <- c("SS: M", "SS: no M",
+              "YT: M", "YT: no M",
+              "SHA: M", "SHA: no M",
+              "M only",
+              "Not enrolled")
+    group <- c(1, 1, 2, 2, 3, 3, 5, 6)
+  } else if (medicaid == F & kcha == T) {
+    type <- c("SS: M", "SS: no M",
+              "YT: M", "YT: no M",
+              "SHA: M", "SHA: no M",
+              "KCHA",
+              "Not enrolled")
+    group <- c(1, 1, 2, 2, 3, 3, 4, 6)
+  } else if (medicaid == F & kcha == F) {
+    type <- c("SS: M", "SS: no M",
+              "YT: M", "YT: no M",
+              "SHA: M", "SHA: no M",
+              "Not enrolled")
+    group <- c(1, 1, 2, 2, 3, 3, 6)
+  }
+  
+  types <- data.frame(place_new = seq(1, length(type)), group, type) %>%
+    mutate(type = as.character(type))
+  
+  # Use joint nodes for more efficient naming
+  nodes <- expand.grid(date, type) %>%
+    rename(date = Var1, type = Var2) %>%
+    mutate(type = as.character(type)) %>%
+    left_join(., dates, by = "date") %>%
+    left_join(., types, by = "type") %>%
+    arrange(date, place_new)
+  
+  nodes <- nodes %>% 
+    mutate(id = seq(0, nrow(nodes) - 1), 
+           combo = paste0(format(date, "%y-%m"), ": ", type))
+  
+  # Expand out so each person has a row per time point
+  unique_ids <- distinct(movement, pid2) %>% 
+    slice(rep(1:n(), each = length(date)))
+  
+  full_frame <- data.frame(date = rep(date, as.integer(summarise(movement, n_distinct(pid2)))),
+                           pid2 = unique_ids)
+  
+  # Join all together
+  movement2 <- left_join(full_frame, movement, by = c("date", "pid2")) %>%
+    mutate(place_new = ifelse(is.na(place_new), 9, place_new))
+  movement2 <- left_join(movement2, dates, by = "date")
+  movement2 <- left_join(movement2, nodes, by = c("date_id", "date", "place_new"))
+  
+  # Make summary version
+  movement_sum <- movement2 %>%
+    arrange(pid2, date) %>%
+    mutate(source = id,
+           target = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(id, 1)),
+           target_date = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(date_id, 1)),
+           target_group = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(group, 1))
+    ) %>%
+    filter(!is.na(target)) %>%
+    group_by(combo, source, target, target_date, target_group) %>%
+    summarise(value = n()) %>%
+    ungroup() %>%
+    arrange(source, target) %>%
+    left_join(., nodes, by = "combo") %>%
+    select(date, date_id, target_date, source, target, group, target_group, type, combo, place_new, value) %>%
+    # Remove not enrolled people if they are not enrolled immediately before/after
+    filter(!(group == 6 & target_group == 6))
+  
+  return_list = list(nodes = nodes, movement_sum = movement_sum)
+  return(return_list)
+}
+
+
+
 #### 1) Maps of where YT and SS residents live (mostly SS) ####
 ### NB. As of 2018-08-10 some YT addresses have been geocoded to incorrect coords
 #   Need to look into this and possible rerun geocoding.
@@ -331,161 +434,35 @@ yt_movement %>% filter(place == "Sm") %>%
 
 
 #### 3) Make a Sankey diagram ####
-
-sankey_data_setup_f <- function(df, period = c("year", "quarter", "binannual"), 
-                                medicaid = T, kcha = T, ...) {
-  
-  # Set up parameters to send to function
-  period2 <- period
-  medicaid2 <- medicaid
-  kcha2 <- kcha
-  
-  
-  movement <- period_place_f(df, period = period2,
-                             place = place,
-                             enroll = enroll_type, 
-                             medicaid = medicaid2,
-                             kcha = kcha2)
-  
-  # Get a source and target for everyone
-  date <- as.Date(time_range(period = period2)[[1]], origin = "1970-01-01")
-  date_id <- seq(0, length(date) - 1)
-  dates <- data.frame(date_id, date)
-  
-  
-  # Make more readable enrollment types
-  if (medicaid == T & kcha == T) {
-    type <- c("SS: M", "SS: no M",
-              "YT: M", "YT: no M",
-              "SHA: M", "SHA: no M",
-              "KCHA", "M only",
-              "Not enrolled")
-    group <- c(1, 1, 2, 2, 3, 3, 4, 5, 6)
-  } else if (medicaid == T & kcha == F) {
-    type <- c("SS: M", "SS: no M",
-              "YT: M", "YT: no M",
-              "SHA: M", "SHA: no M",
-              "M only",
-              "Not enrolled")
-    group <- c(1, 1, 2, 2, 3, 3, 4, 5)
-  } else if (medicaid == F & kcha == T) {
-    type <- c("SS: M", "SS: no M",
-              "YT: M", "YT: no M",
-              "SHA: M", "SHA: no M",
-              "KCHA",
-              "Not enrolled")
-    group <- c(1, 1, 2, 2, 3, 3, 4, 5)
-  } else if (medicaid == F & kcha == F) {
-    type <- c("SS: M", "SS: no M",
-              "YT: M", "YT: no M",
-              "SHA: M", "SHA: no M",
-              "Not enrolled")
-    group <- c(1, 1, 2, 2, 3, 3, 4)
-  }
-  
-  types <- data.frame(place_new = seq(1, length(type)), group, type) %>%
-    mutate(type = as.character(type))
-  
-  # Use joint nodes for more efficient naming
-  nodes <- expand.grid(date, type) %>%
-    rename(date = Var1, type = Var2) %>%
-    mutate(type = as.character(type)) %>%
-    left_join(., dates, by = "date") %>%
-    left_join(., types, by = "type") %>%
-    arrange(date, place_new)
-  
-  nodes <- nodes %>% 
-    mutate(id = seq(0, nrow(nodes) - 1), 
-           combo = paste0(format(date, "%y-%m"), ": ", type))
-  
-  # Expand out so each person has a row per time point
-  unique_ids <- distinct(movement, pid2) %>% 
-    slice(rep(1:n(), each = length(date)))
-  
-  full_frame <- data.frame(date = rep(date, as.integer(summarise(movement, n_distinct(pid2)))),
-                           pid2 = unique_ids)
-  
-  # Join all together
-  movement2 <- left_join(full_frame, movement, by = c("date", "pid2")) %>%
-    mutate(place_new = ifelse(is.na(place_new), 9, place_new))
-  movement2 <- left_join(movement2, dates, by = "date")
-  movement2 <- left_join(movement2, nodes, by = c("date_id", "date", "place_new"))
-  
-  # Make summary version
-  movement_sum <- movement2 %>%
-    arrange(pid2, date) %>%
-    mutate(source = id,
-           target = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(id, 1)),
-           target_date = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(date_id, 1)),
-           target_group = ifelse(pid2 != lead(pid2, 1) | is.na(lead(pid2, 1)), NA, lead(group, 1))
-    ) %>%
-    filter(!is.na(target)) %>%
-    group_by(combo, source, target, target_date, target_group) %>%
-    summarise(value = n()) %>%
-    ungroup() %>%
-    arrange(source, target) %>%
-    left_join(., nodes, by = "combo") %>%
-    select(date, date_id, target_date, source, target, group, target_group, type, combo, place_new, value)
-  
-  return(movement_sum)
-}
-
 ### Try annual status
-movement <- period_place_f(yt_mcaid_final, period = "year", place = place,
-                           enroll = enroll_type, medicaid = T, kcha = T)
-movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
-
-# Get a source and target for everyone
-date <- as.Date(time_range(period = "year")[[1]], origin = "1970-01-01")
-date_id <- seq(0, length(date) - 1)
-dates <- data.frame(date_id, date)
-
-
+sankey_data <- sankey_data_setup_f(df = yt_mcaid_final, period = "year",
+                                   medicaid = T, kcha = T)
 
 ### Try quarterly status
-movement <- period_place_f(yt_movement, period = "quarter", medicaid = F, kcha = F)
-movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
-
-# Get a source and target for everyone
-date <- as.Date(time_range(period = "quarter")[[1]], origin = "1970-01-01")
-date_id <- seq(0, length(date) - 1)
-dates <- data.frame(date_id, date)
-
+sankey_data <- sankey_data_setup_f(df = yt_mcaid_final, period = "quarter",
+                                   medicaid = T, kcha = T)
 
 ### Try six-monthly status
-movement <- period_place_f(filter(yt_movement, yt_ever == 1 | ss_ever == 1), period = "biannual", medicaid = T, kcha = T)
-movement <- movement %>% filter(!is.na(place_new)) %>% distinct(pid2, date, .keep_all = T)
-
-# Get a source and target for everyone
-date <- as.Date(time_range(period = "biannual")[[1]], origin = "1970-01-01")
-date_id <- seq(0, length(date) - 1)
-dates <- data.frame(date_id, date)
+sankey_data <- sankey_data_setup_f(df = yt_mcaid_final, period = "biannual",
+                                   medicaid = T, kcha = T)
 
 
-
-
-
-movement_sum <- sankey_data_setup_f(df = yt_mcaid_final, period = "year",
-                                    medicaid = T, kcha = T)
-
-
-
-
+# Optional: filter out Medicaid to Medicaid rows
+sankey_data$movement_sum <- sankey_data$movement_sum %>% 
+  filter(!(group == 5 & target_group == 5))
+# Optional: filter out not enrolled to Medicaid rows and vice-versa
+sankey_data$movement_sum <- sankey_data$movement_sum %>% 
+  filter(!(group == 6 & target_group == 5) & 
+           !(group == 5 & target_group == 6))
 
 # Optional: filter rows that don't deal with YT/SS
-movement_sum <- movement_sum %>% filter(group %in% c(1, 2) | target_group %in% c(1, 2))
-# Make sure data are in data frame
-movement_sum <- as.data.frame(movement_sum)
-
-# Only keep nodes that are in final data (not working for some reason)
-nodes2 <- bind_rows(distinct(movement_sum, source) %>% rename(id = source), 
-                    distinct(movement_sum, target) %>% rename(id = target)) %>%
-  distinct() %>%
-  left_join(., nodes, by = "id")
+sankey_data$movement_sum <- sankey_data$movement_sum %>% 
+  filter(group %in% c(1, 2) | target_group %in% c(1, 2))
 
 
 # View results
-yt_moves_local <- sankeyNetwork(Links = movement_sum, Nodes = nodes, 
+yt_moves_local <- sankeyNetwork(Links = sankey_data$movement_sum, 
+                                Nodes = sankey_data$nodes, 
                                 Source = "source", Target = "target", Value = "value", 
                                 NodeID = "combo", NodeGroup = "type", units = "ppl", 
                                 #iterations = 0,
@@ -502,13 +479,15 @@ htmlwidgets::onRender(
 )
 
 # Save results
-yt_moves <- sankeyNetwork(Links = movement_sum, Nodes = nodes, 
-              Source = "source", Target = "target", Value = "value", 
-              NodeID = "combo", NodeGroup = "type", units = "ppl", 
-              #iterations = 0,
-              fontSize = 14, nodeWidth = 50)
+yt_moves <- sankeyNetwork(Links = sankey_data$movement_sum, 
+                          Nodes = sankey_data$nodes,
+                          Source = "source", Target = "target", Value = "value",
+                          NodeID = "combo", NodeGroup = "type", units = "ppl",
+                          #iterations = 0,
+                          fontSize = 14, nodeWidth = 50)
 
-saveNetwork(yt_moves, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/SHA cleaning/movement patterns.html")
+saveNetwork(yt_moves, file = paste0(housing_path, 
+                                    "/OrganizedData/SHA cleaning/movement patterns.html"))
 
 
 
