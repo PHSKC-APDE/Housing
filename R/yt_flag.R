@@ -99,7 +99,7 @@ yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL,
            c("050", "051", "052", "053", "054", "055", "056", "057",
              "A42", "A43", "I42", "I43", "L42", "L43", "P42", "P43") &
            !is.na(!!prop_id)) |
-          (str_detect(!!prop_name, "SCATTERED")),
+          (str_detect(!!prop_name, "SCATTERED") & !(is.na(!!prop_name))),
         1, 0)
     )
   
