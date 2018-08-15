@@ -97,7 +97,7 @@ yt_mcaid_final <- yt_mcaid_final %>%
 # Make groups of time in housing
 yt_mcaid_final <- yt_mcaid_final %>%
   mutate_at(
-    vars(length12, length13, length14, length15, length16),
+    vars(length12, length13, length14, length15, length16, length17),
     funs(grp = case_when(
       . < 3 ~ "<3 years",
       between(., 3, 5.99) ~ "3–<6 years",
@@ -111,6 +111,7 @@ yt_mcaid_final <- yt_mcaid_final %>%
 ### Household income
 # Add in latest income for each calendar year
 # Kludgy workaround for now, look upstream to better track annual income
+# Also slow function, look to optimize
 hh_inc_f <- function(df, year) {
   pt <- rlang::sym(paste0("pt", quo_name(year)))
   hh_inc_yr <- rlang::sym(paste0("hh_inc_", quo_name(year)))
@@ -149,6 +150,23 @@ yt_mcaid_final <- yt_mcaid_final %>%
 ### Save point
 saveRDS(yt_mcaid_final, file = paste0(housing_path, 
                                       "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+
+#### Write to SQL for joining with claims ####
+dbRemoveTable(db.apde51, name = "housing_mcaid_yt")
+system.time(dbWriteTable(db.apde51, name = "housing_mcaid_yt", 
+                         value = as.data.frame(yt_mcaid_final_bk), overwrite = T,
+                         field.types = c(
+                           startdate_h = "date", enddate_h = "date", 
+                           startdate_m = "date", enddate_m = "date", 
+                           startdate_o = "date", enddate_o = "date", 
+                           startdate_c = "date", enddate_c = "date",
+                           dob_h = "date", dob_m = "date", dob_c = "date",
+                           hh_dob_h = "date",
+                           move_in_date = 'date', start_housing = "date", 
+                           start_pha = "date", start_prog = "date"))
+)
+
+
 rm(pha_mcaid_final)
 rm(hh_inc_f)
 gc()

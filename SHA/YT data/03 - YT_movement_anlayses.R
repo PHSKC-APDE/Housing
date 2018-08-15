@@ -489,5 +489,9 @@ yt_moves <- sankeyNetwork(Links = sankey_data$movement_sum,
 saveNetwork(yt_moves, file = paste0(housing_path, 
                                     "/OrganizedData/SHA cleaning/movement patterns.html"))
 
+rm(sankeyNetwork)
+rm(yt_moves)
+gc()
+
 
 

@@ -1,20 +1,110 @@
 ###############################################################################
-# Code to analyze ED visits in YT vs SS
+# OVERVIEW:
+# Code to examine Yesler Terrace and Scattered sites data (housing and health)
+#
+# STEPS:
+# 01 - Set up YT parameters in combined PHA/Medicaid data
+# 02 - Conduct demographic analyses and produce visualizations
+# 03 - Analyze movement patterns and geographic elements (optional)
+# 03 - Bring in health conditions and join to demographic data
+# 04 - Conduct health condition analyses (multiple files) ### (THIS CODE) ###
 #
 # Alastair Matheson (PHSKC-APDE)
+# alastair.matheson@kingcounty.gov
 # 2018-03-15
-#
-# NOTE THAT THIS CODE IS A WORK IN PROGRESS
 #
 ###############################################################################
 
 ##### Set up global parameter and call in libraries #####
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
+library(odbc) # Used to connect to SQL server
+library(housing) # contains many useful functions for analyses
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
 library(ipw) # Used to make marginal structural models
+
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+
+#### Connect to the SQL server ####
+db.claims51 <- dbConnect(odbc(), "PHClaims51")
+
+
+#### BRING IN DATA ####
+# Bring in combined PHA/Medicaid data with some demographics already run ####
+yt_mcaid_final <- readRDS(file = paste0(housing_path, 
+                                        "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+
+# Filter to only include YT and SS residents
+yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
+
+
+# ED visits (using broad definition)
+system.time(
+  ed <- dbGetQuery(db.claims51, 
+                   "SELECT id, tcn, from_date, to_date, ed
+                   FROM dbo.mcaid_claim_summary
+                   WHERE ed = 1")
+  )
+
+
+#### SET UP DATA FOR ANALYSIS ####
+### Join demographics and ED events
+yt_ss_ed <- left_join(yt_ss, ed, by = c("mid" = "id")) %>%
+  filter(ed == 1 & from_date >= startdate_c & from_date <= enddate_c &
+           agency_new == "SHA") %>%
+  mutate(ed_year = year(from_date))
+
+
+# Count number of ED visits each person had during each period
+## Need to fix concatenating quosures
+yt_ss_ed_sum <- bind_rows(lapply(seq(12, 18), count_acute_f,
+                   df = yt_ss_ed,
+                   group_var = quos(pid2, startdate_c, enddate_c),
+                   event = ed,
+                   person = F,
+                   unit = pid2))
+
+
+# Goal is to create cohort of people who spent time at YT or SS
+# Min of 30 continuous days at YT/SS in a year to be included
+yt_ss <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
+                           year_suf = NULL, agency = agency_new, 
+                           enroll_type = enroll_type, dual = dual_elig_m, 
+                           yt = yt, ss = ss, pt_cut = 30, min = F))
+yt_ss <- yt_ss %>% filter(pop_code %in% c(1, 2))
+
+
+# Combine person-time for each year
+yt_ss <- bind_rows(lapply(seq(12,17), function(x) {
+  ptx <- rlang::sym(paste0("pt", x))
+  
+  yt_ss <- yt_ss %>%
+    group_by(pid2, year_code, yt, ss) %>%
+    mutate(pt = sum(!!ptx)) %>%
+    ungroup()
+}))
+
+yt_ss <- yt_ss %>%
+  select(pid2, mid, year_code, yt, ss, ethn_c, gender_c, age12_grp:age17_grp,
+         length12_grp:length17_grp, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+  distinct()
+
+
+
+# Join back to overall population
+yt_ss_ed_join <- left_join(yt_ss, yt_ss_ed_sum,
+                           by = c("pid2", "startdate_c", "enddate_c",
+                                  "year_code" = "year")) %>%
+  mutate(count = ifelse(is.na(count), 0, count))
+
+
+
+
+
+
+
 
 
 #### Assumptions ####
