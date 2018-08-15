@@ -70,100 +70,6 @@ relabel_f <- function(df) {
 }
 
 ### Population ###
-# Function to count populations by all demographics (uses group_vars from housing package)
-popcount_all_f <- function(df, year) {
-  pt <- rlang::sym(paste0("pt", quo_name(year)))
-  agex <- rlang::sym(paste0("age", quo_name(year), "_num"))
-  lengthx <- rlang::sym(paste0("length", quo_name(year), "_num"))                   
-
-  df <- df %>%
-    filter(!is.na((!!pt))) %>%
-    group_by(agency_num, enroll_type_num, !!agex, gender_c, ethn_num, dual_elig_num,
-             voucher_num, subsidy_num, operator_num, portfolio_num, !!lengthx) %>%
-    summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
-    ungroup() %>%
-    mutate(agegp = !!agex,
-           gender_c = ifelse(is.na(gender_c), 9, gender_c),
-           length = !!lengthx,
-           year = paste0(20, year)) %>%
-    select(year, enroll_type_num, agegp, gender_c, ethn_num, agency_num, dual_elig_num,
-           voucher_num, subsidy_num, operator_num, portfolio_num, length,
-           pop, pt)
-  return(df)
-}
-
-# Function to count children aged 3–6 years for well child indicator
-popcount_wc_f <- function(df, year) {
-  pt <- rlang::sym(paste0("pt", quo_name(year)))
-  agex <- rlang::sym(paste0("age", quo_name(year)))
-  lengthx <- rlang::sym(paste0("length", quo_name(year), "_num"))                   
-  
-  df <- df %>%
-    mutate(agegp = ifelse((!!agex) >= 3 & (!!agex) <= 6, 1, 0)) %>%
-    filter(!is.na((!!pt)) & agegp == 1) %>%
-    group_by(enroll_type_num, agegp, gender_c, ethn_num, agency_new, dual_elig_num,
-             voucher_num, subsidy_num, operator_num, portfolio_num, !!lengthx) %>%
-    summarise(pop = n_distinct(pid2), pt = sum((!!pt))) %>%
-    ungroup() %>%
-    mutate(agegp = 36,
-           gender_c = ifelse(is.na(gender_c), 9, gender_c),
-           length = !!lengthx,
-           year = paste0(20, year)) %>%
-    select(year, enroll_type, agegp, gender_c, ethn_num, agency_new, dual_elig_num,
-           voucher_num, subsidy_num, operator_num, portfolio_num, length,
-           pop, pt)
-  return(df)
-}
-
-# Function to count up populations by a single demographic
-popcount_f <- function(df, demog, year) {
-  pt <- rlang::sym(paste0("pt", quo_name(year)))
-  
-  if (demog != "total" & demog != "unique") {
-    
-    if (demog == "gender") {
-      demog <- quo(gender_c)
-      cat <- "Gender"
-    } else if (demog == "race") {
-      demog <- quo(ethn_num)
-      cat <- "Race/ethnicity"
-    } else if (demog == "age") {
-      demog <- rlang::sym(paste0("age", quo_name(year), "_num"))
-      cat <- "Age"
-    }
-    
-    df <- df %>%
-      filter(!is.na((!!pt))) %>%
-      group_by(agency_num, enroll_type_num, dual_elig_num, !!demog) %>%
-      summarise(Population = n_distinct(pid2)) %>%
-      mutate(Category = cat, Year = paste0(20, year), Group = !!demog) %>%
-      ungroup() %>%
-      select (Year, agency_num, enroll_type_num, dual_elig_num, 
-              Category, Group, Population)
-    return(df)
-    
-  } else if (demog == "total") {
-    df <- df %>%
-      filter(!is.na((!!pt))) %>%
-      group_by(agency_num, enroll_type_num, dual_elig_num) %>%
-      summarise(Total_population = n_distinct(pid2)) %>%
-      mutate(Category = "Total", Year = paste0(20, year)) %>%
-      select (Year, agency_num, enroll_type_num, dual_elig_num, Category, Total_population)
-    return(df)
-    
-  } else if (demog == "unique") {
-    df <- df %>%
-      filter(!is.na((!!pt))) %>%
-      group_by(agency_num) %>%
-      summarise(Unique_population = n_distinct(pid2)) %>%
-      mutate(Category = "Total", Year = paste0(20, year)) %>%
-      select (Year, agency_num, Category, Unique_population)
-    
-    return(df)
-  }
-}
-
-
 # Function to assign a person to each group by year
 # (used for allocating people with chronic conditions to groups)
 chronic_pop_f <- function(df, year = 12) {
@@ -223,7 +129,7 @@ chronic_pop_f <- function(df, year = 12) {
              agency_sum == 3 |
              agency_sum == 0) %>%
     select(pid2, mid, agency_num, enroll_type_num, dual_elig_num, !!agex_quo, 
-           gender_c, ethn_num, voucher_num, subsidy_num, operator_num, 
+           gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
            portfolio_num, !!lengthx_quo, zip_c) %>%
     rename(age_group = !!agex_quo, length = !!lengthx_quo) %>%
     mutate(year = as.numeric(paste0("20", year)))
@@ -278,25 +184,25 @@ eventcount_acute_f <- function(df, event = NULL, number = TRUE,
   if (person == TRUE) {
     output <- output %>%
       distinct(pid2, agency_num, enroll_type_num, dual_elig_num, !!agex, 
-               gender_c, ethn_num, voucher_num, subsidy_num, operator_num, 
+               gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
                portfolio_num, !!lengthx, zip_c, .keep_all = T)
   }
   
   output <- output %>%
-    group_by(agency_num, enroll_type_num, dual_elig_num, !!agex, gender_c, ethn_num,
+    group_by(agency_num, enroll_type_num, dual_elig_num, !!agex, gender_num, ethn_num,
              voucher_num, subsidy_num, operator_num, portfolio_num, !!lengthx, zip_c) %>%
     summarise(count = sum(!!event_quo)) %>%
     ungroup() %>%
     mutate(age_group = !!agex,
            length = !!lengthx,
            year = as.numeric(paste0(20, year))) %>%
-    select(year, agency_num, enroll_type_num, dual_elig_num, age_group, gender_c, ethn_num,
+    select(year, agency_num, enroll_type_num, dual_elig_num, age_group, gender_num, ethn_num,
            voucher_num, subsidy_num, operator_num, portfolio_num, length, zip_c,
            count) %>%
     rename(agency = agency_num,
            enroll_type = enroll_type_num,
            dual = dual_elig_num,
-           gender = gender_c,
+           gender = gender_num,
            ethn = ethn_num,
            voucher = voucher_num,
            subsidy = subsidy_num,
@@ -331,18 +237,18 @@ eventcount_chronic_f <- function(df_chronic = chronic, df_pop = chronic_pop,
   output <- left_join(df_pop, cond, by = c("mid" = "id")) %>%
     mutate(condition = if_else(is.na(!!condition_quo), 0, as.numeric(!!condition_quo))) %>%
     group_by(year, agency_num, enroll_type_num, dual_elig_num, age_group,
-             gender_c, ethn_num, voucher_num, subsidy_num, operator_num,
+             gender_num, ethn_num, voucher_num, subsidy_num, operator_num,
              portfolio_num, length, zip_c) %>%
     summarise(count := sum(condition)) %>%
     ungroup() %>%
     select(year, agency_num, enroll_type_num, dual_elig_num, age_group, 
-           gender_c, ethn_num, voucher_num, subsidy_num, operator_num, 
+           gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
            portfolio_num, length, zip_c,
            count) %>%
     rename(agency = agency_num,
            enroll_type = enroll_type_num,
            dual = dual_elig_num,
-           gender = gender_c,
+           gender = gender_num,
            ethn = ethn_num,
            voucher = voucher_num,
            subsidy = subsidy_num,
@@ -387,6 +293,7 @@ kidney <- dbGetQuery(db.claims51, "SELECT * FROM dbo.mcaid_claim_chr_kidney_dis_
 chronic <- bind_rows(asthma, chf, copd, depression, diabetes, hypertension, ihd, kidney) %>%
   mutate_at(vars(from_date, to_date), funs(as.Date(., origin = "1970-01-01")))
 
+rm(asthma, chf, copd, depression, diabetes, hypertension, ihd, kidney)
 
 ### Bring in acute events (ED visits, hospitalizations, injuries, well child)
 acute <- dbGetQuery(db.claims51, 
@@ -413,10 +320,11 @@ acute <- acute %>%
 # This is horribly slow, figure out why
 pop_enroll_all <- popcount(
   pha_mcaid_demo, 
-  group_var = quos(agency_num, enroll_type_num, agegrp_h, gender_c, 
+  group_var = quos(agency_num, enroll_type_num, agegrp_h, gender_num, 
                 ethn_num, dual_elig_num, voucher_num, subsidy_num, 
                 operator_num, portfolio_num, time_housing, zip_c),
   unit = pid2, startdate = startdate_c, enddate = enddate_c, 
+  numeric = T,
   yearmin = 2012, yearmax = 2017, period = "year",
   wc = FALSE)
 
@@ -425,10 +333,11 @@ pop_enroll_all <- popcount(
 # This is also horribly slow
 pop_enroll_wc <- popcount(
   pha_mcaid_demo, 
-  group_var = quos(agency_num, enroll_type_num, agegrp_h, gender_c, 
+  group_var = quos(agency_num, enroll_type_num, agegrp_h, gender_num, 
                    ethn_num, dual_elig_num, voucher_num, subsidy_num, 
                    operator_num, portfolio_num, time_housing, zip_c),
-  unit = pid2, startdate = startdate_c, enddate = enddate_c, 
+  unit = pid2, startdate = startdate_c, enddate = enddate_c,
+  numeric = T,
   yearmin = 2012, yearmax = 2017, period = "year",
   wc = TRUE)
 
@@ -441,7 +350,7 @@ pop_enroll_combine <- pop_enroll_combine %>%
   rename(agency = agency_num,
          enroll_type = enroll_type_num,
          age_group = agegrp_h,
-         gender = gender_c,
+         gender = gender_num,
          ethn = ethn_num,
          dual = dual_elig_num,
          voucher = voucher_num,
@@ -618,7 +527,6 @@ write.xlsx(pop_enroll_combine_bivar, paste0(housing_path,
            sheetName = "population")
 
 rm(list = ls(pattern = "tabloop_"))
-rm(pop_enroll_combine_bivar)
 rm(pop_enroll_all)
 rm(pop_enroll_wc)
 gc()
@@ -848,13 +756,6 @@ health_events <- relabel_f(health_events)
 # Reorder columns
 health_events <- health_events %>% select(year, indicator, agency:count)
 
-### TEMP until line 10 of processing is rerun ###
-health_events <- health_events %>%
-  mutate(length = ifelse(agency == "Non-PHA", "Non-PHA", length))
-
-### TEMP until codes are rerun
-health_events <- health_events %>%
-  mutate(operator = if_else(operator == "", "Unknown", operator))
 
 
 #### SAVE FILES TO DISK TEMP ####

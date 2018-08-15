@@ -57,7 +57,7 @@ yt_mcaid_final <- yt_mcaid_final %>%
   mutate(
     # First ID the place for that row
     place = case_when(
-      is.na(agency_new) ~ "U",
+      is.na(agency_new) | agency_new == "Non-PHA" ~ "U",
       agency_new == "KCHA" & !is.na(agency_new) ~ "K",
       agency_new == "SHA" & !is.na(agency_new) & yt == 0 & ss == 0 ~ "O",
       agency_new == "SHA" & !is.na(agency_new) & yt_old == 1 ~ "Y",
@@ -115,7 +115,7 @@ yt_mcaid_final <- yt_mcaid_final %>%
 hh_inc_f <- function(df, year) {
   pt <- rlang::sym(paste0("pt", quo_name(year)))
   hh_inc_yr <- rlang::sym(paste0("hh_inc_", quo_name(year)))
-  
+
   df_inc <- df %>%
     filter((!!pt) > 0) %>%
     arrange(pid2, desc(startdate_c)) %>%
@@ -154,7 +154,7 @@ saveRDS(yt_mcaid_final, file = paste0(housing_path,
 #### Write to SQL for joining with claims ####
 dbRemoveTable(db.apde51, name = "housing_mcaid_yt")
 system.time(dbWriteTable(db.apde51, name = "housing_mcaid_yt", 
-                         value = as.data.frame(yt_mcaid_final_bk), overwrite = T,
+                         value = as.data.frame(yt_mcaid_final), overwrite = T,
                          field.types = c(
                            startdate_h = "date", enddate_h = "date", 
                            startdate_m = "date", enddate_m = "date", 

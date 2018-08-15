@@ -275,9 +275,7 @@ pha_mcaid_demo <- pha_mcaid_final %>%
   )
 
 
-# Need to make age and length recodes here
 # Function to recode ages
-# Remember that the unquoted column needs to be in parentheses
 agecode_f <- function(df, x) {
   col <- enquo(x)
   varname <- paste(quo_name(col), "num", sep = "_")
@@ -294,6 +292,7 @@ agecode_f <- function(df, x) {
     )
 }
 
+# Function to recode lengths
 lencode_f <- function(df, x, agency = agency_new) {
   col <- enquo(x)
   agency <- enquo(agency)

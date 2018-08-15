@@ -347,14 +347,7 @@ yt_pop_enroll <- bind_rows(lapply(seq(12, 17), function(year) {
            age_group = !!agex, length = !!lengthx,
            gender = gender_c, ethn = ethn_c) %>%
     select(year, agency, enroll_type, dual, yt, ss,
-           age_group, gender, ethn, length, pt, pop) %>%
-    mutate(gender = case_when(
-      gender == 1 ~ "Female",
-      gender == 2 ~ "Male",
-      gender == 3 ~ "Multiple",
-      is.na(gender) ~ "Unknown"
-    ))
-  
+           age_group, gender, ethn, length, pt, pop)
 }))
 
 
@@ -436,7 +429,7 @@ yt_pop_enroll_bivar <- yt_pop_enroll_bivar %>%
 # Add suppression
 yt_pop_enroll_bivar <- yt_pop_enroll_bivar %>%
   mutate(pop_suppressed = if_else(between(pop, 1, 4), 1, 0),
-         pop_supp = if_else(between(pop, 1, 4), NA_real_, pop))
+         pop = if_else(between(pop, 1, 4), NA_real_, pop))
 
 
 # Write out file (optional, also written with health data below)
@@ -569,7 +562,6 @@ rm(yt_mcaid_inj)
 #### CHRONIC CONDITIONS ####
 # Use the yt_coded_min data frame as the denominator pop
 
-
 ### Asthma
 asthma_pers <- lapply(seq(12, 17), yt_chronic_f, df_chronic = chronic, 
                       df_pop = yt_coded_min, agency = agency_min,
@@ -664,12 +656,6 @@ health_events <- health_events %>%
       enroll_type == "b" ~ "Both",
       enroll_type == "m" ~ "Medicaid only",
       TRUE ~ enroll_type
-    ),
-    gender = case_when(
-      gender == 1 ~ "Female",
-      gender == 2 ~ "Male",
-      gender == 3 ~ "Multiple",
-      is.na(gender) ~ "Unknown"
     ))
 
 
@@ -750,8 +736,8 @@ health_events_combined <- health_events_combined %>%
 
 # Add suppression
 health_events_combined <- health_events_combined %>%
-  mutate(count_suppress = if_else(between(count, 1, 4), 1, 0),
-         count_supp = if_else(between(count, 1, 4), NA_real_, count))
+  mutate(count_suppressed = if_else(between(count, 1, 4), 1, 0),
+         count = if_else(between(count, 1, 4), NA_real_, count))
 
 
 
