@@ -126,9 +126,19 @@ pha_mcaid_final <- pha_mcaid_final %>%
   mutate_at(vars(age12:age17), funs(ifelse(. < 0, 0.01, .)))
 
 
+### Gender
+pha_mcaid_final <- pha_mcaid_final %>%
+  mutate(gender_c = case_when(
+    gender_c == 1 ~ "Female",
+    gender_c == 2 ~ "Male",
+    gender_c == 3 ~ "Multiple",
+    TRUE ~ "Unknown"
+  ))
+
+
 ### Race/ethnicity
 pha_mcaid_final <- pha_mcaid_final %>%
-  mutate(ethn = case_when(
+  mutate(ethn_c = case_when(
     hisp_c == 1 & !is.na(hisp_c) ~ "Hispanic",
     str_detect(race_c, "AIAN|AI/AN") ~ "AI/AN",
     str_detect(race_c, "Asian") ~ "Asian",
@@ -153,6 +163,10 @@ pha_mcaid_final <- pha_mcaid_final %>%
   mutate_at(vars(length12:length17), funs(ifelse(. < 0, NA, .)))
 
 
+### Agency
+pha_mcaid_final <- pha_mcaid_final %>%
+  mutate(agency_new = ifelse(is.na(agency_new), "Non-PHA", agency_new))
+
 #### Save point ####
 saveRDS(pha_mcaid_final, file = paste0(housing_path, 
                                       "/OrganizedData/pha_mcaid_final.Rda"))
@@ -168,7 +182,8 @@ system.time(dbWriteTable(db.apde51, name = "housing_mcaid",
                            startdate_m = "date", enddate_m = "date", 
                            startdate_o = "date", enddate_o = "date", 
                            startdate_c = "date", enddate_c = "date",
-                           dob_h = "date", dob_m = "date", hh_dob_h = "date",
+                           dob_h = "date", dob_m = "date", dob_c = "date", 
+                           hh_dob_h = "date",
                            move_in_date = 'date', start_housing = "date", 
                            start_pha = "date", start_prog = "date"))
 )
@@ -181,9 +196,10 @@ system.time(dbWriteTable(db.apde51, name = "housing_mcaid",
 pha_mcaid_demo <- pha_mcaid_final %>%
   mutate(
     agency_num = case_when(
-      is.na(agency_new) ~ 0,
+      agency_new == "Non-PHA" ~ 0,
       agency_new == "KCHA" ~ 1,
-      agency_new == "SHA" ~ 2
+      agency_new == "SHA" ~ 2,
+      TRUE ~ 99
     ),
     dual_elig_num = case_when(
       dual_elig_m == "Y" ~ 1,
@@ -205,6 +221,12 @@ pha_mcaid_demo <- pha_mcaid_final %>%
       str_detect(race_c, "NHPI|NH/PI") ~ 6,
       str_detect(race_c, "White") ~ 7,
       str_detect(race_c, "Other") ~ 8
+    ),
+    gender_num = case_when(
+      gender_c == "Female" ~ 1,
+      gender_c == "Male" ~ 2,
+      gender_c == "Multiple" ~ 3,
+      TRUE ~ 99
     ),
     operator_num = case_when(
       operator_type == "NON-PHA OPERATED" ~ 1,
@@ -308,7 +330,7 @@ pha_mcaid_demo <- lencode_f(pha_mcaid_demo, length17)
 pha_mcaid_demo <- pha_mcaid_demo %>%
   select(mid, pid2, startdate_c, enddate_c, 
          dob_c, start_housing, zip_c, age12_num:age17_num,
-         agency_num, dual_elig_num, enroll_type_num, gender_c, ethn_num,
+         agency_num, dual_elig_num, enroll_type_num, gender_num, ethn_num,
          length12_num:length17_num, operator_num, portfolio_num, 
          subsidy_num, voucher_num, unit_zip_h, pt12:pt17)
 

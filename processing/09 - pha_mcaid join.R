@@ -579,7 +579,8 @@ temp_ext <- temp_ext %>%
         pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
           startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
           startdate_c == enddate_c & !is.na(startdate_c) & 
-          enroll_type == "m" & lag(enroll_type, 1) %in% c("b", "h") ~ 1,
+          ((enroll_type == "m" & lag(enroll_type, 1) %in% c("b", "h")) |
+             (enroll_type == "h" & lag(enroll_type, 1) %in% c("b", "m"))) ~ 1,
         pid2 == lag(pid2, 1) & !is.na(lag(pid2, 1)) & 
           startdate_c == lag(startdate_c, 1) & !is.na(lag(startdate_c, 1)) &
           startdate_c == enddate_c & !is.na(startdate_c) &
@@ -589,7 +590,8 @@ temp_ext <- temp_ext %>%
         pid2 == lead(pid2, 1) & !is.na(lead(pid2, 1)) & 
           startdate_c == lead(startdate_c, 1) & !is.na(lead(startdate_c, 1)) &
           startdate_c == enddate_c & !is.na(startdate_c) &
-          enroll_type == "m" & lead(enroll_type, 1) %in% c("b", "h") ~ 1,
+          ((enroll_type == "m" & lead(enroll_type, 1) %in% c("b", "h")) |
+             (enroll_type == "h" & lead(enroll_type, 1) %in% c("b", "m"))) ~ 1,
         # Drop rows where the enddate_c < startdate_c due to 
         # both data sources' dates ending at the same time
         enddate_c < startdate_c ~ 1,
@@ -611,19 +613,19 @@ temp_ext <- temp_ext %>%
   # are fully covered by an enroll_type == b
   # Also catches single day rows that now have enddate < startdate
   mutate(
-    drop = ifelse(
-      pid2 == lag(pid2, 1) &
-        startdate_c == lag(startdate_c, 1) &
-        enddate_c == lag(enddate_c, 1) &
-        enroll_type != "b",
-      1, 0),
-    drop = ifelse(
-      pid2 == lead(pid2, 1) &
-        startdate_c == lead(startdate_c, 1) &
-        enddate_c <= lead(enddate_c, 1) &
-        enroll_type != "b" &
-        lead(enroll_type, 1) == "b",
-      1, drop)
+    drop = case_when(
+      pid2 == lag(pid2, 1) & startdate_c == lag(startdate_c, 1) &
+        enddate_c == lag(enddate_c, 1) & lag(enroll_type, 1) == "b" & 
+        enroll_type != "b" ~ 1,
+      pid2 == lead(pid2, 1) & startdate_c == lead(startdate_c, 1) &
+        enddate_c <= lead(enddate_c, 1) & lead(enroll_type, 1) == "b" ~ 1,
+      pid2 == lag(pid2, 1) & startdate_c >= lag(startdate_c, 1) &
+        enddate_c <= lag(enddate_c, 1) & enroll_type != "b" &
+        lag(enroll_type, 1) == "b" ~ 1,
+      pid2 == lead(pid2, 1) & startdate_c >= lead(startdate_c, 1) &
+        enddate_c <= lead(enddate_c, 1) & enroll_type != "b" &
+        lead(enroll_type, 1) == "b" ~ 1,
+      TRUE ~ 0)
   ) %>%
   filter(drop == 0 | is.na(drop)) %>%
   select(-drop)
@@ -723,6 +725,7 @@ merge2 <- merge2 %>%
   group_by(pid2, startdate_c, enddate_c) %>%
   slice(1) %>%
   ungroup()
+gc()
 
 
 # All variables
