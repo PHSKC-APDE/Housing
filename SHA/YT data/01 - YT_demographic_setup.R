@@ -82,10 +82,10 @@ yt_mcaid_final <- yt_mcaid_final %>%
     vars(age12, age13, age14, age15, age16, age17),
     funs(grp = case_when(
       . < 18 ~ "<18",
-      between(., 18, 24.99) ~ "18–24",
-      between(., 25, 44.99) ~ "25–44",
-      between(., 45, 61.99) ~ "45–61",
-      between(., 62, 64.99) ~ "62–64",
+      between(., 18, 24.99) ~ "18-24",
+      between(., 25, 44.99) ~ "25-44",
+      between(., 45, 61.99) ~ "45-61",
+      between(., 62, 64.99) ~ "62-64",
       . >= 65 ~ "65+",
       is.na(.) ~ "Unknown"
     )
@@ -100,7 +100,7 @@ yt_mcaid_final <- yt_mcaid_final %>%
     vars(length12, length13, length14, length15, length16, length17),
     funs(grp = case_when(
       . < 3 ~ "<3 years",
-      between(., 3, 5.99) ~ "3–<6 years",
+      between(., 3, 5.99) ~ "3-<6 years",
       . >= 6 ~ "6+ years",
       is.na(.) ~ "Unknown"
     )
