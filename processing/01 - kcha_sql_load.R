@@ -626,7 +626,7 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property_List_with_Project_Code.xlsx"))
+kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, kcha_portfolio_codes_fn))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, 
                                  fields$PHSKC[match(names(kcha_portfolio_codes), 
                                                     fields$KCHA_modified)])
@@ -689,7 +689,7 @@ kcha_long <- kcha_long %>% distinct()
 ##### Remove temporary files #####
 rm(list = c("fields", "reshape_f", "kcha_path"))
 rm(hhold_size)
-rm(kcha_portfolio_codes)
+rm(list = c("kcha_portfolio_codes", "kcha_portfolio_codes_fn"))
 rm(kcha)
 rm(METADATA)
 rm(script)
