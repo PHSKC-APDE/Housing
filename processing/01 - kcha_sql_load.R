@@ -34,7 +34,7 @@ library(tidyverse) # Used to manipulate data
 library(RJSONIO)
 library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/al_test/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
 METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
