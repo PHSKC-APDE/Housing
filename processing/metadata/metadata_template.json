@@ -13,7 +13,8 @@
         "sha2c_fn": "file_name.type",
         "sha4a_fn": "file_name.type",
         "sha_vouch_type_fn": "file_name.type",
-        "sha_prog_codes_fn": "file_name.type"
+        "sha_prog_codes_fn": "file_name.type",
+        "sql": "TRUE if you're using this"
     },
     "kcha_data": {
         "kcha_path": "//path_to/KCHA_data_folder/",
@@ -26,7 +27,8 @@
         "panel_1_2017_fname": "file_name.type",
         "panel_2_2017_fname": "file_name.type",
         "panel_3_2017_fname": "file_name.type",
-        "kcha_eop_fname": "file_name.type"
+        "kcha_eop_fname": "file_name.type",
+        "sql": "TRUE if you're using this"
     }
 }
 

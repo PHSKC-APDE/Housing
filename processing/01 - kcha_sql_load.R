@@ -27,7 +27,7 @@
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
 library(housing) # contains many useful functions for cleaning
-#library(odbc) # Used to connect to SQL server
+library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
@@ -41,7 +41,9 @@ METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
 
 set_data_envr(METADATA,"kcha_data")
 
-#db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+if (sql == TRUE) {
+  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+}
 
 #####################################
 #### PART 1: RAW DATA PROCESSING ####
@@ -673,18 +675,19 @@ kcha_long <- char_f(kcha_long, property_id)
 kcha_long <- kcha_long %>% distinct()
 
 
-
+if (sql == TRUE) {
 ##### WRITE RESHAPED DATA TO SQL #####
 # May need to delete table first if data structure and columns have changed
-# dbRemoveTable(db.apde51, name = "kcha_reshaped")
-# dbWriteTable(db.apde51, name = "kcha_reshaped", 
-#              value = as.data.frame(kcha_long), overwrite = T,
-#              field.types = c(
-#                act_date = "date",
-#                admit_date = "date",
-#                dob = "date",
-#                hh_dob = "date"
-#              ))
+  dbRemoveTable(db.apde51, name = "kcha_reshaped")
+  dbWriteTable(db.apde51, name = "kcha_reshaped", 
+              value = as.data.frame(kcha_long), overwrite = T,
+              field.types = c(
+                act_date = "date",
+                admit_date = "date",
+                dob = "date",
+                hh_dob = "date"
+              ))
+}
 
 ##### Remove temporary files #####
 rm(list = c("fields", "reshape_f", "kcha_path"))

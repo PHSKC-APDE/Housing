@@ -31,68 +31,83 @@ library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
 
-sha_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA"
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"sha_data")
+
+if(sql == TRUE) {
+  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+}
 
 
 #### Bring in data ####
 sha3a_new <- fread(file = 
-                     file.path(sha_path, "Original",
-                               "3a_PH 2012-current Yardi 50058 Data_2018-04-20.csv"), 
+                     file.path(sha_path,
+                               sha3a_new_fn), 
                    na.strings = c("NA", " ", "", "NULL", "N/A"),
                    stringsAsFactors = F)
-sha3b_new <- fread(file = file.path(sha_path, "Original",
-                                       "3b_PH income 2012-current Yardi 50058_2018-04-20.csv"), 
+sha3b_new <- fread(file = file.path(sha_path,
+                                       sha3b_new_fn), 
                    na.strings = c("NA", " ", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
-sha5a_new <- fread(file = file.path(sha_path, "Original",
-                                       "5a_HCV 2006-current Elite 50058_2018-04-20.csv"), 
+sha5a_new <- fread(file = file.path(sha_path,
+                                       sha5a_new_fn), 
                    na.strings = c("NA", " ", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
-sha5b_new <- fread(file = file.path(sha_path, "Original",
-                                       "5b_HCV income 2006-current Elite 50058_2018-04-20.csv"),
+sha5b_new <- fread(file = file.path(sha_path,
+                                       sha5b_new_fn),
                    na.strings = c("NA", " ", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
 
 
 # Bring in suffix corrected SHA data
-sha1a <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "1a_PH 2004-2006_MLS 50058_2016-05-11.csv"), 
+sha1a <- fread(file = file.path(sha_path,
+                                   sha1a_fn), 
                na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
-sha1b <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "1b_PH income 2004-2006_MLS 50058_2016-02-16.csv"),
+sha1b <- fread(file = file.path(sha_path,
+                                   sha1b_fn),
                na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
-sha1c <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "1c_PH assets 2004-2006_MLS 50058_2016-02-16.csv"),
+sha1c <- fread(file = file.path(sha_path,
+                                   sha1c_fn),
                na.strings = c("NA", " ", "", "NULL", "N/A"), stringsAsFactors = F)
-sha2a <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "2a_PH 2007-2012_MLS 50058_2016-05-11.csv"),
+sha2a <- fread(file = file.path(sha_path,
+                                   sha2a_fn),
                na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
-sha2b <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "2b_PH income 2007-2012_MLS 50058_2016-02-16.csv"),
+sha2b <- fread(file = file.path(sha_path,
+                                   sha2b_fn),
                na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
-sha2c <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "2c_PH assets 2007-2012_MLS 50058_2016-02-16.csv"),
+sha2c <- fread(file = file.path(sha_path,
+                                   sha2c_fn),
                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
-sha4a <- fread(file = file.path(sha_path, "SuffixCorrected",
-                                   "4_HCV 2004-2006_MLS 50058_2016-05-25.csv"),
+sha4a <- fread(file = file.path(sha_path,
+                                   sha4a_fn),
                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 
 
 # Bring in voucher data
+
+### UW DATA 
+sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
+###
+
 sha_prog_codes <- read.xlsx(file.path(
-  sha_path, "Original", "Program codes and portfolios_2018-01-26.xlsx"), 2)
+  sha_path, sha_prog_codes_fn), 2)
 
 # Bring in portfolio codes
 sha_portfolio_codes  <- read.xlsx(file.path(
-  sha_path, "Original", "Program codes and portfolios_2018-01-26.xlsx"), 1)
+  sha_path, sha_prog_codes_fn), 1)
 
 
 #### PREP DATA SETS FOR JOINING ####
@@ -123,6 +138,13 @@ rm(df_dedups)
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 
+### UW DATA field names mappings are different?
+# fields <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
+
+# fields <- fields %>%
+#         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
+#         mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
+###
 
 # Get rid of spaces, characters, and capitals in existing names
 # Makes it easier to accommodate changes in names provided by SHA
@@ -159,10 +181,13 @@ sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new),
                                                     fields$SHA_new_hcv)])
 sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
                                                     fields$SHA_new_hcv)])
+sha5b_new <- sha5b_new %>% rename(inc=v9)
+
 sha_prog_codes <- setnames(sha_prog_codes, 
                            fields$PHSKC[match(names(sha_prog_codes), 
                                               fields$SHA_prog_port_codes)])
-
+sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), 
+                                        fields$SHA_new_hcv)])
 
 
 #### INCOME SECTIONS ####
@@ -199,11 +224,12 @@ inc_clean_f <- function(df) {
   ### Summarize income and assets differently depending on data format
   # Tested out summarise instead of mutate in first part. No faster.
   # Still need ways to optimize this code
+  # Removed 'increment' not in UW data
   if ("mbr_id" %in% names(df)) {
     df_inc <- df %>%
-      distinct(cert_id, mbr_id, increment, inc_code, 
+      distinct(cert_id, mbr_id, inc_code, 
                inc, inc_excl, inc_adj, inc_fixed_temp) %>%
-    group_by(cert_id, mbr_id, increment) %>%
+    group_by(cert_id, mbr_id) %>%
       summarise(
         inc = sum(inc, na.rm = T), 
         inc_excl = sum(inc_excl, na.rm = T),
@@ -217,18 +243,18 @@ inc_clean_f <- function(df) {
       ungroup()
 
     df_ass <- df %>%
-      distinct(cert_id, mbr_id, increment, asset_type, asset_val, asset_inc) %>%
-      group_by(cert_id, mbr_id, increment) %>%
+      distinct(cert_id, mbr_id, asset_type, asset_val, asset_inc) %>%
+      group_by(cert_id, mbr_id) %>%
       summarise(
-        asset_val = sum(asset_val, na.rm = T), 
+        asset_val = sum(as.numeric(asset_val), na.rm = T), 
         asset_inc = sum(asset_inc, na.rm = T)) %>%
       group_by(cert_id) %>%
       mutate(
-        hh_asset_val = sum(asset_val, na.rm = T), 
+        hh_asset_val = sum(as.numeric(asset_val), na.rm = T), 
         hh_asset_inc = sum(asset_inc, na.rm = T)) %>%
       ungroup()
     
-    df <- left_join(df_inc, df_ass, by = c("cert_id", "mbr_id", "increment"))
+    df <- left_join(df_inc, df_ass, by = c("cert_id", "mbr_id"))
     
   } else if ("incasset_id" %in% names(df) & "inc_mbr_num" %in% names(df)) {
     if ("inc" %in% names(df) & !("asset_val" %in% names(df))) {
@@ -253,7 +279,7 @@ inc_clean_f <- function(df) {
       df <- df %>%
         group_by(incasset_id, inc_mbr_num) %>%
         mutate(
-          asset_val = sum(asset_val, na.rm = T), 
+          asset_val = sum(as.numeric(asset_val), na.rm = T), 
           asset_inc = sum(asset_inc, na.rm = T)
         ) %>%
         ungroup() %>%
@@ -261,7 +287,7 @@ inc_clean_f <- function(df) {
         distinct() %>%
         group_by(incasset_id) %>%
         mutate(
-          hh_asset_val = sum(asset_val, na.rm = T), 
+          hh_asset_val = sum(as.numeric(asset_val), na.rm = T), 
           hh_asset_inc = sum(asset_inc, na.rm = T)
         ) %>%
           ungroup()
@@ -274,7 +300,7 @@ inc_clean_f <- function(df) {
           inc_excl = sum(inc_excl, na.rm = T),
           inc_adj = sum(inc_adj, na.rm = T),
           inc_fixed = min(inc_fixed_temp, na.rm = T),
-          asset_val = sum(asset_val, na.rm = T), 
+          asset_val = sum(as.numeric(asset_val), na.rm = T), 
           asset_inc = sum(asset_inc, na.rm = T)
         ) %>%
         ungroup() %>%
@@ -285,7 +311,7 @@ inc_clean_f <- function(df) {
           hh_inc = sum(inc, na.rm = T), 
           hh_inc_excl = sum(inc_excl, na.rm = T),
           hh_inc_adj = sum(inc_adj, na.rm = T),
-          hh_asset_val = sum(asset_val, na.rm = T), 
+          hh_asset_val = sum(as.numeric(asset_val), na.rm = T), 
           hh_asset_inc = sum(asset_inc, na.rm = T)
         ) %>%
         ungroup()
@@ -293,7 +319,7 @@ inc_clean_f <- function(df) {
   } else if ("incasset_id" %in% names(df) & !("inc_mbr_num" %in% names(df))) {
     df <- df %>%
       group_by(incasset_id) %>%
-      mutate(hh_asset_val = sum(asset_val, na.rm = T),
+      mutate(hh_asset_val = sum(as.numeric(asset_val), na.rm = T),
              hh_asset_inc = sum(asset_inc, na.rm = T)) %>%
       ungroup() %>%
       select(-asset_type, -asset_val, -asset_inc) %>%
@@ -652,7 +678,7 @@ sha <- sha %>%
   ungroup()
 
 
-
+if(sql == TRUE) {
 ##### Load to SQL server #####
 # May need to delete table first if data structure and columns have changed
 dbRemoveTable(db.apde51, name = "sha_combined")
@@ -663,7 +689,7 @@ dbWriteTable(db.apde51, name = "sha_combined",
                admit_date = "date",
                dob = "date"
              ))
-
+}
 
 ##### Remove temporary files #####
 rm(list = ls(pattern = "sha1"))
