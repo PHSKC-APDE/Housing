@@ -99,9 +99,10 @@ sha4a <- fread(file = file.path(sha_path,
 # Bring in voucher data
 
 ### UW DATA 
+if (UW == TRUE){
 sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
+}
 ###
-
 sha_prog_codes <- read.xlsx(file.path(
   sha_path, sha_prog_codes_fn), 2)
 
@@ -139,11 +140,13 @@ fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmher
          header = TRUE, stringsAsFactors = FALSE)
 
 ### UW DATA field names mappings are different?
+if (UW == TRUE) {
 fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
 
 fields_uw <- fields_uw %>%
          mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
          mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
+}
 ###
 
 # Get rid of spaces, characters, and capitals in existing names
@@ -190,9 +193,11 @@ sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new),
 sha_prog_codes <- setnames(sha_prog_codes, 
                            fields$PHSKC[match(names(sha_prog_codes), 
                                               fields$SHA_prog_port_codes)])
+
+# UW DATA
+if (UW == TRUE){
 sha_vouch_type <- data.table::setnames(sha_vouch_type, fields_uw$PHSKC[match(names(sha_vouch_type), 
                                         fields_uw$SHA_new_hcv)])
-# UW DATA
 sha_vouch_type <- sha_vouch_type %>%
   mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
                                        'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
@@ -201,6 +206,7 @@ sha_vouch_type <- sha_vouch_type %>%
                                        'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
                                        else = NA")),
           act_date=as.Date(act_date, origin = "1899-12-30")) # 1899 is needed because of an excel date bug
+}
 ###
 
 #### INCOME SECTIONS ####
@@ -372,6 +378,7 @@ sha3a_new <- sha3a_new %>%
 
 # UW DATA CODE
 # Add suffix columns to sha1a
+if(UW == TRUE) {
 sha1a.fix <- sha1a %>%
   filter(v56!="") %>%
   mutate(v57="",hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
@@ -417,6 +424,7 @@ names(sha2a.fix2) <- names(sha2a.good)
 
 sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
   mutate(mbr_num=as.integer(mbr_num))
+}
 ###
 
 # Join household, income, and asset tables
