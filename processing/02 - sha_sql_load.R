@@ -135,15 +135,15 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 
 ### UW DATA field names mappings are different?
-# fields <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
+fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
 
-# fields <- fields %>%
-#         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
-#         mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
+fields_uw <- fields_uw %>%
+         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
+         mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
 ###
 
 # Get rid of spaces, characters, and capitals in existing names
@@ -170,6 +170,11 @@ sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
 sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
 sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), 
                                                     fields$SHA_new_ph)])
+# Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
+colnames(sha3a_new)[10] <- "hh_lname"
+colnames(sha3a_new)[11] <- "hh_fname"
+colnames(sha3a_new)[12] <- "hh_mname"
+
 sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), 
                                                     fields$SHA_new_ph)])
 sha_portfolio_codes <- setnames(sha_portfolio_codes, 
@@ -181,14 +186,22 @@ sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new),
                                                     fields$SHA_new_hcv)])
 sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
                                                     fields$SHA_new_hcv)])
-sha5b_new <- sha5b_new %>% rename(inc=v9)
 
 sha_prog_codes <- setnames(sha_prog_codes, 
                            fields$PHSKC[match(names(sha_prog_codes), 
                                               fields$SHA_prog_port_codes)])
-sha_vouch_type <- data.table::setnames(sha_vouch_type, fields$PHSKC[match(names(sha_vouch_type), 
-                                        fields$SHA_new_hcv)])
-
+sha_vouch_type <- data.table::setnames(sha_vouch_type, fields_uw$PHSKC[match(names(sha_vouch_type), 
+                                        fields_uw$SHA_new_hcv)])
+# UW DATA
+sha_vouch_type <- sha_vouch_type %>%
+  mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
+                                       'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
+                                       'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
+                                       'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
+                                       'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
+                                       else = NA")),
+          act_date=as.Date(act_date, origin = "1899-12-30")) # 1899 is needed because of an excel date bug
+###
 
 #### INCOME SECTIONS ####
 # Need to do the following:
@@ -349,6 +362,7 @@ rm(income_assets)
 # Clean up mismatching variables
 sha2a <- yesno_f(sha2a, ph_rent_ceiling)
 sha2a <- mutate(sha2a, fhh_ssn = as.character(fhh_ssn))
+# Fix the variable mappings for this: SSN and fname, mname, lname,  
 sha3a_new <- sha3a_new %>%
   mutate(property_id = as.character(property_id),
          act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
@@ -356,6 +370,54 @@ sha3a_new <- sha3a_new %>%
          r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
   )
 
+# UW DATA CODE
+# Add suffix columns to sha1a
+sha1a.fix <- sha1a %>%
+  filter(v56!="") %>%
+  mutate(v57="",hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
+	select(-hh_fname,-mname)
+	
+names(sha1a.fix) <- names(sha1a)
+
+sha1a.fix <- sha1a.fix %>%
+  select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, lnamesuf = 57, fname:55)
+
+sha1a.good <- sha1a %>% filter(is.na(v56)) %>%
+	  			      mutate(hh_lnamesuf="", lnamesuf="") %>%
+  	  			    select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf,
+                  fname:fhh_ssn, -v56)
+
+sha1a <- rbind(sha1a.good,sha1a.fix) %>%
+  mutate(mbr_num=as.integer(mbr_num))
+
+# Add suffix columns sha2a
+sha2a.good <- sha2a %>%
+	filter(is.na(v57)) %>%
+	rename(hh_lnamesuf=v57, lnamesuf=v58) %>%
+  mutate(lnamesuf="") %>%
+  select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, 
+    lnamesuf,fname:fhh_ssn)
+
+sha2a.fix1 <-
+	sha2a %>%
+  filter(v57!="", is.na(v58)) %>%
+	mutate(lnamesuf=fname, hh_lnamesuf="") %>%
+  select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, 
+    lnamesuf, mname:v57)
+
+names(sha2a.fix1) <- names(sha2a.good)
+
+sha2a.fix2 <-
+	sha2a %>% filter(!is.na(v58)) %>%
+  	mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
+	  select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, 
+      lnamesuf, dob:v58)
+
+names(sha2a.fix2) <- names(sha2a.good)
+
+sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
+  mutate(mbr_num=as.integer(mbr_num))
+###
 
 # Join household, income, and asset tables
 sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
@@ -373,9 +435,31 @@ sha1 <- sha1 %>% mutate(sha_source = "sha1")
 sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
+### Clean column types before append ### change to match new mappings  check other things
+sha1 <- sha1 %>%
+        mutate(subs_type = as.character(subs_type),
+               hhold_size = as.integer(hhold_size),
+               rent_tenant = as.numeric(rent_tenant),
+               r_hisp = as.numeric(r_hisp),
+               hh_asset_val=as.numeric(hh_asset_val),
+               hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
+
+sha2 <- sha2 %>%
+          mutate(subs_type = as.character(subs_type),
+                 rent_tenant = as.numeric(rent_tenant),
+                 r_hisp = as.numeric(r_hisp),
+                 hh_asset_val=as.numeric(hh_asset_val),
+                 ph_rent_ceiling=as.integer(ph_rent_ceiling),
+                 hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
+
+sha3 <- sha3 %>%
+          mutate(subs_type = as.character(subs_type),
+                 unit_zip = as.character(unit_zip),
+                 rent_tenant = as.numeric(rent_tenant))
+
 # Append data and drop data fields not being used (data from SHA are blank)
-sha_ph <- bind_rows(sha1, sha2, sha3) %>%
-  select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
+sha_ph <- bind_rows(sha1, sha2, sha3) #%>%
+  #select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 
 # Fix more formats
 sha_ph <- sha_ph %>%
@@ -445,7 +529,8 @@ sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
 sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
 sha5 <- left_join(sha5a_new, sha5b_new, 
-                  by = c("cert_id", "mbr_id", "increment"))
+                  by = c("cert_id", "mbr_id"))
+sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
 sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 
 # Add source field to track where each row came from
@@ -453,17 +538,25 @@ sha4 <- sha4 %>% mutate(sha_source = "sha4")
 sha5 <- sha5 %>% mutate(sha_source = "sha5")
 
 # Append data
+# Fix column tyoe mismatch before append
+sha4 <- sha4 %>%
+          mutate(hh_asset_val = as.integer(hh_asset_val))
+
 sha_hcv <- bind_rows(sha4, sha5)
 
 
 #### JOIN PH AND HCV COMBINED FILES ####
 # Clean up mismatching variables
 sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi, 
-                  portability, disability, access_unit, access_req, 
-                  assist_tanf, assist_gen, assist_food, assist_mcaid_chip,
-                  assist_eitc)
+                  portability, disability) # access_unit, access_req, 
+#                  assist_tanf, assist_gen, assist_food, assist_mcaid_chip,
+#                  assist_eitc)
 
 #### Append data ####
+# Cleanup before append
+sha_hcv <- sha_hcv %>%
+            mutate(unit_zip = as.character(unit_zip))
+
 sha <- bind_rows(sha_ph, sha_hcv)
 
 
@@ -698,6 +791,14 @@ rm(list = ls(pattern = "sha3"))
 rm(list = ls(pattern = "sha4"))
 rm(list = ls(pattern = "sha5"))
 rm(list = ls(pattern = "sha_"))
+rm(list = ls(pattern = "hh_"))
+rm(field_name_mapping_fn)
+rm(inc_clean_f)
+rm(script)
+rm(fields_uw)
 rm(fields)
+rm(set_data_envr)
+rm(METADATA)
+rm(sql)
 gc()
 
