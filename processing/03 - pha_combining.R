@@ -43,9 +43,11 @@ system.time(kcha_long <- DBI::dbReadTable(db.apde51, "kcha_reshaped"))
 
 
 #### Fix up variable formats ####
-sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date, 
-                  mtw_admit_date, move_in_date)
-sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher))
+# Vars mtw_admit_date & move_in_date missing in UW files
+sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date)
+
+sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher),
+                      unit_zip = as.numeric(unit_zip))
 
 kcha_long <- date_ymd_f(kcha_long, act_date, admit_date, dob, hh_dob)
 
