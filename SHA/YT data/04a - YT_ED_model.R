@@ -23,18 +23,34 @@ library(housing) # contains many useful functions for analyses
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
+library(geepack) # Used for GEE models
+library(broom) # Calculates CIs for GEE models
 library(ipw) # Used to make marginal structural models
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### Connect to the SQL server ####
+db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
 #### BRING IN DATA ####
 # Bring in combined PHA/Medicaid data with some demographics already run ####
-yt_mcaid_final <- readRDS(file = paste0(housing_path, 
-                                        "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+# Only bring in necessary columns
+system.time(
+  yt_mcaid_final <- dbGetQuery(db.apde51, 
+                               "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
+                               gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
+                               age12_grp, age13_grp, age14_grp, age15_grp,
+                               age16_grp, age17_grp,
+                               agency_new, enroll_type, dual_elig_m, yt, yt_old,
+                               yt_new, ss,  yt_ever, ss_ever, place, start_type, end_type,
+                               length12_grp, length13_grp, length14_grp, 
+                               length15_grp, length16_grp, length17_grp, 
+                               hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
+                               hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
+                               FROM housing_mcaid_yt")
+  )
 
 # Filter to only include YT and SS residents
 yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
@@ -50,179 +66,264 @@ system.time(
 
 
 #### SET UP DATA FOR ANALYSIS ####
-### Join demographics and ED events
-yt_ss_ed <- left_join(yt_ss, ed, by = c("mid" = "id")) %>%
+# Goal is to create cohort of people who spent time at YT or SS
+# Min of 30 continuous days at YT/SS in a year to be included
+yt_ss_30 <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
+                           year_suf = NULL, agency = agency_new, 
+                           enroll_type = enroll_type, dual = dual_elig_m, 
+                           yt = yt, ss = ss, pt_cut = 30, min = F))
+yt_ss_30 <- yt_ss_30 %>% filter(pop_code %in% c(1, 2))
+
+
+# Join to see if person was in old YT properties or not and make new category
+yt_old_cnt <- bind_rows(lapply(seq(12, 17), function(x) {
+  pt <- rlang::sym(paste0("pt", x))
+  year_num = as.numeric(paste0(20, x))
+  
+  yt_old <- yt_mcaid_final %>%
+    filter(!!pt > 0 & yt_old == 1) %>%
+    mutate(year = year_num) %>%
+    distinct(pid2, year, yt_old)
+}))
+yt_old_cnt <- yt_old_cnt %>%
+  distinct(pid2) %>%
+  mutate(yt_orig = 1)
+
+yt_ss_30 <- left_join(yt_ss_30, yt_old_cnt, by = "pid2") %>%
+  mutate(yt_orig = ifelse(is.na(yt_orig), 0, yt_orig))
+  
+
+
+### Join demographics and ED events now that only YT and SS people are kept
+yt_ss_ed <- left_join(yt_ss_30, ed, by = c("mid" = "id")) %>%
   filter(ed == 1 & from_date >= startdate_c & from_date <= enddate_c &
-           agency_new == "SHA") %>%
+           agency_new == "SHA" & year(from_date) == year_code) %>%
   mutate(ed_year = year(from_date))
 
 
 # Count number of ED visits each person had during each period
-## Need to fix concatenating quosures
-yt_ss_ed_sum <- bind_rows(lapply(seq(12, 18), count_acute_f,
-                   df = yt_ss_ed,
-                   group_var = quos(pid2, startdate_c, enddate_c),
-                   event = ed,
-                   person = F,
-                   unit = pid2))
-
-
-# Goal is to create cohort of people who spent time at YT or SS
-# Min of 30 continuous days at YT/SS in a year to be included
-yt_ss <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
-                           year_suf = NULL, agency = agency_new, 
-                           enroll_type = enroll_type, dual = dual_elig_m, 
-                           yt = yt, ss = ss, pt_cut = 30, min = F))
-yt_ss <- yt_ss %>% filter(pop_code %in% c(1, 2))
+yt_ss_ed_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+                                 df = yt_ss_ed,
+                                 group_var = quos(pid2),
+                                 event = ed, event_year = ed_year,
+                                 unit = pid2, person = F))
 
 
 # Combine person-time for each year
-yt_ss <- bind_rows(lapply(seq(12,17), function(x) {
+yt_ss_30 <- bind_rows(lapply(seq(12,17), function(x) {
   ptx <- rlang::sym(paste0("pt", x))
+  year <- paste0(20, x)
   
-  yt_ss <- yt_ss %>%
+  yt_ss_30 <- yt_ss_30 %>%
+    filter(year_code == year) %>%
     group_by(pid2, year_code, yt, ss) %>%
     mutate(pt = sum(!!ptx)) %>%
     ungroup()
+  
+  yt_ss_30 <- yt_ss_30 %>%
+    arrange(pid2, startdate_c, enddate_c) %>%
+    group_by(pid2) %>%
+    slice(n()) %>%
+    ungroup()
 }))
 
-yt_ss <- yt_ss %>%
-  select(pid2, mid, year_code, yt, ss, ethn_c, gender_c, age12_grp:age17_grp,
-         length12_grp:length17_grp, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+
+# Only keep relevant columns (no need to keep SS since YT = 0 == SS)
+# Only need age and length from baseline (2012)
+yt_ss_30 <- yt_ss_30 %>%
+  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12_grp,
+         length12_grp, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+  rename(year = year_code) %>%
   distinct()
 
 
 
-# Join back to overall population
-yt_ss_ed_join <- left_join(yt_ss, yt_ss_ed_sum,
-                           by = c("pid2", "startdate_c", "enddate_c",
-                                  "year_code" = "year")) %>%
-  mutate(count = ifelse(is.na(count), 0, count))
+# Join ED back to overall population
+yt_ss_ed_join <- left_join(yt_ss_30, yt_ss_ed_sum,
+                           by = c("pid2", "year")) %>%
+  mutate(count = ifelse(is.na(count), 0, count)) %>%
+  rename(ed_count = count)
 
 
+#### TEMP UNTIL 01 - YT setup is rerun ####
+Encoding(yt_ss_ed_join$age12_grp) <- 'latin1'
+Encoding(yt_ss_ed_join$length12_grp) <- 'latin1'
 
 
-
-
-
-
-
-#### Assumptions ####
-# 1) Code run in YT_medicaid_analyses to set up functions (until moved into a package)
-# 2) Code run in YT_medicaid_analyses to join ED visits and yt_elig_final
-
-
-#### Set up data ####
-# Goal is to create cohort of people who spent time at YT or SS
-# Min of 30 days in a year to be included
-
-# Apply code to ensure 30+ days at YT/SS
-yt_ed <- lapply(seq(12, 17), popcode_yt_f, df = yt_mcaid_ed)
-yt_ed <- as.data.frame(data.table::rbindlist(yt_ed)) %>%
-  arrange(pid2, startdate_c) %>%
-  rename(year = year_code)
-
-yt_ed <- yt_ed %>% filter(pop_code %in% c(1, 2))
-
-
-### Remove extra rows
-# Sum ED visits by year and YT (already have restricted to only ppl in housing
-# and Medicaid who were not duals and were at YT or SS - using popcode above)
-yt_ed_cnt <- yt_ed %>%
-  filter(ed_year == year) %>%
-  group_by(pid2, yt, year, ed_year) %>%
-  summarise_at(
-    vars(ed_cnt, ed_avoid),
-    funs(ifelse(is.na(sum(., na.rm = T)), NA, sum(., na.rm = T)))
-    ) %>%
-  ungroup()
-
-# Now sum person-time amd income by year and YT
-yt_pt_cnt <- yt_ed %>%
-  select(pid2, yt, year, pt12, pt13, pt14, pt15, pt16, pt17, 
-         hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap, hh_inc_15_cap, 
-         hh_inc_16_cap, hh_inc_17_cap) %>%
-  distinct() %>%
-  group_by(pid2, yt, year) %>%
-  mutate_at(
-    vars(starts_with("pt")),
-    funs(ifelse(is.na(sum(., na.rm = T)), NA, sum(., na.rm = T)))
-  ) %>%
-  mutate_at(
-    vars(starts_with("hh_inc_1")),
-    funs(ifelse(is.na(mean(., na.rm = T)), NA, mean(., na.rm = T)))
-  ) %>%
-  ungroup() %>%
-  distinct()
-
-# Join back and restrict to relevant variables
-yt_ed <- yt_ed %>%
-  distinct(pid2, year, yt, race_c, gender_c, age12, length12) %>%
-  left_join(., yt_pt_cnt, by = c("pid2", "yt", "year")) %>%
-  left_join(., yt_ed_cnt, by = c("pid2", "yt", "year")) %>%
-  mutate_at(vars(ed_cnt, ed_avoid),
-            funs(ifelse(is.na(.), 0, .))) %>%
-  filter(is.na(ed_year) | ed_year == year) %>%
-  select(-ed_year) %>%
-  distinct()
-
-
-# Group together time at YT or SS (mostly SS) in a year
-# Need to reshape data and get time in one column
-yt_ed <- melt(yt_ed,
-               id.vars = c("year", "pid2", "yt", "race_c", "gender_c", 
-                           "age12", "length12", "ed_cnt", "ed_avoid",
-                           "hh_inc_12_cap", "hh_inc_13_cap", "hh_inc_14_cap", 
-                           "hh_inc_15_cap", "hh_inc_16_cap", "hh_inc_17_cap"),
-               variable.name = "pt_yr", value.name = "pt")
-
-# Format and summarize
-yt_ed <- yt_ed %>%
-  mutate(pt_yr = as.numeric(paste0("20", str_sub(pt_yr, -2, -1)))) %>%
-  filter(year == pt_yr) %>%
-  arrange(pid2, year, pt) %>%
-  select(-pt_yr)
-
-
-# Now do the same for income
-yt_ed <- melt(yt_ed,
-              id.vars = c("year", "pid2", "yt", "race_c", "gender_c", 
-                          "age12", "length12", "ed_cnt", "ed_avoid", "pt"),
+### Need to reshape household income vars in a single column
+yt_ss_ed_join <- melt(yt_ss_ed_join,
+              id.vars = c("year", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
+                          "age12_grp", "length12_grp", "pt", "ed_count"),
               variable.name = "inc_yr", value.name = "inc")
 
-yt_ed <- yt_ed %>%
+# Format and summarize
+# Need distinct as there were multiple income group combos per year
+yt_ss_ed_join <- yt_ss_ed_join %>%
   mutate(inc_yr = as.numeric(paste0("20", str_sub(inc_yr, -6, -5)))) %>%
   filter(year == inc_yr) %>%
   arrange(pid2, year, pt) %>%
-  select(-inc_yr)
-  
+  select(-inc_yr) %>%
+  distinct()
 
-### Set up censoring
-yt_ed <- yt_ed %>%
+
+### Set up censoring and most recent hh_inc per capita
+yt_ss_ed_join <- yt_ss_ed_join %>%
   arrange(pid2, year) %>%
   group_by(pid2) %>%
   mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
                            (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
          cens_r = ifelse((is.na(lead(year, 1)) & year < 2017) | 
-                           (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0)) %>%
+                           (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0),
+         # Take first non-missing hh_inc
+         inc_min = inc[which(!is.na(inc))[1]]
+         ) %>%
   ungroup()
 
 
 ### Set up for modeling
-yt_ed2 <- yt_ed %>%
+yt_ed <- yt_ss_ed_join %>%
   arrange(pid2, yt, year) %>%
   group_by(pid2, yt) %>%
   mutate(timevar = row_number() - 1) %>%
   ungroup() %>%
-  mutate(rate = case_when(
-    year %in% c(2012, 2016) ~ ed_cnt / (pt / 366),
-    TRUE ~ ed_cnt / (pt / 365)
-    )) %>%
-  filter(!(is.na(race_c) | is.na(gender_c) | 
-             is.na(age12) | is.na(length12) | is.na(inc)))
-yt_ed2 <- as.data.frame(yt_ed2)
+  mutate(
+    rate = case_when(
+      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
+      TRUE ~ ed_count / (pt / 365)
+      ),
+    # Set up variables where transformation doesn't work in Zelig function
+    pt_log = log(pt),
+    year_0 = year - 2012
+  ) %>%
+  filter(!(is.na(ethn_c) | is.na(gender_c) | 
+             is.na(age12_grp) | is.na(length12_grp) | is.na(inc)) &
+           year <= 2017)
+yt_ed <- as.data.frame(yt_ed)
+
+# People who were originally at YT and have stayed/returned vs. new arrivals
+yt_orig_ed <- yt_ss_ed_join %>%
+  arrange(pid2, yt, year) %>%
+  filter(yt == 1) %>%
+  group_by(pid2, yt_orig) %>%
+  mutate(timevar = row_number() - 1) %>%
+  ungroup() %>%
+  mutate(
+    rate = case_when(
+      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
+      TRUE ~ ed_count / (pt / 365)
+    ),
+    # Set up variables where transformation doesn't work in Zelig function
+    pt_log = log(pt),
+    year_0 = year - 2012
+  ) %>%
+  filter(!(is.na(ethn_c) | is.na(gender_c) | 
+             is.na(age12_grp) | is.na(length12_grp) | is.na(inc)) &
+           year <= 2017)
+yt_orig_ed <- as.data.frame(yt_orig_ed)
+
 
 #### END DATA SETUP ####
+
+
+#### FUNCTIONS ####
+predict_f <- function(model, group_var, group1, group2, yt_only = F) {
+  
+  #Set up quosure
+  group_quo <- enquo(group_var)
+ 
+  predicted <- yt_ss_ed_join %>%
+    mutate(adj_pred = predict(model, newdata = yt_ss_ed_join, type = "response"))
+  
+  if (yt_only == T) {
+    predicted <- predicted %>% filter(year < 2018 & yt == 1)
+  } else(
+    predicted <- predicted %>% filter(year < 2018)
+  )
+  
+  predicted <- predicted %>%
+    group_by(!!group_quo, year) %>%
+    summarise(ed_count = sum(ed_count, na.rm = T),
+              adj_pred_count = sum(adj_pred, na.rm = T),
+              pt = sum(pt, na.rm = T)) %>%
+    ungroup() %>%
+    mutate(
+      rate =  case_when(
+        year %in% c(2012, 2016) ~ ed_count/ (pt / 366) * 1000,
+        TRUE ~ ed_count/ (pt / 365) * 1000
+      ),
+      adj_pred_rate =  case_when(
+        year %in% c(2012, 2016) ~ adj_pred_count/ (pt / 366) * 1000,
+        TRUE ~ adj_pred_count/ (pt / 365) * 1000
+      ),
+      yt_group = ifelse(!!group_quo == 1, group1, group2)
+    ) %>%
+    rowwise() %>%
+    mutate(
+      ci95_lb = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
+      ),
+      ci95_ub = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+      ),
+      ci95_lb_adj = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 365) * 1000
+      ), 
+      ci95_ub_adj = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 365) * 1000
+      )
+    ) %>%
+    ungroup()
+  
+  return(predicted)
+}
+
+plot_f <- function(df, labels, title, groups) {
+  
+  # Make quosure for groups
+  groups_quo <- enquo(groups)
+  
+  plot <- ggplot(data = df, aes(x = year)) +
+    geom_ribbon(aes(ymin = ci95_lb_adj, ymax = ci95_ub_adj, group = !!groups_quo, 
+                    fill = !!groups_quo),
+                data = df[df$rate_type == "Crude rate", ],
+                alpha = 0.4,
+                show.legend = T) +
+    scale_fill_manual(labels = labels,
+                      values = c("orange", "cyan2"), name="95% CI") +
+    geom_line(aes(y = rate, color = !!groups_quo, group = interaction(!!groups_quo, rate_type),
+                  linetype = !!groups_quo),
+              size = 1.3,
+              data = df[df$rate_type == "Crude rate", ]) +
+    geom_line(aes(y = rate, color = yt_group, group = interaction(yt_group, rate_type),
+                  linetype = yt_group),
+              size = 0.8,
+              data = df[df$rate_type == "Predicted rate", ]) +
+    scale_linetype_manual(name = "YT residency", 
+                          values = rep(c("solid", "dashed"), times = 2)) +
+    scale_color_manual(name = "YT residency", 
+                       values = c(rep(c("orangered3", "blue2"), each = 2))) +
+    guides(
+      linetype = guide_legend(override.aes = list(size = 0.8)),
+      color = guide_legend(override.aes = list(fill=NA))
+    ) +
+    ggtitle(title) +
+    xlab("Year") +
+    ylab("Rate (per 1,000 person-years)") +
+    theme(title = element_text(size = 18),
+          axis.text = element_text(size = 14),
+          axis.title = element_text(size = 16),
+          legend.title = element_text(size = 14),
+          legend.text = element_text(size = 12),
+          panel.background = element_rect(fill = "grey95"))
+  
+  return(plot)
+}
+
+
 
 
 #### BASIC STATS ####
@@ -232,74 +333,399 @@ yt_ed %>% group_by(yt, year) %>%
   mutate(pct_l = round(cens_l/pop*100,1), pct_r = round(cens_r/pop*100,1))
 
 ### Review missingness
-yt_ed %>% filter(is.na(race_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(gender_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(age12)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(length12)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ed %>% filter(is.na(inc)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(ethn_c)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(gender_c)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(age12_grp)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(length12_grp)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(inc)) %>% group_by(yt, year) %>% summarise(count= n())
 
+
+# One or more ED visits
+yt_ss_ed_join %>%
+  mutate(any_ed = if_else(ed_count > 0, 1, 0)) %>%
+  group_by(year, yt, any_ed) %>%
+  summarise(count = n()) %>%
+  group_by(year, yt) %>%
+  mutate(pop = sum(count)) %>%
+  ungroup() %>%
+  mutate(pct = round(count/pop, 3)) %>%
+  filter(any_ed == 1) %>%
+  select(yt, year, pop, pct) %>%
+  arrange(yt, year)
+  
 
 # Take a look at the rates
-pastecs::stat.desc(yt_ed2$rate)
-pastecs::stat.desc(yt_ed2$rate[yt_ed2$rate != 0])
-hist(yt_ed2$rate)
-hist(yt_ed2$rate[yt_ed2$rate != 0])
+pastecs::stat.desc(yt_ed$rate)
+pastecs::stat.desc(yt_ed$rate[yt_ed$rate != 0])
+hist(yt_ed$rate)
+hist(yt_ed$rate[yt_ed$rate != 0])
 
 
 ### Plot ED visits over time
-yt_ed_sum <- yt_ed %>%
+yt_ed_sum <- yt_ss_ed_join %>%
   filter(year < 2018) %>%
   group_by(yt, year) %>%
-  summarise(ed_cnt = sum(ed_cnt, na.rm = T),
+  summarise(ed_count = sum(ed_count, na.rm = T),
             pt = sum(pt, na.rm = T)) %>%
   ungroup() %>%
-  mutate(rate = ed_cnt/pt * 100000,
-         yt = ifelse(yt == 1, "YT", "Scattered sites"))
+  mutate(
+    rate =  case_when(
+      year %in% c(2012, 2016) ~ ed_count/ (pt / 366) * 1000,
+      TRUE ~ ed_count/ (pt / 365) * 1000
+      ),
+    yt = ifelse(yt == 1, "YT", "Scattered sites")) %>%
+  rowwise() %>%
+  mutate(
+    ci95_lb = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
+    ),
+    ci95_ub = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+    )
+  ) %>%
+  ungroup()
 
-ggplot(data = yt_ed_sum, aes(x = year, y = rate)) +
+# Prepare simple plot
+ed_plot <- ggplot(data = yt_ed_sum, aes(x = year, y = rate)) +
+  geom_ribbon(aes(ymin = ci95_lb, ymax = ci95_ub, group = yt, fill = yt == "YT"), 
+              alpha = 0.4,
+              show.legend = F) +
   geom_line(aes(color = yt, group = yt), size = 1.3) +
-  #ggtitle("Emergency department visit rates") +
+  scale_fill_manual(values = c("orange", "cyan2"), name="fill") +
+  scale_color_manual("YT residency", 
+                     values = c("YT" = "blue2", "Scattered sites" = "orangered3")) +
+  ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
-  ylab("Rate (per 100,000 person-years") +
+  ylab("Rate (per 1,000 person-years)") +
   theme(axis.text = element_text(size = 14),
         axis.title = element_text(size = 16),
         legend.title = element_blank(),
         legend.text = element_text(size = 14),
         panel.background = element_rect(fill = "grey95"))
-
+ed_plot
 
 
 #### MODELS ####
+#### Run simple GEE model ####
+m_gee_crude <- geeglm(ed_count ~ yt*year_0 + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed)
+m_gee_crude <- geeglm(ed_count ~ yt + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed)
+summary(m_gee_crude)
+exp(cbind(Estimate = coef(m_gee_crude), confint_tidy(m_gee_crude)))
 
-# Run simple negative binomial models
-crude <- MASS::glm.nb(ed_cnt ~ yt + as.factor(year) + offset(log(pt)), data = yt_ed2[yt_ed2$year < 2017, ])
-summary(crude)
-exp(crude$coefficients)
+# Look at predicted estimates and plot
+m_gee_crude_pred <- yt_ed_sum %>% 
+  mutate(
+    yt = as.numeric(ifelse(yt == "YT", 1, 0)),
+    yt_group = ifelse(yt == 1, "YT - predicted", "Scattered sites - predicted"),
+    crude_pred = as.numeric(predict(m_crude, newdata = pred_data, type = "response")),
+    crude_pred_rate = case_when(
+      year %in% c(2012, 2016) ~ crude_pred/ (pt / 366) * 1000,
+      TRUE ~ crude_pred/ (pt / 365) * 1000
+    ))
 
-ed_m1 <- MASS::glm.nb(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + inc + offset(log(pt)), 
-             data = yt_ed2[yt_ed2$year < 2017, ])
-summary(ed_m1)
-exp(ed_m1$coefficients)
+
+#### Run adjusted GEE model ####
+m_gee_adj <- geeglm(ed_count ~ yt*year_0 + ethn_c + gender_c + 
+                      age12_grp + length12_grp + inc_min + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed)
+summary(m_gee_adj)
+exp(cbind(Estimate = coef(m_gee_adj), confint_tidy(m_gee_adj)))
+
+mz_gee_adj <- zelig(ed_count ~ yt*year_0 + ethn_c + gender_c + 
+                      age12_grp + length12_grp + inc_min + offset(pt_log),
+                    data = yt_ed, id = "pid2", corstr = "independence",
+                    model = "poisson.gee")
+summary(mz_gee_adj)
+exp(mz_gee_adj$get_coef()[[1]])
+
+mz_gee_adj_x <- setx(mz_gee_adj)
+
+summary(sim(mz_gee_adj, x = setx(mz_gee_adj)))
+
+
+# Run adjusted GEE model for original vs new YT
+m_gee_adj_orig <- geeglm(ed_count ~ yt_orig*as.numeric(year-2012) + ethn_c + gender_c + 
+                           age12_grp + length12_grp + inc_min + offset(log(pt)),
+                         id = pid2, corstr = "independence",
+                         family = "poisson", data = yt_orig_ed)
+summary(m_gee_adj_orig)
+exp(cbind(Estimate = coef(m_gee_adj_orig), confint_tidy(m_gee_adj_orig)))
+
+zelig(ed_count ~ yt*as.numeric(year-2012), # + offset(log(pt)),
+      data = yt_ed, id = "pid2", corstr = "independence",
+      model = "poisson.gee")
+
+# Look at predicted estimates and plot
+m_gee_adj_orig_pred <- yt_ed_sum %>% 
+  mutate(
+    yt = as.numeric(ifelse(yt == "YT", 1, 0)),
+    yt_group = ifelse(yt == 1, "YT - predicted", "Scattered sites - predicted"),
+    crude_pred = as.numeric(predict(m_crude, newdata = pred_data, type = "response")),
+    crude_pred_rate = case_when(
+      year %in% c(2012, 2016) ~ crude_pred/ (pt / 366) * 1000,
+      TRUE ~ crude_pred/ (pt / 365) * 1000
+    ))
+
+m_gee_adj_orig_pred <- yt_ss_ed_join %>%
+  filter(yt == 1) %>%
+  mutate(adj_pred = predict(m_gee_adj_orig, newdata = yt_ss_ed_join[yt_ss_ed_join$yt == 1, ], 
+                            type = "response")) %>%
+  filter(year < 2018) %>%
+  group_by(yt_orig, year) %>%
+  summarise(ed_count = sum(ed_count, na.rm = T),
+            adj_pred_count = sum(adj_pred, na.rm = T),
+            pt = sum(pt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(
+    rate =  case_when(
+      year %in% c(2012, 2016) ~ ed_count/ (pt / 366) * 1000,
+      TRUE ~ ed_count/ (pt / 365) * 1000
+    ),
+    adj_pred_rate =  case_when(
+      year %in% c(2012, 2016) ~ adj_pred_count/ (pt / 366) * 1000,
+      TRUE ~ adj_pred_count/ (pt / 365) * 1000
+    ),
+    yt_orig_group = ifelse(yt_orig == 1, "YT original - adjusted", "New to YT - adjusted")
+  ) %>%
+  rowwise() %>%
+  mutate(
+    ci95_lb = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
+    ),
+    ci95_ub = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+    ),
+    ci95_lb_adj = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 365) * 1000
+    ), 
+    ci95_ub_adj = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 365) * 1000
+    )
+  ) %>%
+  ungroup()
+
+
+#### Run simple negative binomial model ####
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt*as.numeric(year-2012) + offset(log(pt)), 
+                      data = yt_ed)
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt + offset(log(pt)), data = yt_ed)
+summary(m_nb_crude)
+exp(cbind(Estimate = coef(m_nb_crude), confint(m_nb_crude)))
+
+
+# Look at predicted estimates and plot
+m_nb_crude_pred <- yt_ed_sum %>% 
+  mutate(
+    yt = as.numeric(ifelse(yt == "YT", 1, 0)),
+    yt_group = ifelse(yt == 1, "YT - predicted", "Scattered sites - predicted"),
+    crude_pred = as.numeric(predict(m_nb_crude, newdata = yt_ss_ed_join, type = "response")),
+    crude_pred_rate = case_when(
+      year %in% c(2012, 2016) ~ crude_pred/ (pt / 366) * 1000,
+      TRUE ~ crude_pred/ (pt / 365) * 1000
+      ))
+
+
+# set up for plotting
+m_nb_crude_plot_data <- m_nb_crude_pred %>%
+  select(yt, yt_group, year, rate, ci95_lb, ci95_ub, crude_pred_rate) %>%
+  melt(., id.vars = c("yt", "yt_group", "year", "ci95_lb", "ci95_ub"), 
+       variable.name = "rate_type", value.name = "rate") %>%
+  mutate(rate_type = if_else(rate_type == "rate", "Crude rate", "Predicted rate"),
+         yt = if_else(yt == 1, "YT", "Scattered sites"))
+
+
+ggplot(data = m_nb_crude_plot_data, aes(x = year)) +
+  geom_ribbon(aes(ymin = ci95_lb, ymax = ci95_ub, group = yt, fill = yt),
+              data = m_nb_crude_plot_data[m_nb_crude_plot_data$rate_type == "Crude rate", ],
+              alpha = 0.4,
+              show.legend = T) +
+  scale_fill_manual(labels = c("Scattered sites", "YT"),
+                    values = c("orange", "cyan2"), name="95% CI") +
+  geom_line(aes(y = rate, color = yt, group = interaction(yt, rate_type),
+                linetype = yt),
+            size = 1.3,
+            data = m_nb_crude_plot_data[m_nb_crude_plot_data$rate_type == "Crude rate", ]) +
+  geom_line(aes(y = rate, color = yt_group, group = interaction(yt_group, rate_type),
+                linetype = yt_group),
+            size = 0.8,
+            data = m_nb_crude_plot_data[m_nb_crude_plot_data$rate_type == "Predicted rate", ]) +
+  scale_linetype_manual(name = "YT residency", 
+                        values = rep(c("solid", "dashed"), times = 2)) +
+  scale_color_manual(name = "YT residency", 
+                     values = c(rep(c("orangered3", "blue2"), each = 2))) +
+  guides(
+    linetype = guide_legend(override.aes = list(size = 0.8)),
+    color = guide_legend(override.aes = list(fill=NA))
+    ) +
+  ggtitle("Emergency department visit rates (unadjusted)") +
+  xlab("Year") +
+  ylab("Rate (per 1,000 person-years)") +
+  theme(title = element_text(size = 18),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        panel.background = element_rect(fill = "grey95"))
+
+
+#### Run adjusted negative binomial model ####
+m_nb_adj <- MASS::glm.nb(ed_count ~ yt*as.numeric(year-2012) + ethn_c + gender_c + 
+                        age12_grp + length12_grp + inc_min + offset(log(pt)), 
+             data = yt_ed)
+summary(m_nb_adj)
+exp(cbind(Estimate = coef(m_nb_adj), confint(m_nb_adj)))
+
+m_nb_adj_pred <- predict_f(model = m_nb_adj, group_var = yt,
+                           group1 = "YT - adjusted",
+                           group2 = "Scattered sites - adjusted")
+
+# Look at predicted estimates and plot
+m_nb_adj_pred_data <- m_nb_adj_pred %>%
+  select(yt, yt_group, year, rate, ci95_lb, ci95_ub, 
+         adj_pred_rate, ci95_lb_adj, ci95_ub_adj) %>%
+  melt(., id.vars = c("yt", "yt_group", "year", "ci95_lb", "ci95_ub",
+                      "ci95_lb_adj", "ci95_ub_adj"), 
+       variable.name = "rate_type", value.name = "rate") %>%
+  mutate(rate_type = if_else(rate_type == "rate", "Crude rate", "Predicted rate"),
+         yt = if_else(yt == 1, "YT - crude", "Scattered sites - crude"))
+
+
+plot_f(df = m_nb_adj_pred_data, labels = c("Scattered sites", "YT"),
+       title = "Emergency department visit rates (adjusted)", groups = yt)
+
+
+#### Run adjusted negative binomial model for YT original vs. new to YT ####
+m_nb_adj_orig <- MASS::glm.nb(ed_count ~ yt_orig*as.numeric(year-2012) + ethn_c + gender_c + 
+                           age12_grp + length12_grp + inc_min + offset(log(pt)), 
+                         data = yt_orig_ed)
+summary(m_nb_adj_orig)
+exp(cbind(Estimate = coef(m_nb_adj_orig), confint(m_nb_adj_orig)))
+
+m_nb_adj_orig_pred <- predict_f(model = m_nb_adj_orig, group_var = yt_orig,
+                                group1 = "YT original - adjusted",
+                                group2 = "New to YT - adjusted",
+                                yt_only = T)
+
+# Look at predicted estimates and plot
+m_nb_adj_orig_pred_data <- m_nb_adj_orig_pred %>%
+  select(yt_orig, yt_group, year, rate, ci95_lb, ci95_ub, 
+         adj_pred_rate, ci95_lb_adj, ci95_ub_adj) %>%
+  melt(., id.vars = c("yt_orig", "yt_group", "year", "ci95_lb", "ci95_ub",
+                      "ci95_lb_adj", "ci95_ub_adj"), 
+       variable.name = "rate_type", value.name = "rate") %>%
+  mutate(rate_type = if_else(rate_type == "rate", "Crude rate", "Predicted rate"),
+         yt_orig = if_else(yt_orig == 1, "YT original - crude", "New to YT - crude"))
+
+
+plot_f(df = m_nb_adj_orig_pred_data, labels = c("New to YT", "YT original"),
+       title = "Emergency department visit rates (adjusted)", groups = yt_orig)
+
 
 #### Run zero inflated model ####
 library(pscl)
 library(snow)
 
 
-summary(ed_zero <- zeroinfl(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + offset(log(pt)) |
-                              race_c + gender_c + age12 + length12 + offset(log(pt)),
-                            data = yt_ed2))
+m_zero <- zeroinfl(ed_count ~ yt*as.numeric(year-2012) + ethn_c + 
+                              gender_c + age12_grp + length12_grp + offset(log(pt)),
+                            data = yt_ed, dist = "negbin")
+summary(m_zero)
+
+m_zero_pred <- yt_ss_ed_join %>%
+  mutate(adj_pred = predict(m_zero, newdata = yt_ss_ed_join, type = "response")) %>%
+  filter(year < 2018) %>%
+  group_by(yt, year) %>%
+  summarise(ed_count = sum(ed_count, na.rm = T),
+            adj_pred_count = sum(adj_pred, na.rm = T),
+            pt = sum(pt, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(
+    rate =  case_when(
+      year %in% c(2012, 2016) ~ ed_count/ (pt / 366) * 1000,
+      TRUE ~ ed_count/ (pt / 365) * 1000
+    ),
+    adj_pred_rate =  case_when(
+      year %in% c(2012, 2016) ~ adj_pred_count/ (pt / 366) * 1000,
+      TRUE ~ adj_pred_count/ (pt / 365) * 1000
+    ),
+    yt_group = ifelse(yt == 1, "YT - adjusted", "Scattered sites - adjusted")
+  ) %>%
+  rowwise() %>%
+  mutate(
+    ci95_lb = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
+    ),
+    ci95_ub = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+    ),
+    ci95_lb_adj = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[1] / (pt / 365) * 1000
+    ), 
+    ci95_ub_adj = case_when(
+      year %in% c(2012, 2016) ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 366) * 1000,
+      TRUE ~ poisson.test(round(adj_pred_count, 0))$conf.int[2] / (pt / 365) * 1000
+    )
+  ) %>%
+  ungroup()
 
 
-# Look at 2012/2017
-yt_ed_12 <- yt_ed2 %>% filter(year == 2012)
-summary(zeroinfl(ed_cnt ~ yt + race_c + gender_c + age12 + length12 + offset(log(pt)) |
-                              race_c + gender_c + age12 + length12 + offset(log(pt)),
-                            data = yt_ed_12))
+# Look at predicted estimates and plot
+m_zero_pred_data <- m_zero_pred %>%
+  select(yt, yt_group, year, rate, ci95_lb, ci95_ub, 
+         adj_pred_rate, ci95_lb_adj, ci95_ub_adj) %>%
+  melt(., id.vars = c("yt", "yt_group", "year", "ci95_lb", "ci95_ub",
+                      "ci95_lb_adj", "ci95_ub_adj"), 
+       variable.name = "rate_type", value.name = "rate") %>%
+  mutate(rate_type = if_else(rate_type == "rate", "Crude rate", "Predicted rate"),
+         yt = if_else(yt == 1, "YT", "Scattered sites"))
 
 
-# Compare zero-infalted model with ordinary Poisson
-vuong(ed_m1, ed_zero)
+ggplot(data = m_zero_pred_data, aes(x = year)) +
+  geom_ribbon(aes(ymin = ci95_lb_adj, ymax = ci95_ub_adj, group = yt, fill = yt),
+              data = m_zero_pred_data[m_zero_pred_data$rate_type == "Crude rate", ],
+              alpha = 0.4,
+              show.legend = T) +
+  scale_fill_manual(labels = c("Scattered sites", "YT"),
+                    values = c("orange", "cyan2"), name="95% CI") +
+  geom_line(aes(y = rate, color = yt, group = interaction(yt, rate_type),
+                linetype = yt),
+            size = 1.3,
+            data = m_zero_pred_data[m_zero_pred_data$rate_type == "Crude rate", ]) +
+  geom_line(aes(y = rate, color = yt_group, group = interaction(yt_group, rate_type),
+                linetype = yt_group),
+            size = 0.8,
+            data = m_zero_pred_data[m_zero_pred_data$rate_type == "Predicted rate", ]) +
+  scale_linetype_manual(name = "YT residency", 
+                        values = rep(c("solid", "dashed"), times = 2)) +
+  scale_color_manual(name = "YT residency", 
+                     values = c(rep(c("orangered3", "blue2"), each = 2))) +
+  guides(
+    linetype = guide_legend(override.aes = list(size = 0.8)),
+    color = guide_legend(override.aes = list(fill=NA))
+  ) +
+  ggtitle("Emergency department visit rates (adjusted zero-inflated model)") +
+  xlab("Year") +
+  ylab("Rate (per 1,000 person-years)") +
+  theme(title = element_text(size = 18),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        panel.background = element_rect(fill = "grey95"))
 
 
 ### Bootstrap CIs
@@ -307,8 +733,8 @@ dput(coef(ed_zero, "count"))
 dput(coef(ed_zero, "zero"))
 
 boot_zero_f <- function(data, i) {
-  m <- pscl::zeroinfl(ed_cnt ~ yt + as.factor(year) + race_c + gender_c + age12 + length12 + offset(log(pt)) | 
-                  race_c + gender_c + age12 + length12 + offset(log(pt)),
+  m <- pscl::zeroinfl(ed_count ~ yt + as.factor(year) + ethn_c + gender_c + age12_grp + length12_grp + offset(log(pt)) | 
+                  ethn_c + gender_c + age12_grp + length12_grp + offset(log(pt)),
                 data = data[i, ],
                 start = list(count = c(-6.013, -0.1316, 0.1035, 0.1047, 0.1593, 0.0444,
                                        -0.1481, 0.9677, -0.3216, -0.8693, 0.3145,
@@ -326,49 +752,85 @@ ed_zero_boot <- boot(yt_ed2, boot_zero_f, R = 100, parallel = "snow", ncpus = 4)
 
 
 
-#### End zero-inflated section ####
 
+#### Run marginal structural model ####
 # Set up IPT weights and join back
 w1 <- ipwtm(exposure = yt, 
             family = "binomial",
             link = "logit",
-            numerator = ~ race_c + gender_c + age12 + length12,
-            denominator = ~ race_c + gender_c + age12 + length12 + inc + year,
+            numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+            denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
             id = pid2,
             timevar = timevar,
             type = "all",
-            data = yt_ed2)
+            trunc = 0.01,
+            data = yt_ed)
 
 # Check mean of weights near 1
 pastecs::stat.desc(w1$ipw.weights)
-
+pastecs::stat.desc(w1$weights.trunc)
 
 # Set up weights for left- and right-censoring
 w_lc <- ipwtm(exposure = cens_l, 
               family = "binomial",
               link = "logit",
-              numerator = ~ race_c + gender_c + age12 + length12,
-              denominator = ~ race_c + gender_c + age12 + length12 + inc + year,
+              numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+              denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
               id = pid2,
               timevar = timevar,
               type = "all",
-              data = yt_ed2)
+              trunc = 0.01,
+              data = yt_ed)
+
+w_rc <- ipwtm(exposure = cens_r, 
+              family = "binomial",
+              link = "logit",
+              numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+              denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+              id = pid2,
+              timevar = timevar,
+              type = "all",
+              trunc = 0.01,
+              data = yt_ed)
+
 
 # Check mean of weights near 1
 pastecs::stat.desc(w_lc$ipw.weights)
-
+pastecs::stat.desc(w_lc$weights.trunc)
+pastecs::stat.desc(w_rc$ipw.weights)
+pastecs::stat.desc(w_rc$weights.trunc)
 
 # Combine weights
+yt_ed$w1 <- w1$weights.trunc
+yt_ed$w_lc <- w_lc$weights.trunc
+yt_ed$w_rc <- w_rc$weights.trunc
+
+yt_ed <- yt_ed %>%
+  mutate(iptw = case_when(
+    !is.na(w1) & !is.na(w_lc) & !is.na(w_rc) ~ w1 * w_lc * w_rc,
+    !is.na(w1) & !is.na(w_lc) ~ w1 * w_lc,
+    !is.na(w1) & !is.na(w_rc) ~ w1 * w_rc
+  ))
+
+pastecs::stat.desc(yt_ed$iptw)
 
 
+# Run negative binomial MSMM
+m_msm_nb <- MASS::glm.nb(ed_count ~ yt + offset(log(pt)), 
+                         data = yt_ed, weights = iptw)
+summary(m_msm_nb)
+exp(cbind(Estimate = coef(m_msm_nb), confint(m_msm_nb)))
 
-# Join back to main data
-ed_weights <- as.data.frame(w1$ipw.weights) %>% rename(iptw = `w1$ipw.weights`)
-yt_ed2 <- cbind(yt_ed2, ed_weights)
 
-# Run simple Poisson model
-ed_m1 <- glm(ed_cnt ~ yt + offset(log(pt)), family = "poisson", data = yt_ed2, weights = iptw)
-summary(ed_m1)
+# Run GEE Poisson MSM
+m_msm_gee <- geeglm(ed_count ~ yt + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = yt_ed,
+                    weights = iptw)
+summary(m_msm_gee)
+exp(cbind(Estimate = coef(m_msm_gee), confint_tidy(m_msm_gee)))
+
+
 
 
 #### TESTING AREA ####
@@ -387,7 +849,7 @@ w1_2013 <- ipwpoint(
   family = "binomial",
   link = "logit",
   numerator = ~ 1,
-  denominator = ~ race_c + hisp_c + gender_c + age12 + length12,
+  denominator = ~ ethn_c + hisp_c + gender_c + age12_grp + length12_grp,
   trunc = .05,
   data = yt_ed_temp2013
 )
@@ -396,19 +858,19 @@ w1_2013 <- ipwpoint(
 ed2013_w <- as.data.frame(w1_2013$ipw.weights) %>% rename(iptw = `w1_2013$ipw.weights`)
 pastecs::stat.desc(ed2013_w$iptw)
 yt_ed_temp2013 <- cbind(yt_ed_temp2013, ed2013_w)
-summary(glm(ed_cnt ~ yt + offset(log(pt)), family = "poisson", data = yt_ed_temp2013, weights = iptw))
+summary(glm(ed_count ~ yt + offset(log(pt)), family = "poisson", data = yt_ed_temp2013, weights = iptw))
 
 
 # Run regular regression model
-summary(glm(ed_cnt ~ yt + offset(log(pt)), family = "poisson", data = yt_ed2))
-summary(glm(ed_cnt ~ yt + as.factor(race_c) + hisp_c + gender_c + age12 + length12 + year + offset(log(pt)), family = "poisson", data = yt_ed2))
+summary(glm(ed_count ~ yt + offset(log(pt)), family = "poisson", data = yt_ed2))
+summary(glm(ed_count ~ yt + as.factor(ethn_c) + hisp_c + gender_c + age12_grp + length12_grp + year + offset(log(pt)), family = "poisson", data = yt_ed2))
 
 
 w1_2 <- ipwpoint2(
   exposure = yt3,
   family = "binomial",
   link = "logit",
-  numerator = ~ as.factor(race_c) + hisp_c + gender_c + age12 + length12,
+  numerator = ~ as.factor(ethn_c) + hisp_c + gender_c + age12_grp + length12_grp,
   denominator = ~ 1,
   trunc = .05,
   data = yt_ed_temp2013
@@ -416,6 +878,81 @@ w1_2 <- ipwpoint2(
 
 
 
+
+# Set up IPT weights for each year
+
+w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
+  # Run weights up until and including that year
+  weight <- ipwtm(exposure = yt, 
+                 family = "binomial",
+                 link = "logit",
+                 numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+                 denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                 id = pid2,
+                 timevar = timevar,
+                 type = "all",
+                 trunc = 0.01,
+                 data = yt_ed[yt_ed$year <= x, ])
+  
+  # Check mean of weights near 1
+  print(paste0("Year: ", x))
+  print(pastecs::stat.desc(weight$weights.trunc))
+  
+  # Join back to main data and filter for just that year
+  result <- yt_ed[yt_ed$year <= x, ]
+  result$weight <- weight$weights.trunc
+  
+  # Add censoring weights
+  if (x > 2012) {
+    weight_lc <- ipwtm(exposure = cens_l,
+                       family = "binomial",
+                       link = "logit",
+                       numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+                       denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                       id = pid2,
+                       timevar = timevar,
+                       type = "all",
+                       trunc = 0.01,
+                       data = yt_ed[yt_ed$year <= x, ])
+    print(pastecs::stat.desc(weight_lc$weights.trunc))
+    result$weight_lc <- weight_lc$weights.trunc
+  } else {
+    result$weight_lc <- 1
+  }
+  
+  if (x < 2017) {
+    weight_rc <- ipwtm(exposure = cens_r,
+                       family = "binomial",
+                       link = "logit",
+                       numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
+                       denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                       id = pid2,
+                       timevar = timevar,
+                       type = "all",
+                       trunc = 0.01,
+                       data = yt_ed[yt_ed$year <= x, ])
+    print(pastecs::stat.desc(weight_rc$weights.trunc))
+    result$weight_rc <- weight_rc$weights.trunc
+  } else {
+    result$weight_rc <- 1
+    }
+
+  # Restrict to current year and multiple weights
+  result <- result %>% filter(year == x) %>%
+    mutate(iptw = case_when(
+      !is.na(weight) & !is.na(weight_lc) & !is.na(weight_rc) ~ weight * weight_lc * weight_rc,
+      !is.na(weight) & !is.na(weight_lc) ~ weight * weight_lc,
+      !is.na(weight) & !is.na(weight_rc) ~ weight * weight_rc
+    ))
+}))
+pastecs::stat.desc(w_year$iptw)
+
+m_msm_yr_gee <- geeglm(ed_count ~ yt + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = w_year,
+                    weights = iptw)
+summary(m_msm_yr_gee)
+exp(cbind(Estimate = coef(m_msm_yr_gee), confint_tidy(m_msm_yr_gee)))
 
 
 #### END TESTING AREA ####
