@@ -67,53 +67,64 @@ yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
 
 #### FUNCTIONS ####
 # Counts the number of people each year including move ins/outs (only includes non-dual Medicaid enrollees)
-move_count_yt_f <- function(df, year, place = "yt") {
+move_count_yt_f <- function(df, year, place = c("yt", "ss")) {
   
   yr_start <- as.Date(paste0(year, "-01-01"), origin = "1970-01-01")
-  yr_end <- as.Date(paste0(year, "-12-31"), origin = "1970-01-1")
+  yr_end <- as.Date(paste0(year, "-12-31"), origin = "1970-01-01")
   
   if (place == "yt") {
-    place <- quo((place == "Ym" | place == "Nm"))
-    start_type <- quo(start_type %in% c("YmYm", "YmNm", "NmYm", "NmNm"))
-    end_type <- quo(end_type %in% c("YmYm", "YmNm", "NmYm", "NmNm"))
-  } else if(place == "ss") {
-    place <- quo(place == "Sm")
-    start_type <- quo(start_type == "SmSm")
-    end_type <- quo(end_type == "SmSm")
+    place_code <- c("Y", "N")
+    move_in <- c("KN", "KY", "ON", "OY", "SN", "SY", "UN", "UY")
+    move_within <- c("NN", "NY", "YN", "YY")
+    move_out <- c("NK", "NO", "NS", "NU", "YK", "YO", "YS", "YU")
+  } else if (place == "ss") {
+    place_code <- c("SS")
+    move_in <- c("KS", "NS", "OS", "US", "YS")
+    move_within <- c("SS")
+    move_out <- c("SK", "SN", "SN", "SU", "SY")
   }
   
   
   # Pop at the start of the year (exludes move ins on Jan 1)
-  start <- df %>% filter(!!place & startdate_c < yr_start & enddate_c >= yr_start) %>% 
-    summarise(start = n())
+  start <- df %>% filter((
+    (start_type %in% move_in & startdate_c < yr_start) |
+      (start_type %in% move_within & startdate_c <= yr_start)) &
+      enddate_c >= yr_start) %>% 
+    summarise(start = n_distinct(pid2))
   
   # Move ins/coverage start on Jan 1
-  jan1 <- df %>% filter(!!place & startdate_c == yr_start & enddate_c >= yr_start) %>% 
-    summarise(jan1 = n())
+  jan1 <- df %>% filter(start_type %in% move_in & !(start_type %in% move_within) &
+                          startdate_c == yr_start & enddate_c >= yr_start) %>% 
+    summarise(jan1 = n_distinct(pid2))
   
   # Number of move-ins or coverage gains in that year (people can be counted 1+ times)
-  move_in <- df %>% filter(!!place & startdate_c <= yr_end & 
-                             ((!(!!start_type) & startdate_c > yr_start) |
-                                (!!start_type & startdate_c == yr_start)
-                             )) %>%
-    summarise(move_in = n())
+  move_ins <- df %>% 
+    filter((start_type %in% move_in & startdate_c <= yr_end & startdate_c > yr_start) |
+             (start_type %in% move_within & startdate_c <= yr_end & startdate_c > yr_start &
+                pid2 == lag(pid2, 1) & !is.na(lag(enddate_c, 1)) & 
+                lag(enddate_c, 1) < yr_start - days(1))) %>%
+    summarise(move_ins = n(), move_in_ppl = n_distinct(pid2))
   
-  # Number move outs or lost Medicaid coverage in that year (ppl can be counted 1+ times)
-  move_out <- df %>% filter(!!place & enddate_c <= yr_end & 
-                              ((!(!!end_type) & enddate_c >= yr_start) |
-                                 (!!end_type & enddate_c == yr_end)
-                              )) %>% 
-    summarise(move_out = n())
+  # Number move outs in that year (ppl can be counted 1+ times)
+  move_outs <- df %>% 
+    filter((end_type %in% move_out & enddate_c <= yr_end & enddate_c >= yr_start) |
+             (end_type %in% move_within & enddate_c <= yr_end & enddate_c >= yr_start &
+                pid2 == lead(pid2, 1) & !is.na(lead(enddate_c, 1)) & 
+                lead(startdate_c, 1) > yr_end + days(1))) %>% 
+    summarise(move_outs = n(), move_out_ppl = n_distinct(pid2))
   
   # Pop at midnight at end of the year
-  end <- df %>% filter(!!place & 
-                         startdate_c <= yr_end & enddate_c > yr_end) %>% 
-    summarise(end = n())
+  end <- df %>% filter(place %in% place_code & startdate_c <= yr_end &
+                         (enddate_c > yr_end |
+                            (end_type %in% move_within & enddate_c >= yr_end))) %>% 
+    summarise(end = n_distinct(pid2))
   
-  ever <- df %>% filter(!!place & startdate_c <= yr_end & enddate_c >= yr_start) %>%
+  # Number of people who lived there at any point in the year
+  ever <- df %>% filter((start_type %in% move_in | start_type %in% move_within) &
+                          startdate_c <= yr_end & enddate_c >= yr_start) %>%
     summarise(ever = n_distinct(pid2))
   
-  output <- as.data.frame(cbind(year, start, jan1, move_in, move_out, end, ever))
+  output <- as.data.frame(cbind(year, start, jan1, move_ins, move_outs, end, ever))
   
   return(output)
   
@@ -395,9 +406,10 @@ ggplot(yt_map) +
 #### 2) Statistics on movement ####
 ### YT
 # Move ins and outs
-as.data.frame(data.table::rbindlist(
-  lapply(seq(2012, 2017), move_count_yt_f, df = yt_movement, place = "yt")
+as.data.frame(bind_rows(
+  lapply(seq(2012, 2017), move_count_yt_f, df = yt_ss, place = "yt")
   ))
+
 
 # Movement from YT to SS
 as.data.frame(data.table::rbindlist(
