@@ -937,6 +937,47 @@ pha_clean <- pha_complete6 %>%
 #### Trim extraneous variables ####
 # Try to limit to only those that are needed for cleanup or analyses
 # Adding in more variables increased the chance of duplicate rows per action date
+if(UW == TRUE) {
+pha_clean <- pha_clean %>%
+  select(
+    # Person demographics
+    ssn_new:lnamesuf_new, dob, gender_new, citizen, disability, relcode, 
+    ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_num,
+    # don't keep mbr_id for now as there are some individuals with multiple IDs on the same date
+    # Head of household demographics
+    hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
+    # Household details
+    hhold_size, hh_id, 
+    # Previous experience
+    # list_date, list_zip, list_homeless, housing_act,
+    # Action and subsidy details
+    act_type, act_date:admit_date, reexam_date, subsidy_id, vouch_num, cert_id,
+    increment, increment_old,# repayment, repay_amount,
+    # Program details
+    agency, agency_new, portability, cost_pha, major_prog, prog_type, 
+    vouch_type,# noncit_subsidy, sroyn,
+    # Unit details
+    property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
+    unit_type, unit_year, access_unit, access_req, access_rec, bed_cnt, 
+    # moving_in, move_in_date,
+    # Rent details
+    rent_type:bdrm_voucher, cost_month, rent_owner:tb_rent_ceiling,
+    # Asset and income details
+    incasset_id, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
+    asset_val, asset_inc,
+    inc_fixed, inc_vary, inc, inc_excl, inc_adj_fixed, inc_adj_vary, inc_adj,
+    hh_inc_fixed, hh_inc_adj_fixed, hh_inc, 
+    hh_inc_vary, hh_inc_adj_vary, 
+    hh_inc_tot, hh_inc_adj, hh_inc_deduct, hh_inc_tot_adj,
+    # FSS and MTW details + assistance
+    # ss, fss_cat, mtw_self_suff, mtw_admit_date,
+    # assist_tanf:assist_eitc, child_care_srvc,
+    # reimbursed_med, med_dis_thresh, med_dis_allowance,
+    # Process details
+    sha_source, kcha_source, eop_source
+  )
+} else {
+
 pha_clean <- pha_clean %>%
   select(
     # Person demographics
@@ -975,6 +1016,7 @@ pha_clean <- pha_clean %>%
     # Process details
     sha_source, kcha_source, eop_source
   )
+}
 # With some variables stripped out, can reduce the number of rows
 pha_clean <- pha_clean %>% distinct()
 
