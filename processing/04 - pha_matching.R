@@ -27,18 +27,25 @@
 
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(housing) # contains many useful functions for cleaning
 library(tidyverse) # Used to manipulate data
 library(lubridate) # used to manipulate dates
 library(RecordLinkage) # used to clean up duplicates in the data
 library(phonics) # used to extract phonetic version of names
+library(RJSONIO)
+library(RCurl)
 
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
 # Assumes pha_combining.R has been run at some point
-pha <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_combined.Rda"))
+pha <- readRDS(file = paste0(housing_path, pha_fn))
 
 ### Remove duplicate records in preparation for matching
 pha_dedup <- pha %>%
@@ -1085,8 +1092,8 @@ pha_clean <- pha_clean %>% select(pid, ssn_new:hh_id_new)
 
 
 #### Save point ####
-saveRDS(pha_clean, file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
-
+saveRDS(pha_clean, file = paste0(housing_path, pha_clean_fn))
+# "/OrganizedData/pha_matched.Rda"
 
 # Remove data frames and values made along the way
 rm(list = ls(pattern = "pha_new[1-6]*$"))

@@ -26,23 +26,76 @@
 
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(housing) # contains many useful functions for cleaning
 library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
 
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
 pha_cleanadd_sort_dedup <- readRDS(file = paste0(
-  housing_path, "/OrganizedData/pha_cleanadd_sort_dedup.Rda"))
+  housing_path, pha_cleanadd_sort_dedup_fn))
 
 
 
 ### Strip out some variables that no longer have meaning 
 # (e.g., act_date, act_type, household size (this will need to be remade))
-pha_longitudinal <- pha_cleanadd_sort_dedup %>%
+if(UW == TRUE) {
+  pha_longitudinal <- pha_cleanadd_sort_dedup %>%
+    select(
+      # Original name and SSN variables (with minor clean up)
+      ssn_new, ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, dob,
+      gender_new, citizen, disability, relcode,
+      # New name, SSN, and demog variables (after matching)
+      pid, ssn_id_m6, ssn_id_m6_junk, lname_new_m6, fname_new_m6, mname_new_m6,
+      lnamesuf_new_m6, gender_new_m6, dob_m6, r_aian_new, r_asian_new, r_black_new,
+      r_nhpi_new, r_white_new, r_hisp_new, race_new, age, adult, senior,
+      # Old household info
+      mbr_num, hh_ssn_new:hh_dob, hh_id, 
+      # New household info
+      hh_ssn_id_m6:hh_id_new,
+      # MTW background info
+      # list_date, list_zip, list_homeless, housing_act,
+      # Program info
+      agency_new, major_prog, prog_type, subsidy_type, operator_type, 
+      vouch_type_final, agency_prog_concat,
+      # Old address info
+      unit_add:unit_zip,
+      # New address info
+      unit_add_new:unit_zip_new, unit_concat,
+      # Property/portfolio info
+      property_id, property_name, property_type, portfolio, portfolio_final,
+      # Unit info
+      unit_id, unit_type, unit_year, access_unit, access_req, access_rec, 
+      bed_cnt,
+      # Date info
+      admit_date, startdate, enddate,
+      # Port info
+      port_in, port_out_kcha, port_out_sha, cost_pha,
+      # Personal asset/income info
+      asset_val, asset_inc, inc_fixed, inc_vary, inc, inc_excl, inc_adj,
+      # Household asset/income info
+      hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
+      hh_inc_fixed, hh_inc_vary, hh_inc, hh_inc_adj, 
+      hh_inc_tot, hh_inc_deduct, hh_inc_tot_adj,
+      # Rent info
+      rent_type:tb_rent_ceiling,
+      # Received various forms of assistance (SHA only)
+      # dropping for now
+      # Linking and ID variables
+      incasset_id, subsidy_id, vouch_num, cert_id, increment, contains("source")
+      )
+} else {
+  pha_longitudinal <- pha_cleanadd_sort_dedup %>%
   select(
     # Original name and SSN variables (with minor clean up)
     ssn_new, ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, dob,
@@ -88,7 +141,7 @@ pha_longitudinal <- pha_cleanadd_sort_dedup %>%
     # Linking and ID variables
     incasset_id, subsidy_id, vouch_num, cert_id, increment, contains("source")
     )
-
+}
 
 ### Set up time in housing for each row and note when there was a gap in coverage
 pha_longitudinal <- pha_longitudinal %>% 
@@ -161,7 +214,7 @@ rm(zips)
 
 
 #### Save point ####
-saveRDS(pha_longitudinal, file = paste0(housing_path, "/OrganizedData/pha_longitudinal.Rda"))
+saveRDS(pha_longitudinal, file = paste0(housing_path, pha_longitudinal_fn))
 
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)

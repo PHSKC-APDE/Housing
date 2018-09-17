@@ -26,13 +26,20 @@
 
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
 
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
-pha_clean <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_matched.Rda"))
+pha_clean <- readRDS(file = paste0(housing_path, pha_clean_fn))
 
 
 #### Race ####
@@ -105,7 +112,7 @@ pha_recoded <- pha_recoded %>%
 
 #### Save point ####
 saveRDS(pha_recoded, file = paste0(housing_path, 
-                                   "/OrganizedData/pha_recoded.Rda"))
+                                   pha_recoded_fn))
 
 #### Clean up ####
 rm(pha_clean)

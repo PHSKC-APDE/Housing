@@ -33,23 +33,64 @@ library(rgdal) # Used to convert coordinates between ESRI and Google output
 library(sf) # newer package for working with spatial data
 
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
-bounds <- "& bounds=47,-122.7|48,-121"
-bounds_opencage <- c(-123, 46.8, -120.5, 48.5)
+if(UW == FALSE) {
+  bounds <- "& bounds=47,-122.7|48,-121"
+  bounds_opencage <- c(-123, 46.8, -120.5, 48.5)
 
 
 #### BRING IN DATA ####
 pha_cleanadd <- readRDS(file.path(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
-
+}
 ### If addresses have already been geocoded, bring them in here
 # Initial geocoding results (differs from future approaches)
-esri_20170824 <- read.xlsx(file.path(housing_path, "Geocoding",
-                                            "PHA_addresses_matched_ESRI_2017-08-24.xlsx"))
-goog_20170824 <- readRDS(file.path(housing_path, "Geocoding",
-                                   "PHA_addresses_matched_google_2017-08-24.rds"))
+esri_20170824 <- read.xlsx(file.path(housing_path,
+                                            PHA_addresses_matched_ESRI_fn))
+goog_20170824 <- readRDS(file.path(housing_path,
+                                   PHA_addresses_matched_google_fn))
 
 
 #### PROCESS PREVIOUSLY GEOCODED DATA ####
+if(UW == TRUE){
+# Join
+adds_matched <- left_join(esri_20170824, goog_20170824, by = c("FID" = "index"))
+
+# Collapse to useful columns and select matching from each source as appropriate
+adds_matched <- adds_matched %>%
+   rename(unit_add_new = unit_add_n,
+           unit_city_new = unit_city_,
+           unit_state_new = unit_state,
+           unit_zip_new = unit_zip_n,
+           unit_concat = unit_conca,
+           status_esri = Status,
+           status_goog = status,
+           score_esri = Score,
+           addr_type_esri = Addr_type,
+           addr_type_goog = address_type,
+           add_esri = Match_addr,
+           add_goog = formatted_address,
+           accuracy_goog = accuracy,
+           match_type_esri = Match_type,
+           id_esri = FID) %>%
+   mutate(add_esri = toupper(add_esri),
+          add_goog = toupper(add_goog),
+          X = ifelse(status_goog == "OK" & !is.na(status_goog), long, POINT_X),
+          Y = ifelse(status_goog == "OK" & !is.na(status_goog), lat, POINT_Y),
+          formatted_address = ifelse(status_goog == "OK" & !is.na(status_goog), add_goog, add_esri),
+          source = ifelse(status_goog == "OK" & !is.na(status_goog), "Google", "ESRI")) %>%
+   select(unit_add_new:unit_concat, id_esri, status_esri:add_esri, addr_type_esri, add_esri, accuracy_goog, status_goog,
+          addr_type_goog, add_goog, formatted_address, X, Y, source) %>%
+   mutate(unit_zip_new = as.numeric(unit_zip_new))
+# Merge data
+pha_cleanadd_coded <- left_join(pha_cleanadd, adds_matched, by = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"))
+pha_cleanadd_coded <- pha_cleanadd_coded %>% rename(unit_concat = unit_concat.x) %>%
+  select(-unit_concat.y)
+
+#save add geocoded file
+saveRDS(pha_cleanadd_coded, paste0(housing_path, 
+                             pha_cleanadd_geocoded_fn))
+# Remove temp variable
+rm(adds_matched)
+} else {
 ### Initial geocoding results (differs from future approaches) - 2017-08-24
 adds_matched_20170824 <- left_join(esri_20170824, goog_20170824, by = "FID")
 # Collapse to useful columns and select matching from each source as appropriate
@@ -336,7 +377,7 @@ pha_cleanadd_coded <- left_join(pha_cleanadd, adds_matched_overall,
 #### SAVE DATA ####
 saveRDS(pha_cleanadd_coded, paste0(housing_path, 
                              "/OrganizedData/pha_cleanadd_midpoint_geocoded.Rda"))
-
+}
 rm(list = ls(pattern = ("adds")))
 rm(list = ls(pattern = ("esri")))
 rm(list = ls(pattern = ("goog")))
