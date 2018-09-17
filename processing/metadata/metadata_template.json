@@ -29,6 +29,22 @@
         "panel_3_2017_fname": "file_name.type",
         "kcha_eop_fname": "file_name.type",
         "sql": "TRUE if you're using this"
+    },
+    "combined": {
+        "housing_path": "path_to_housing/OrganizedData_folder",
+        "sql": "FALSE if not using or TRUE if using",
+        "UW": "TRUE for UW specific code",
+        "pha_fn":"file_name.type",
+        "pha_clean_fn": "file_name.type",
+        "pha_recoded_fn":"file_name.type",
+        "pha_cleanadd_fn": "file_name.type",
+        "pha_cleanadd_geocoded_fn":"file_name.type",
+        "pha_specific_fn": "file_name.type",
+        "PHA_addresses_matched_ESRI_fn": "file_name.type",
+        "PHA_addresses_matched_google_fn": "file_name.type",
+        "kcha_dev_adds_path_fn": "file_name.type",
+        "pha_cleanadd_sort_dedup_fn": "file_name.type",
+        "pha_longitudinal_fn": "file_name.type"
     }
 }
 
