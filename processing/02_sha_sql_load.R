@@ -139,7 +139,7 @@ rm(df_dedups)
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 
-### UW DATA field names mappings are different?
+### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
 if (UW == TRUE) {
 fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
 
@@ -173,10 +173,13 @@ sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
 sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
 sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), 
                                                     fields$SHA_new_ph)])
+
+if (UW == TRUE) {
 # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
-colnames(sha3a_new)[10] <- "hh_lname"
-colnames(sha3a_new)[11] <- "hh_fname"
-colnames(sha3a_new)[12] <- "hh_mname"
+  colnames(sha3a_new)[10] <- "hh_lname"
+  colnames(sha3a_new)[11] <- "hh_fname"
+  colnames(sha3a_new)[12] <- "hh_mname"
+}
 
 sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), 
                                                     fields$SHA_new_ph)])
@@ -379,51 +382,51 @@ sha3a_new <- sha3a_new %>%
 # UW DATA CODE
 # Add suffix columns to sha1a
 if(UW == TRUE) {
-sha1a.fix <- sha1a %>%
-  filter(v56!="") %>%
-  mutate(v57="",hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
-	select(-hh_fname,-mname)
-	
-names(sha1a.fix) <- names(sha1a)
+  sha1a.fix <- sha1a %>%
+    filter(v56!="") %>%
+    mutate(v57="",hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
+    select(-hh_fname,-mname)
+    
+  names(sha1a.fix) <- names(sha1a)
 
-sha1a.fix <- sha1a.fix %>%
-  select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, lnamesuf = 57, fname:55)
+  sha1a.fix <- sha1a.fix %>%
+    select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, lnamesuf = 57, fname:55)
 
-sha1a.good <- sha1a %>% filter(is.na(v56)) %>%
-	  			      mutate(hh_lnamesuf="", lnamesuf="") %>%
-  	  			    select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf,
-                  fname:fhh_ssn, -v56)
+  sha1a.good <- sha1a %>% filter(is.na(v56)) %>%
+                  mutate(hh_lnamesuf="", lnamesuf="") %>%
+                  select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf,
+                    fname:fhh_ssn, -v56)
 
-sha1a <- rbind(sha1a.good,sha1a.fix) %>%
-  mutate(mbr_num=as.integer(mbr_num))
+  sha1a <- rbind(sha1a.good,sha1a.fix) %>%
+    mutate(mbr_num=as.integer(mbr_num))
 
-# Add suffix columns sha2a
-sha2a.good <- sha2a %>%
-	filter(is.na(v57)) %>%
-	rename(hh_lnamesuf=v57, lnamesuf=v58) %>%
-  mutate(lnamesuf="") %>%
-  select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, 
-    lnamesuf,fname:fhh_ssn)
+  # Add suffix columns sha2a
+  sha2a.good <- sha2a %>%
+    filter(is.na(v57)) %>%
+    rename(hh_lnamesuf=v57, lnamesuf=v58) %>%
+    mutate(lnamesuf="") %>%
+    select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, 
+      lnamesuf,fname:fhh_ssn)
 
-sha2a.fix1 <-
-	sha2a %>%
-  filter(v57!="", is.na(v58)) %>%
-	mutate(lnamesuf=fname, hh_lnamesuf="") %>%
-  select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, 
-    lnamesuf, mname:v57)
+  sha2a.fix1 <-
+    sha2a %>%
+    filter(v57!="", is.na(v58)) %>%
+    mutate(lnamesuf=fname, hh_lnamesuf="") %>%
+    select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, 
+      lnamesuf, mname:v57)
 
-names(sha2a.fix1) <- names(sha2a.good)
+  names(sha2a.fix1) <- names(sha2a.good)
 
-sha2a.fix2 <-
-	sha2a %>% filter(!is.na(v58)) %>%
-  	mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
-	  select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, 
-      lnamesuf, dob:v58)
+  sha2a.fix2 <-
+    sha2a %>% filter(!is.na(v58)) %>%
+      mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
+      select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, 
+        lnamesuf, dob:v58)
 
-names(sha2a.fix2) <- names(sha2a.good)
+  names(sha2a.fix2) <- names(sha2a.good)
 
-sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
-  mutate(mbr_num=as.integer(mbr_num))
+  sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
+    mutate(mbr_num=as.integer(mbr_num))
 }
 ###
 
@@ -443,31 +446,35 @@ sha1 <- sha1 %>% mutate(sha_source = "sha1")
 sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
-### Clean column types before append ### change to match new mappings  check other things
-sha1 <- sha1 %>%
-        mutate(subs_type = as.character(subs_type),
-               hhold_size = as.integer(hhold_size),
-               rent_tenant = as.numeric(rent_tenant),
-               r_hisp = as.numeric(r_hisp),
-               hh_asset_val=as.numeric(hh_asset_val),
-               hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
-
-sha2 <- sha2 %>%
+if (UW == TRUE) {
+  ### Clean column types before append ### change to match new mappings  check other things
+  sha1 <- sha1 %>%
           mutate(subs_type = as.character(subs_type),
-                 rent_tenant = as.numeric(rent_tenant),
-                 r_hisp = as.numeric(r_hisp),
-                 hh_asset_val=as.numeric(hh_asset_val),
-                 ph_rent_ceiling=as.integer(ph_rent_ceiling),
-                 hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
+                hhold_size = as.integer(hhold_size),
+                rent_tenant = as.numeric(rent_tenant),
+                r_hisp = as.numeric(r_hisp),
+                hh_asset_val=as.numeric(hh_asset_val),
+                hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
 
-sha3 <- sha3 %>%
-          mutate(subs_type = as.character(subs_type),
-                 unit_zip = as.character(unit_zip),
-                 rent_tenant = as.numeric(rent_tenant))
+  sha2 <- sha2 %>%
+            mutate(subs_type = as.character(subs_type),
+                  rent_tenant = as.numeric(rent_tenant),
+                  r_hisp = as.numeric(r_hisp),
+                  hh_asset_val=as.numeric(hh_asset_val),
+                  ph_rent_ceiling=as.integer(ph_rent_ceiling),
+                  hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
 
-# Append data and drop data fields not being used (data from SHA are blank)
-sha_ph <- bind_rows(sha1, sha2, sha3) #%>%
-  #select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
+  sha3 <- sha3 %>%
+            mutate(subs_type = as.character(subs_type),
+                  unit_zip = as.character(unit_zip),
+                  rent_tenant = as.numeric(rent_tenant))
+
+  # Append data and drop data fields not being used (data from SHA are blank)
+  sha_ph <- bind_rows(sha1, sha2, sha3)
+} else {
+  sha_ph <- bind_rows(sha1, sha2, sha3) %>%
+  select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
+}
 
 # Fix more formats
 sha_ph <- sha_ph %>%
@@ -536,35 +543,47 @@ sha4 <- left_join(sha4a, sha1b,
 sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
 sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
-sha5 <- left_join(sha5a_new, sha5b_new, 
-                  by = c("cert_id", "mbr_id"))
-sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
-sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+if (UW == TRUE) {
+  sha5 <- left_join(sha5a_new, sha5b_new, 
+                    by = c("cert_id", "mbr_id"))
+  sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
+  sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+} else {
+  sha5 <- left_join(sha5a_new, sha5b_new,
+                    by = c("cert_id", "mbr_id", "increment"))
+  sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+}
 
 # Add source field to track where each row came from
 sha4 <- sha4 %>% mutate(sha_source = "sha4")
 sha5 <- sha5 %>% mutate(sha_source = "sha5")
 
 # Append data
-# Fix column tyoe mismatch before append
-sha4 <- sha4 %>%
-          mutate(hh_asset_val = as.integer(hh_asset_val))
+# Fix column type mismatch before append
+if (UW == TRUE) {
+  sha4 <- sha4 %>%
+            mutate(hh_asset_val = as.integer(hh_asset_val))
+}
 
 sha_hcv <- bind_rows(sha4, sha5)
 
-
 #### JOIN PH AND HCV COMBINED FILES ####
 # Clean up mismatching variables
-sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi, 
-                  portability, disability) # access_unit, access_req, 
-#                  assist_tanf, assist_gen, assist_food, assist_mcaid_chip,
-#                  assist_eitc)
+if (UW == TRUE) {
+  sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi, 
+                    portability, disability)
+                    
+  # Cleanup before append
+  sha_hcv <- sha_hcv %>%
+              mutate(unit_zip = as.character(unit_zip))
+} else {
+  sha_ph <- yesno_f(sha_ph, r_white, r_black, r_aian, r_asian, r_nhpi, 
+                  portability, disability, access_unit, access_req, 
+                  assist_tanf, assist_gen, assist_food, assist_mcaid_chip,
+                  assist_eitc)
+}
 
 #### Append data ####
-# Cleanup before append
-sha_hcv <- sha_hcv %>%
-            mutate(unit_zip = as.character(unit_zip))
-
 sha <- bind_rows(sha_ph, sha_hcv)
 
 
@@ -782,14 +801,14 @@ sha <- sha %>%
 if(sql == TRUE) {
 ##### Load to SQL server #####
 # May need to delete table first if data structure and columns have changed
-dbRemoveTable(db.apde51, name = "sha_combined")
-dbWriteTable(db.apde51, name = "sha_combined", 
-             value = as.data.frame(sha), overwrite = T,
-             field.types = c(
-               act_date = "date",
-               admit_date = "date",
-               dob = "date"
-             ))
+  dbRemoveTable(db.apde51, name = "sha_combined")
+  dbWriteTable(db.apde51, name = "sha_combined", 
+              value = as.data.frame(sha), overwrite = T,
+              field.types = c(
+                act_date = "date",
+                admit_date = "date",
+                dob = "date"
+              ))
 }
 
 ##### Remove temporary files #####
