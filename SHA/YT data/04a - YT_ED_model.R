@@ -41,12 +41,10 @@ system.time(
   yt_mcaid_final <- dbGetQuery(db.apde51, 
                                "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
                                gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
-                               age12_grp, age13_grp, age14_grp, age15_grp,
-                               age16_grp, age17_grp,
+                               age12, age13, age14, age15, age16, age17,
                                agency_new, enroll_type, dual_elig_m, yt, yt_old,
                                yt_new, ss,  yt_ever, ss_ever, place, start_type, end_type,
-                               length12_grp, length13_grp, length14_grp, 
-                               length15_grp, length16_grp, length17_grp, 
+                               length12, length13, length14, length15, length16, length17, 
                                hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
                                hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
                                FROM housing_mcaid_yt")
@@ -127,12 +125,34 @@ yt_ss_30 <- bind_rows(lapply(seq(12,17), function(x) {
     ungroup()
 }))
 
+# Set up age12 for everyone even if missing (may make negative #s)
+yt_ss_30 <- yt_ss_30 %>%
+  mutate(age12 = case_when(
+    !is.na(age12) ~ age12,
+    !is.na(age13) ~ age13 - 1,
+    !is.na(age14) ~ age14 - 2,
+    !is.na(age15) ~ age15 - 3,
+    !is.na(age16) ~ age16 - 4,
+    !is.na(age17) ~ age17 - 5
+  ))
+
+# Set up length12 for everyone even if missing (may make negative #s)
+yt_ss_30 <- yt_ss_30 %>%
+  mutate(length12 = case_when(
+    !is.na(length12) ~ length12,
+    !is.na(length13) ~ length13 - 1,
+    !is.na(length14) ~ length14 - 2,
+    !is.na(length15) ~ length15 - 3,
+    !is.na(length16) ~ length16 - 4,
+    !is.na(length17) ~ length17 - 5
+  ))
+
 
 # Only keep relevant columns (no need to keep SS since YT = 0 == SS)
 # Only need age and length from baseline (2012)
 yt_ss_30 <- yt_ss_30 %>%
-  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12_grp,
-         length12_grp, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12,
+         length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
   rename(year = year_code) %>%
   distinct()
 
@@ -145,15 +165,10 @@ yt_ss_ed_join <- left_join(yt_ss_30, yt_ss_ed_sum,
   rename(ed_count = count)
 
 
-#### TEMP UNTIL 01 - YT setup is rerun ####
-Encoding(yt_ss_ed_join$age12_grp) <- 'latin1'
-Encoding(yt_ss_ed_join$length12_grp) <- 'latin1'
-
-
 ### Need to reshape household income vars in a single column
 yt_ss_ed_join <- melt(yt_ss_ed_join,
               id.vars = c("year", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
-                          "age12_grp", "length12_grp", "pt", "ed_count"),
+                          "age12", "length12", "pt", "ed_count"),
               variable.name = "inc_yr", value.name = "inc")
 
 # Format and summarize
@@ -196,8 +211,24 @@ yt_ed <- yt_ss_ed_join %>%
     year_0 = year - 2012
   ) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
-             is.na(age12_grp) | is.na(length12_grp) | is.na(inc)) &
-           year <= 2017)
+             is.na(age12) | is.na(length12) | is.na(inc)) &
+           year <= 2017) %>%
+  # Set up cumulative sum for time in YT since redevelopment
+  mutate(yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
+  # Make lagged variables
+  group_by(pid2) %>%
+  mutate(
+    yt_lag = case_when(
+      year == 2012 ~ NA_real_,
+      TRUE ~ lag(yt, 1)
+    ),
+    rate_lag = case_when(
+      rate == 2012 ~ NA_real_,
+      TRUE ~ lag(rate, 1)
+    ),
+    yt_cumsum = cumsum(yt_cumsum)
+  ) %>%
+  ungroup()
 yt_ed <- as.data.frame(yt_ed)
 
 # People who were originally at YT and have stayed/returned vs. new arrivals
@@ -217,9 +248,46 @@ yt_orig_ed <- yt_ss_ed_join %>%
     year_0 = year - 2012
   ) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
-             is.na(age12_grp) | is.na(length12_grp) | is.na(inc)) &
+             is.na(age12) | is.na(length12) | is.na(inc)) &
            year <= 2017)
 yt_orig_ed <- as.data.frame(yt_orig_ed)
+
+
+
+# Make matrix of all possible years
+all_years <- yt_ed %>% distinct(pid2)
+all_years <- data.frame(pid2 = rep(all_years$pid2, each = 6), year = rep(seq(2012, 2017), times = length(all_years)))
+# yt_ed_all_yr <- left_join(all_years, distinct(yt_ed, pid2, ethn_c, gender_c, age12, inc_min), by = c("pid2"))
+# yt_ed_all_yr <- left_join(yt_ed_all_yr, select(yt_ed, pid2, year, yt, yt_orig, length12, pt, ed_count, inc, rate, pt_log), by = c("pid2", "year")) %>%
+#   # Remake year_0
+#   mutate(year_0 = year - 2012)
+
+yt_ed_all_yr <- left_join(all_years, yt_ed, by = c("pid2", "year")) %>%
+  group_by(pid2) %>%
+  fill(ethn_c, gender_c, age12, inc_min, length12) %>%
+  ungroup()
+yt_ed_all_yr <- yt_ed_all_yr %>% 
+  mutate(
+    cens = ifelse(is.na(yt), 1, 0),
+    # Remake year_0
+    year_0 = year - 2012,
+    # Set up cumulative sum for time in YT since redevelopment
+    yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
+  # Make lagged variables
+  group_by(pid2) %>%
+  mutate(
+    yt_lag = case_when(
+      year == 2012 ~ NA_real_,
+      TRUE ~ lag(yt, 1)
+      ),
+    rate_lag = case_when(
+      rate == 2012 ~ NA_real_,
+      TRUE ~ lag(rate, 1)
+      ),
+    yt_cumsum = cumsum(yt_cumsum)
+    ) %>%
+  ungroup()
+
 
 
 #### END DATA SETUP ####
@@ -335,8 +403,8 @@ yt_ed %>% group_by(yt, year) %>%
 ### Review missingness
 yt_ss_ed_join %>% filter(is.na(ethn_c)) %>% group_by(yt, year) %>% summarise(count= n())
 yt_ss_ed_join %>% filter(is.na(gender_c)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ss_ed_join %>% filter(is.na(age12_grp)) %>% group_by(yt, year) %>% summarise(count= n())
-yt_ss_ed_join %>% filter(is.na(length12_grp)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(age12)) %>% group_by(yt, year) %>% summarise(count= n())
+yt_ss_ed_join %>% filter(is.na(length12)) %>% group_by(yt, year) %>% summarise(count= n())
 yt_ss_ed_join %>% filter(is.na(inc)) %>% group_by(yt, year) %>% summarise(count= n())
 
 
@@ -409,12 +477,22 @@ ed_plot
 
 #### MODELS ####
 #### Run simple GEE model ####
-m_gee_crude <- geeglm(ed_count ~ yt*year_0 + offset(log(pt)),
-                      id = pid2, corstr = "independence",
-                      family = "poisson", data = yt_ed)
+# Focus is on YT/SS
 m_gee_crude <- geeglm(ed_count ~ yt + offset(log(pt)),
                       id = pid2, corstr = "independence",
-                      family = "poisson", data = yt_ed)
+                      family = "poisson", data = yt_ed_all_yr)
+m_gee_crude <- geeglm(ed_count ~ yt*year_0 + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed_all_yr)
+
+# Focus is on time spent at YT
+m_gee_crude <- geeglm(ed_count ~ yt_cumsum + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed_all_yr)
+m_gee_crude <- geeglm(ed_count ~ yt_cumsum*year_0 + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed_all_yr)
+
 summary(m_gee_crude)
 exp(cbind(Estimate = coef(m_gee_crude), confint_tidy(m_gee_crude)))
 
@@ -431,15 +509,23 @@ m_gee_crude_pred <- yt_ed_sum %>%
 
 
 #### Run adjusted GEE model ####
+# Focus is on YT/SS after accounting for calendar year
 m_gee_adj <- geeglm(ed_count ~ yt*year_0 + ethn_c + gender_c + 
-                      age12_grp + length12_grp + inc_min + offset(log(pt)),
+                      age12 + length12 + inc_min +offset(log(pt)),
                       id = pid2, corstr = "independence",
-                      family = "poisson", data = yt_ed)
+                      family = "poisson", data = yt_ed_all_yr)
+
+# Focus is on time spent at YT after accounting for calendar year
+m_gee_adj <- geeglm(ed_count ~ yt_cumsum*year_0 + ethn_c + gender_c + 
+                      age12 + length12 + inc_min + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = yt_ed_all_yr)
 summary(m_gee_adj)
 exp(cbind(Estimate = coef(m_gee_adj), confint_tidy(m_gee_adj)))
 
+
 mz_gee_adj <- zelig(ed_count ~ yt*year_0 + ethn_c + gender_c + 
-                      age12_grp + length12_grp + inc_min + offset(pt_log),
+                      age12 + length12 + inc_min + offset(pt_log),
                     data = yt_ed, id = "pid2", corstr = "independence",
                     model = "poisson.gee")
 summary(mz_gee_adj)
@@ -452,7 +538,7 @@ summary(sim(mz_gee_adj, x = setx(mz_gee_adj)))
 
 # Run adjusted GEE model for original vs new YT
 m_gee_adj_orig <- geeglm(ed_count ~ yt_orig*as.numeric(year-2012) + ethn_c + gender_c + 
-                           age12_grp + length12_grp + inc_min + offset(log(pt)),
+                           age12 + length12 + inc_min + offset(log(pt)),
                          id = pid2, corstr = "independence",
                          family = "poisson", data = yt_orig_ed)
 summary(m_gee_adj_orig)
@@ -517,9 +603,16 @@ m_gee_adj_orig_pred <- yt_ss_ed_join %>%
 
 
 #### Run simple negative binomial model ####
-m_nb_crude <- MASS::glm.nb(ed_count ~ yt*as.numeric(year-2012) + offset(log(pt)), 
-                      data = yt_ed)
-m_nb_crude <- MASS::glm.nb(ed_count ~ yt + offset(log(pt)), data = yt_ed)
+# Focus is on YT/SS
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt + offset(log(pt)), data = yt_ed_all_yr)
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt*year_0 + offset(log(pt)), 
+                      data = yt_ed_all_yr)
+
+# Focus is on time spent at YT
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt_cumsum + offset(log(pt)), data = yt_ed_all_yr)
+m_nb_crude <- MASS::glm.nb(ed_count ~ yt_cumsum*year_0 + offset(log(pt)), 
+                           data = yt_ed_all_yr)
+
 summary(m_nb_crude)
 exp(cbind(Estimate = coef(m_nb_crude), confint(m_nb_crude)))
 
@@ -580,9 +673,14 @@ ggplot(data = m_nb_crude_plot_data, aes(x = year)) +
 
 
 #### Run adjusted negative binomial model ####
-m_nb_adj <- MASS::glm.nb(ed_count ~ yt*as.numeric(year-2012) + ethn_c + gender_c + 
-                        age12_grp + length12_grp + inc_min + offset(log(pt)), 
-             data = yt_ed)
+# Focus is on YT/SS
+m_nb_adj <- MASS::glm.nb(ed_count ~ yt*year_0 + ethn_c + gender_c + 
+                        age12 + length12 + inc_min + offset(log(pt)), 
+             data = yt_ed_all_yr)
+# Focus is on time spent at YT
+m_nb_adj <- MASS::glm.nb(ed_count ~ yt_cumsum*year_0 + ethn_c + gender_c + 
+                           age12 + length12 + inc_min + offset(log(pt)), 
+                         data = yt_ed_all_yr)
 summary(m_nb_adj)
 exp(cbind(Estimate = coef(m_nb_adj), confint(m_nb_adj)))
 
@@ -607,7 +705,7 @@ plot_f(df = m_nb_adj_pred_data, labels = c("Scattered sites", "YT"),
 
 #### Run adjusted negative binomial model for YT original vs. new to YT ####
 m_nb_adj_orig <- MASS::glm.nb(ed_count ~ yt_orig*as.numeric(year-2012) + ethn_c + gender_c + 
-                           age12_grp + length12_grp + inc_min + offset(log(pt)), 
+                           age12 + length12 + inc_min + offset(log(pt)), 
                          data = yt_orig_ed)
 summary(m_nb_adj_orig)
 exp(cbind(Estimate = coef(m_nb_adj_orig), confint(m_nb_adj_orig)))
@@ -635,11 +733,15 @@ plot_f(df = m_nb_adj_orig_pred_data, labels = c("New to YT", "YT original"),
 #### Run zero inflated model ####
 library(pscl)
 library(snow)
+library(boot)
 
 
-m_zero <- zeroinfl(ed_count ~ yt*as.numeric(year-2012) + ethn_c + 
-                              gender_c + age12_grp + length12_grp + offset(log(pt)),
-                            data = yt_ed, dist = "negbin")
+m_zero <- zeroinfl(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                     length12 + inc + offset(log(pt)),
+                   data = yt_ed, dist = "negbin")
+m_zero <- zeroinfl(ed_count ~ yt*year_0 + ethn_c + gender_c +  
+                     length12 + offset(log(pt)),
+                   data = yt_ed_all_yr, dist = "negbin")
 summary(m_zero)
 
 m_zero_pred <- yt_ss_ed_join %>%
@@ -729,26 +831,20 @@ ggplot(data = m_zero_pred_data, aes(x = year)) +
 
 
 ### Bootstrap CIs
-dput(coef(ed_zero, "count"))
-dput(coef(ed_zero, "zero"))
+start <- dput(coef(m_zero, "count"))
+zero <- dput(coef(m_zero, "zero"))
 
 boot_zero_f <- function(data, i) {
-  m <- pscl::zeroinfl(ed_count ~ yt + as.factor(year) + ethn_c + gender_c + age12_grp + length12_grp + offset(log(pt)) | 
-                  ethn_c + gender_c + age12_grp + length12_grp + offset(log(pt)),
-                data = data[i, ],
-                start = list(count = c(-6.013, -0.1316, 0.1035, 0.1047, 0.1593, 0.0444,
-                                       -0.1481, 0.9677, -0.3216, -0.8693, 0.3145,
-                                       0.1215, 0.4881, 0.4773, -0.5049, 0.0443,
-                                       0.3706, 0.5350, -0.2259, 0.0104, 0.0080),
-                             zero = c(-6.846, -10.826, 1.465,
-                                      0.7551, 0.9261, 0.7366, 0.8743,
-                                      0.8961, -0.6448, -13.447, 0.7879,
-                                      0.7159, -0.0497, 0.0041, 0.0600)))
+  m <- pscl::zeroinfl(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                        length12 + inc_min + offset(log(pt)),
+                      data = data[i, ],
+                      start = list(count = start,
+                             zero = zero))
   as.vector(t(do.call(rbind, coef(summary(m)))[, 1:2]))
 }
 
 set.seed(10)
-ed_zero_boot <- boot(yt_ed2, boot_zero_f, R = 100, parallel = "snow", ncpus = 4)
+m_zero_boot <- boot(yt_ed_all_yr, boot_zero_f, R = 100, parallel = "snow", ncpus = 4)
 
 
 
@@ -758,8 +854,8 @@ ed_zero_boot <- boot(yt_ed2, boot_zero_f, R = 100, parallel = "snow", ncpus = 4)
 w1 <- ipwtm(exposure = yt, 
             family = "binomial",
             link = "logit",
-            numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-            denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+            numerator = ~ ethn_c + gender_c + age12 + length12,
+            denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
             id = pid2,
             timevar = timevar,
             type = "all",
@@ -774,8 +870,8 @@ pastecs::stat.desc(w1$weights.trunc)
 w_lc <- ipwtm(exposure = cens_l, 
               family = "binomial",
               link = "logit",
-              numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-              denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+              numerator = ~ ethn_c + gender_c + age12 + length12,
+              denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
               id = pid2,
               timevar = timevar,
               type = "all",
@@ -785,8 +881,8 @@ w_lc <- ipwtm(exposure = cens_l,
 w_rc <- ipwtm(exposure = cens_r, 
               family = "binomial",
               link = "logit",
-              numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-              denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+              numerator = ~ ethn_c + gender_c + age12 + length12,
+              denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
               id = pid2,
               timevar = timevar,
               type = "all",
@@ -815,20 +911,78 @@ yt_ed <- yt_ed %>%
 pastecs::stat.desc(yt_ed$iptw)
 
 
-# Run negative binomial MSMM
-m_msm_nb <- MASS::glm.nb(ed_count ~ yt + offset(log(pt)), 
+# Run negative binomial MSM
+m_msm_nb <- MASS::glm.nb(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                           length12 + inc_min + offset(log(pt)), 
                          data = yt_ed, weights = iptw)
 summary(m_msm_nb)
 exp(cbind(Estimate = coef(m_msm_nb), confint(m_msm_nb)))
 
 
 # Run GEE Poisson MSM
-m_msm_gee <- geeglm(ed_count ~ yt + offset(log(pt)),
+m_msm_gee <- geeglm(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                      length12 + inc_min + offset(log(pt)),
                     id = pid2, corstr = "independence",
                     family = "poisson", data = yt_ed,
                     weights = iptw)
 summary(m_msm_gee)
 exp(cbind(Estimate = coef(m_msm_gee), confint_tidy(m_msm_gee)))
+
+# Run zero inflated Poisson
+# Currently doesn't work
+m_msm_znb <- zeroinfl(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                        length12 + inc_min + offset(log(pt)),
+                      data = yt_ed, dist = "negbin",
+                      weights = iptw)
+summary(m_zero)
+  
+  
+  
+#### Run history-adjusted marginal structural model ####
+# Set up IPT weights and join back
+
+w1 <- ipwtm(exposure = yt, 
+            family = "binomial",
+            link = "logit",
+            numerator = ~ ethn_c + gender_c + age12 + length12,
+            denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
+            id = pid2,
+            timevar = timevar,
+            type = "all",
+            trunc = 0.01,
+            data = yt_ed_all_yr)
+
+# Check mean of weights near 1
+pastecs::stat.desc(w1$ipw.weights)
+pastecs::stat.desc(w1$weights.trunc)
+
+# Set up weights for left- and right-censoring
+w_lc <- ipwtm(exposure = cens_l, 
+              family = "binomial",
+              link = "logit",
+              numerator = ~ ethn_c + gender_c + age12 + length12,
+              denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
+              id = pid2,
+              timevar = timevar,
+              type = "all",
+              trunc = 0.01,
+              data = yt_ed)
+
+w_rc <- ipwtm(exposure = cens_r, 
+              family = "binomial",
+              link = "logit",
+              numerator = ~ ethn_c + gender_c + age12 + length12,
+              denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
+              id = pid2,
+              timevar = timevar,
+              type = "all",
+              trunc = 0.01,
+              data = yt_ed)
+
+
+
+
+#### Run structured nested mean model ####
 
 
 
@@ -849,7 +1003,7 @@ w1_2013 <- ipwpoint(
   family = "binomial",
   link = "logit",
   numerator = ~ 1,
-  denominator = ~ ethn_c + hisp_c + gender_c + age12_grp + length12_grp,
+  denominator = ~ ethn_c + hisp_c + gender_c + age12 + length12,
   trunc = .05,
   data = yt_ed_temp2013
 )
@@ -863,31 +1017,18 @@ summary(glm(ed_count ~ yt + offset(log(pt)), family = "poisson", data = yt_ed_te
 
 # Run regular regression model
 summary(glm(ed_count ~ yt + offset(log(pt)), family = "poisson", data = yt_ed2))
-summary(glm(ed_count ~ yt + as.factor(ethn_c) + hisp_c + gender_c + age12_grp + length12_grp + year + offset(log(pt)), family = "poisson", data = yt_ed2))
-
-
-w1_2 <- ipwpoint2(
-  exposure = yt3,
-  family = "binomial",
-  link = "logit",
-  numerator = ~ as.factor(ethn_c) + hisp_c + gender_c + age12_grp + length12_grp,
-  denominator = ~ 1,
-  trunc = .05,
-  data = yt_ed_temp2013
-)
-
+summary(glm(ed_count ~ yt + as.factor(ethn_c) + hisp_c + gender_c + age12 + length12 + year + offset(log(pt)), family = "poisson", data = yt_ed2))
 
 
 
 # Set up IPT weights for each year
-
 w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
   # Run weights up until and including that year
   weight <- ipwtm(exposure = yt, 
                  family = "binomial",
                  link = "logit",
-                 numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-                 denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                 numerator = ~ ethn_c + gender_c + age12 + length12,
+                 denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
                  id = pid2,
                  timevar = timevar,
                  type = "all",
@@ -907,8 +1048,8 @@ w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
     weight_lc <- ipwtm(exposure = cens_l,
                        family = "binomial",
                        link = "logit",
-                       numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-                       denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                       numerator = ~ ethn_c + gender_c + age12 + length12,
+                       denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
                        id = pid2,
                        timevar = timevar,
                        type = "all",
@@ -924,8 +1065,8 @@ w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
     weight_rc <- ipwtm(exposure = cens_r,
                        family = "binomial",
                        link = "logit",
-                       numerator = ~ ethn_c + gender_c + age12_grp + length12_grp,
-                       denominator = ~ ethn_c + gender_c + age12_grp + length12_grp + inc + year,
+                       numerator = ~ ethn_c + gender_c + age12 + length12,
+                       denominator = ~ ethn_c + gender_c + age12 + length12 + inc + year,
                        id = pid2,
                        timevar = timevar,
                        type = "all",
@@ -943,7 +1084,8 @@ w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
       !is.na(weight) & !is.na(weight_lc) & !is.na(weight_rc) ~ weight * weight_lc * weight_rc,
       !is.na(weight) & !is.na(weight_lc) ~ weight * weight_lc,
       !is.na(weight) & !is.na(weight_rc) ~ weight * weight_rc
-    ))
+    )) %>%
+    arrange(pid2, year)
 }))
 pastecs::stat.desc(w_year$iptw)
 
@@ -953,6 +1095,10 @@ m_msm_yr_gee <- geeglm(ed_count ~ yt + offset(log(pt)),
                     weights = iptw)
 summary(m_msm_yr_gee)
 exp(cbind(Estimate = coef(m_msm_yr_gee), confint_tidy(m_msm_yr_gee)))
+
+
+
+yt_ed <- yt_ed %>% left_join(., yt_ed_all_yr)
 
 
 #### END TESTING AREA ####
