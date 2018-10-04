@@ -34,7 +34,7 @@ MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,SHA_prog_port_codes,KCHA_modified,KC
 03k5,,racenativehawaiianotherpacificislanderindicator3k5,,,,,r_nhpi
 03m,ethnicity3m,ethnicity3m,ethnicity3m,,h3m,,r_hisp
 03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,,h3n,,ssn
-03n,,,ssn,,,,ssn
+03n,,ssn,ssn,,,,hh_ssn
 03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,hhold_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,list_date
@@ -197,3 +197,4 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,totalannualunremimbursedmedicalexpense,,,,,reimbursed_med
 ,,medicaldisabilitythreshold,,,,,med_dis_thresh
 ,,medicaldisabilityassistanceallowance,,,,,med_dis_allowance
+,,,v9,,,,asset_inc

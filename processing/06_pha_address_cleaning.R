@@ -34,17 +34,24 @@
 
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # used to read in csv files and rename fields
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
 
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"combined")
 
 
 #### Bring in data #####
-pha_recoded <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_recoded.Rda"))
+pha_recoded <- readRDS(file = paste0(housing_path, pha_recoded_fn))
 
 
 ##### Addresses #####
@@ -59,8 +66,9 @@ pha_cleanadd <- pha_recoded %>%
 ### Specific addresses
 # Some addresses have specific issues than cannot be addressed via rules
 # However, these specific addresses should not be shared publically
-adds_specific <- read.xlsx(paste0(housing_path, "/OrganizedData/PHA_specific_addresses_fix - DO NOT SHARE FILE.xlsx"),
+adds_specific <- read.xlsx(paste0(housing_path, pha_specific_fn),
                            na.strings = "")
+
 adds_specific <- adds_specific %>%
   mutate_all(funs(ifelse(is.na(.), "", .)))
   
@@ -332,16 +340,16 @@ pha_cleanadd <- pha_cleanadd %>%
 
 rm(adds_specific)
 
-
-#### STOP HERE TO RUN GEOCODING ####
-saveRDS(pha_cleanadd, file = paste0(housing_path, 
+if (UW == FALSE) {
+  #### STOP HERE TO RUN GEOCODING ####
+  saveRDS(pha_cleanadd, file = paste0(housing_path, 
                                     "/OrganizedData/pha_cleanadd_midpoint.Rda"))
-
+}
 
 #### START HERE IF GEOCODING HAS BEEN COMPLETED ####
 ### Bring mid-point data back in
 pha_cleanadd_geocoded <- readRDS(file = paste0(housing_path, 
-                                      "/OrganizedData/pha_cleanadd_midpoint_geocoded.Rda"))
+                                      pha_cleanadd_geocoded_fn))
 
 
 #### Merge KCHA development data now that addresses are clean #####
@@ -353,8 +361,7 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
 
 # HCV
 # Bring in data
-kcha_dev_adds <- data.table::fread(file = file.path(housing_path, "KCHA/Original data/", 
-                                        "Development Addresses_received_2017-07-21.csv"), 
+kcha_dev_adds <- data.table::fread(file = file.path(kcha_dev_adds_path_fn), 
                                         stringsAsFactors = FALSE)
 # Bring in variable name mapping table
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
@@ -415,7 +422,7 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
 
 
 #### Save point ####
-saveRDS(pha_cleanadd_geocoded, file = paste0(housing_path, "/OrganizedData/pha_cleanadd_final.Rda"))
+saveRDS(pha_cleanadd_geocoded, file = paste0(housing_path, pha_cleanadd_geocoded_fn))
 
 rm(fields)
 rm(secondary)

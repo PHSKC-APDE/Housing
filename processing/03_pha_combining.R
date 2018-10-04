@@ -28,24 +28,36 @@ library(housing) # contains many useful functions for cleaning
 library(odbc) # Used to connect to SQL server
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
+
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
+
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+
+set_data_envr(METADATA,"combined")
 
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
+if(sql == TRUE) {
+  
+  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+  #### Bring in data ####
+  # This takes ~60 seconds
+  system.time(sha <- DBI::dbReadTable(db.apde51, "sha_combined"))
 
-#### Bring in data ####
-# This takes ~60 seconds
-system.time(sha <- DBI::dbReadTable(db.apde51, "sha_combined"))
+  # This takes ~35 seconds
+  system.time(kcha_long <- DBI::dbReadTable(db.apde51, "kcha_reshaped"))
 
-# This takes ~35 seconds
-system.time(kcha_long <- DBI::dbReadTable(db.apde51, "kcha_reshaped"))
-
+}
 
 #### Fix up variable formats ####
-sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date, 
-                  mtw_admit_date, move_in_date)
-sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher))
+# Vars mtw_admit_date & move_in_date missing in UW files
+sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date)
+
+sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher),
+                      unit_zip = as.numeric(unit_zip))
 
 kcha_long <- date_ymd_f(kcha_long, act_date, admit_date, dob, hh_dob)
 
@@ -255,7 +267,7 @@ pha <- pha %>%
 
 
 #### Save point ####
-saveRDS(pha, file = paste0(housing_path, "/OrganizedData/pha_combined.Rda"))
+saveRDS(pha, file = paste0(housing_path, pha_fn))
 
 
 #### Clean up ####

@@ -31,22 +31,19 @@ library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
+library(RJSONIO)
+library(RCurl)
 
-kcha_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original data"
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+eval(parse(text = script))
 
+METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
 
-panel_1_2004_2015_fname <- "kcha_panel_01_2004_2015.csv"
-panel_2_2004_2015_fname <- "kcha_panel_02_2004_2015.csv"
-panel_3_2004_2015_fname <- "kcha_panel_03_2004_2015.csv"
-panel_1_2016_fname <- "kcha_panel_01_2016.csv"
-panel_2_2016_fname <- "kcha_panel_02_2016.csv"
-panel_3_2016_fname <- "kcha_panel_03_2016.csv"
-panel_1_2017_fname <- "kcha_panel_01_2017.csv"
-panel_2_2017_fname <- "kcha_panel_02_2017.csv"
-panel_3_2017_fname <- "kcha_panel_03_2017.csv"
+set_data_envr(METADATA,"kcha_data")
 
-kcha_eop_fname <- "EOP Certifications_received_2017-10-05.csv"
+if (sql == TRUE) {
+  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+}
 
 #####################################
 #### PART 1: RAW DATA PROCESSING ####
@@ -86,6 +83,7 @@ kcha_2016_p3 <- fread(file = file.path(kcha_path, panel_3_2016_fname),
 kcha_2017_p1 <- fread(file = file.path(kcha_path, panel_1_2017_fname), 
                       na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
                       stringsAsFactors = FALSE)
+
 kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname), 
                       na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
                       stringsAsFactors = F,
@@ -175,6 +173,7 @@ kcha_2004_2015_full <- kcha_2004_2015_full %>%
 kcha_2016_full <- kcha_2016_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
             funs(as.Date(., format = "%m/%d/%Y")))
+            
 kcha_2017_full <- kcha_2017_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
             funs(as.Date(., format = "%m/%d/%Y")))
@@ -183,6 +182,7 @@ kcha_2017_full <- kcha_2017_full %>%
 # Keep all SSNs as characters for now (older data all characters with fread)
 kcha_2016_full <- kcha_2016_full %>%
   mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
+  
 kcha_2017_full <- kcha_2017_full %>%
   mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
 
@@ -194,8 +194,8 @@ kcha_2004_2015_full <- kcha_2004_2015_full %>%
 
 
 # The city variable seems misnamed in 2016 data (ok in 2017)
-kcha_2016_full <- kcha_2016_full %>% rename(h5a3 = h5a2)
-
+#kcha_2016_full <- kcha_2016_full %>% rename(h5a3 = h5a2)
+# There are now 2 vars with the same name 
 
 # Fix up some inconsistent naming in income fields of <2015 data
 kcha_2004_2015_full <- kcha_2004_2015_full %>%
@@ -207,8 +207,11 @@ kcha_2004_2015_full <- kcha_2004_2015_full %>%
          h19a10b = h1910b, h19a11b = h1911b, h19a12b = h1912b, h19a13b = h1913b,
          h19a14b = h1914b, h19a15b = h1915b, h19a16b = h1916b)
 
-# Fix up an inconsitent name in the 2017 data
-kcha_2017_full <- kcha_2017_full %>% rename(spec_vouch = spec_voucher)
+# Fix up an inconsitent name in the 2017 data and types
+kcha_2017_full <- kcha_2017_full %>% rename(spec_vouch = spec_voucher) %>%
+                    mutate_at(vars(h19a7b, h19a8b,h19d07,h19d08,h19f07,
+                                   h19f08, h21m,h19f09,h19a9b,h19d09), 
+                                   funs(as.integer(.)))
 
 
 # Add source field to track where each row came from
@@ -625,7 +628,7 @@ kcha_long <- kcha_long %>%
 #### Join with property lists ####
 ### Public housing
 # Bring in data and rename variables
-kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, "Property list with project code_received_2017-07-26.xlsx"))
+kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, kcha_portfolio_codes_fn))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, 
                                  fields$PHSKC[match(names(kcha_portfolio_codes), 
                                                     fields$KCHA_modified)])
@@ -672,23 +675,27 @@ kcha_long <- char_f(kcha_long, property_id)
 kcha_long <- kcha_long %>% distinct()
 
 
-
+if (sql == TRUE) {
 ##### WRITE RESHAPED DATA TO SQL #####
 # May need to delete table first if data structure and columns have changed
-dbRemoveTable(db.apde51, name = "kcha_reshaped")
-dbWriteTable(db.apde51, name = "kcha_reshaped", 
-             value = as.data.frame(kcha_long), overwrite = T,
-             field.types = c(
-               act_date = "date",
-               admit_date = "date",
-               dob = "date",
-               hh_dob = "date"
-             ))
+  dbRemoveTable(db.apde51, name = "kcha_reshaped")
+  dbWriteTable(db.apde51, name = "kcha_reshaped", 
+              value = as.data.frame(kcha_long), overwrite = T,
+              field.types = c(
+                act_date = "date",
+                admit_date = "date",
+                dob = "date",
+                hh_dob = "date"
+              ))
+}
 
 ##### Remove temporary files #####
 rm(list = c("fields", "reshape_f", "kcha_path"))
 rm(hhold_size)
-rm(kcha_portfolio_codes)
+rm(list = c("kcha_portfolio_codes", "kcha_portfolio_codes_fn"))
 rm(kcha)
+rm(METADATA)
+rm(script)
+rm(set_data_envr)
 gc()
 
