@@ -6,7 +6,8 @@
 \usage{
 popcount(df, group_var = quos(agency_new), agency = NULL, enroll = NULL,
   unit = NULL, startdate = NULL, enddate = NULL, birth = NULL,
-  length = NULL, numeric = TRUE, wc = FALSE, ...)
+  length = NULL, numeric = TRUE, wc = FALSE, wc_min = 0, wc_max = 6,
+  ...)
 }
 \arguments{
 \item{df}{A data frame}
@@ -52,6 +53,10 @@ be numeric or remain as character.}
 
 \item{wc}{Choose whether to just run pop counts for the well-child indicator
 age group (ages 3-6 years)}
+
+\item{wc_min}{Minimum age (inclusive) for inclusion in the well child check indicator}
+
+\item{wc_max}{Maximum age (inclusive) for inclusion in the well child check indicator}
 
 \item{...}{Additional arguments for the \code{\link{time_range}} function
 (yearmin, yearmax, period, and date).}

@@ -1,5 +1,5 @@
 Package: housing
-Version: 0.0.1
+Version: 0.0.2
 Title: Organizes public housing authority data into a longitudinal record
 Description: LARGELY FOR INTERNAL USE
   Takes raw public housing authority extracts (specific to Seattle Housing 

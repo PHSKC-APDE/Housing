@@ -40,6 +40,8 @@
 #' be numeric or remain as character.
 #' @param wc Choose whether to just run pop counts for the well-child indicator
 #' age group (ages 3-6 years)
+#' @param wc_min Minimum age (inclusive) for inclusion in the well child check indicator
+#' @param wc_max Maximum age (inclusive) for inclusion in the well child check indicator
 #' @param ... Additional arguments for the \code{\link{time_range}} function
 #' (yearmin, yearmax, period, and date).
 #' 
@@ -65,7 +67,9 @@ popcount <- function(df,
                      length = NULL,
                      numeric = TRUE,
                      wc = FALSE,
-                      ...) {
+                     wc_min = 0,
+                     wc_max = 6,
+                     ...) {
   
   
   # Warn about missing unit of analysis
@@ -213,8 +217,8 @@ popcount <- function(df,
       df_temp <- df_temp %>%
         mutate(
           age_temp = floor(interval(start = !!birth, end = timeend[i]) / years(1))
-          ) %>%
-        filter(!is.na(age_temp) & age_temp >= 3 & age_temp <= 6) %>%
+        ) %>%
+        filter(!is.na(age_temp) & age_temp >= wc_min & age_temp <= wc_max) %>%
         mutate(agegrp_h = 8)
     }
     
@@ -279,6 +283,8 @@ popcount <- function(df,
       ungroup()
     
     
+    print(sum(ever$pt_days))
+    
     # Allocate an individual to a PHA/program based on rules:
     # 1) Medicaid only and PHA only = Medicaid row with most time
     #   (rationale is we can look at the health data for Medicaid portion at least)
@@ -292,24 +298,51 @@ popcount <- function(df,
     
     # Find the row with the most person-time in each group
     # (ties will be broken by whatever other ordering exists)
-    pop <- df_temp %>%
-      arrange((!!unit), (!!agency), (!!enroll), desc(overlap_amount)) %>%
-      group_by((!!unit), (!!agency), (!!enroll)) %>%
-      filter(row_number() == 1) %>%
-      ungroup()
+    
+    # Join back to a single df
+    pop <- left_join(df_temp, ever, by = sapply(group_var, quo_name)) %>%
+      arrange((!!unit), (!!agency), (!!enroll), desc(pt_days))
+    
+    
+    # Use data table approach to take first row in group
+    # From https://stackoverflow.com/questions/34753050/data-table-select-first-n-rows-within-group
+    pop <- pop %>%
+      mutate(unit_norm = !!unit,
+             agency_norm = !!agency,
+             enroll_norm = !!enroll)
+    
+    pop <- setDT(pop)
+    pop <- pop[pop[, .I[1], by = .(unit_norm, agency_norm, enroll_norm)]$V1]
+    
     
     # Number of agencies, should only be one row per possibility below
-    pop <- pop %>%
-      mutate(agency_count = case_when(
-        (!!agency) == "KCHA" & (!!enroll) == "h" ~ 0,
-        (!!agency) == "SHA" & (!!enroll) == "h" ~ 0,
-        (!!agency) == "KCHA" & (!!enroll) == "b" ~ 1,
-        (!!agency) == "SHA" & (!!enroll) == "b" ~ 2,
-        (!!enroll) == "m" ~ 4
-      )) %>%
-      group_by((!!unit)) %>%
-      mutate(agency_sum = sum(agency_count, na.rm = T)) %>%
-      ungroup()
+    if (is.character(pop$agency_norm) & is.character(pop$enroll_norm)) {
+      pop <- pop %>%
+        mutate(agency_count = case_when(
+          agency_norm == "KCHA" & enroll_norm == "h" ~ 0,
+          agency_norm == "SHA" & enroll_norm == "h" ~ 0,
+          agency_norm == "KCHA" & enroll_norm == "b" ~ 1,
+          agency_norm == "SHA" & enroll_norm == "b" ~ 2,
+          enroll_norm == "m" ~ 4
+        ))
+    } else if (is.numeric(pop$agency_norm) & is.numeric(pop$enroll_norm)) {
+      pop <- pop %>%
+        mutate(agency_count = case_when(
+          agency_norm == 1 & enroll_norm == 1 ~ 0,
+          agency_norm == 2 & enroll_norm == 1 ~ 0,
+          agency_norm == 1 & enroll_norm == 3 ~ 1,
+          agency_norm == 2 & enroll_norm == 3 ~ 2,
+          agency_norm == 0 ~ 4
+        ))
+    } else if (str_detect(to_lower(paste(group_var, collapse = "")), "agency") &
+               str_detect(to_lower(paste(group_var, collapse = "")), "enroll")) {
+      stop("Agency and enroll must be both numeric or character")
+    }
+    
+    # Use data table for faster grouped operation then back to DF for group quosure
+    pop <- setDT(pop)
+    pop[, agency_sum := sum(agency_count, na.rm = T), by = unit_norm]
+    pop <- as.data.frame(pop)
     
     
     # Filter so only rows meeting the rules above are kept
@@ -333,7 +366,7 @@ popcount <- function(df,
       mutate(date = timestart[i])
   }
   
-  phacount <- as.data.frame(data.table::rbindlist(templist))
+  phacount <- bind_rows(templist)
   
   phacount <- phacount %>%
     mutate(pop = if_else(is.na(pop), 0, as.numeric(pop)),
@@ -358,9 +391,9 @@ popcount <- function(df,
         )
     } else if (wc == TRUE) {
       phacount <- phacount %>%
-        mutate(agegrp_h == "Children aged 3-6")
+        mutate(agegrp_h == paste0("Children aged ", wc_min, "-", wc_max))
     }
-
+    
     
     if("time_housing" %in% names(phacount)) {
       phacount <- phacount %>%
