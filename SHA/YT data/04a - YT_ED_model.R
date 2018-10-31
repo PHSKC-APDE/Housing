@@ -19,7 +19,9 @@
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
 
 library(odbc) # Used to connect to SQL server
+library(openxlsx) # Used to import/export Excel files
 library(housing) # contains many useful functions for analyses
+library(medicaid) # contains many useful functions for analyses
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
@@ -83,6 +85,7 @@ yt_old_cnt <- bind_rows(lapply(seq(12, 17), function(x) {
     mutate(year = year_num) %>%
     distinct(pid2, year, yt_old)
 }))
+
 yt_old_cnt <- yt_old_cnt %>%
   distinct(pid2) %>%
   mutate(yt_orig = 1)
@@ -393,7 +396,6 @@ plot_f <- function(df, labels, title, groups) {
 
 
 
-
 #### BASIC STATS ####
 # Summary of censoring
 yt_ed %>% group_by(yt, year) %>% 
@@ -473,6 +475,183 @@ ed_plot <- ggplot(data = yt_ed_sum, aes(x = year, y = rate)) +
         legend.text = element_text(size = 14),
         panel.background = element_rect(fill = "grey95"))
 ed_plot
+
+
+#### CAUSES OF ED VISITS ####
+
+### Pull in top causes of ED visits by year and group
+yt_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
+  from <- paste0(x, "-01-01")
+  to <- paste0(x, "-12-31")
+  
+  ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
+                         server = db.claims51,
+                         from_date = from, to_date = to,
+                         top = 20,
+                         primary_dx = T, catch_all = F,
+                         ed_all = T,
+                         inpatient = F)
+  ed_all <- ed_all %>%
+    mutate(year = x,
+           yt = "Yesler Terrace",
+           ed_type = "All ED visits",
+           dx_level = "Primary diagnosis only") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
+                           server = db.claims51,
+                           from_date = from, to_date = to,
+                           top = 20,
+                           primary_dx = T, catch_all = F,
+                           ed_all = F, ed_avoid_ny = T, ed_avoid_ca = F,
+                           inpatient = F)
+  ed_avoid <- ed_avoid %>%
+    mutate(year = x,
+           yt = "Yesler Terrace",
+           ed_type = "Potentially avoidable ED visits",
+           dx_level = "Primary diagnosis only") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  output <- bind_rows(ed_all, ed_avoid)
+  return(output)
+}))
+
+
+yt_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
+  from <- paste0(x, "-01-01")
+  to <- paste0(x, "-12-31")
+  
+  ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
+                         server = db.claims51,
+                         from_date = from, to_date = to,
+                         top = 20,
+                         primary_dx = F, catch_all = F,
+                         ed_all = T,
+                         inpatient = F)
+  ed_all <- ed_all %>%
+    mutate(year = x,
+           yt = "Yesler Terrace",
+           ed_type = "All ED visits",
+           dx_level = "All diagnosis fields") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
+                         server = db.claims51,
+                         from_date = from, to_date = to,
+                         top = 20,
+                         primary_dx = F, catch_all = F,
+                         ed_all = F, ed_avoid_ny = T, ed_avoid_ca = F,
+                         inpatient = F)
+  ed_avoid <- ed_avoid %>%
+    mutate(year = x,
+           yt = "Yesler Terrace",
+           ed_type = "Potentially avoidable ED visits",
+           dx_level = "All diagnosis fields") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  output <- bind_rows(ed_all, ed_avoid)
+  return(output)
+}))
+
+
+
+ss_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
+  from <- paste0(x, "-01-01")
+  to <- paste0(x, "-12-31")
+  
+  ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
+                         server = db.claims51,
+                         from_date = from, to_date = to,
+                         top = 20,
+                         primary_dx = T, catch_all = F,
+                         ed_all = T,
+                         inpatient = F)
+  ed_all <- ed_all %>%
+    mutate(year = x,
+           yt = "Scattered Sites",
+           ed_type = "All ED visits",
+           dx_level = "Primary diagnosis only") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
+                           server = db.claims51,
+                           from_date = from, to_date = to,
+                           top = 20,
+                           primary_dx = T, catch_all = F,
+                           ed_all = F, ed_avoid_ny = T, ed_avoid_ca = F,
+                           inpatient = F)
+  ed_avoid <- ed_avoid %>%
+    mutate(year = x,
+           yt = "Scattered Sites",
+           ed_type = "Potentially avoidable ED visits",
+           dx_level = "Primary diagnosis only") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  output <- bind_rows(ed_all, ed_avoid)
+  return(output)
+}))
+
+
+ss_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
+  from <- paste0(x, "-01-01")
+  to <- paste0(x, "-12-31")
+  
+  ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
+                         server = db.claims51,
+                         from_date = from, to_date = to,
+                         top = 20,
+                         primary_dx = F, catch_all = F,
+                         ed_all = T,
+                         inpatient = F)
+  ed_all <- ed_all %>%
+    mutate(year = x,
+           yt = "Scattered Sites",
+           ed_type = "All ED visits",
+           dx_level = "All diagnosis fields") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
+                           server = db.claims51,
+                           from_date = from, to_date = to,
+                           top = 20,
+                           primary_dx = F, catch_all = F,
+                           ed_all = F, ed_avoid_ny = T, ed_avoid_ca = F,
+                           inpatient = F)
+  ed_avoid <- ed_avoid %>%
+    mutate(year = x,
+           yt = "Scattered Sites",
+           ed_type = "Potentially avoidable ED visits",
+           dx_level = "All diagnosis fields") %>%
+    select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
+  
+  output <- bind_rows(ed_all, ed_avoid)
+  return(output)
+}))
+
+
+
+### Combine, add suppression, and export for Tableau
+ed_causes <- bind_rows(yt_causes_prim, yt_causes_all, ss_causes_prim, ss_causes_all) %>%
+  arrange(year, yt, ed_type, dx_level, -claim_cnt, ccs_final_plain_lang) %>%
+  group_by(year, yt, ed_type, dx_level) %>%
+  mutate(
+    # Add rank for each category
+    rank = min_rank(-claim_cnt),
+    # Add field to indicate when the count is suppressed
+    claim_cnt_supp = ifelse(claim_cnt < 5, "<5", as.character(claim_cnt)),
+    # Suppress small counts
+    claim_cnt = ifelse(claim_cnt < 5, NA, claim_cnt),
+    # Find the rank for the first suppressed value
+    rank_max = max(rank[!is.na(claim_cnt)], na.rm = T) + 1,
+    # Overwrite the rank and add a flag
+    rank = ifelse(is.na(claim_cnt), rank_max, rank),
+    rank_flag = ifelse(is.na(claim_cnt), "+", NA_character_)
+    ) %>%
+  ungroup() %>%
+  select(-rank_max)
+
+
+write.xlsx(ed_causes, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/YT/yt_ed_causes.xlsx")
 
 
 #### MODELS ####
