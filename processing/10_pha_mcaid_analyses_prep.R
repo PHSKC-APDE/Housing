@@ -115,12 +115,12 @@ pha_mcaid_final <- pha_mcaid_final %>%
 
 ### Age
 pha_mcaid_final <- pha_mcaid_final %>%
-  mutate(age12 = round(lubridate::interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
-         age13 = round(lubridate::interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
-         age14 = round(lubridate::interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
-         age15 = round(lubridate::interval(start = dob_c, end = ymd(20151231)) / years(1), 1),
-         age16 = round(lubridate::interval(start = dob_c, end = ymd(20161231)) / years(1), 1),
-         age17 = round(lubridate::interval(start = dob_c, end = ymd(20171231)) / years(1), 1)
+  mutate(age12 = floor(lubridate::interval(start = dob_c, end = ymd(20121231)) / years(1), 1),
+         age13 = floor(lubridate::interval(start = dob_c, end = ymd(20131231)) / years(1), 1),
+         age14 = floor(lubridate::interval(start = dob_c, end = ymd(20141231)) / years(1), 1),
+         age15 = floor(lubridate::interval(start = dob_c, end = ymd(20151231)) / years(1), 1),
+         age16 = floor(lubridate::interval(start = dob_c, end = ymd(20161231)) / years(1), 1),
+         age17 = floor(lubridate::interval(start = dob_c, end = ymd(20171231)) / years(1), 1)
   ) %>%
   # Remove negative ages
   mutate_at(vars(age12:age17), funs(ifelse(. < 0, 0.01, .)))
