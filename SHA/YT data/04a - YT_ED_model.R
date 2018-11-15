@@ -36,272 +36,12 @@ db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
-#### BRING IN DATA ####
-# Bring in combined PHA/Medicaid data with some demographics already run ####
-# Only bring in necessary columns
-system.time(
-  yt_mcaid_final <- dbGetQuery(db.apde51, 
-                               "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
-                               gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
-                               age12, age13, age14, age15, age16, age17,
-                               agency_new, enroll_type, dual_elig_m, yt, yt_old,
-                               yt_new, ss,  yt_ever, ss_ever, place, start_type, end_type,
-                               length12, length13, length14, length15, length16, length17, 
-                               hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
-                               hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
-                               FROM housing_mcaid_yt")
-  )
-
-# Filter to only include YT and SS residents
-yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
-
-
-# ED visits (using broad definition)
-system.time(
-  ed <- dbGetQuery(db.claims51, 
-                   "SELECT id, tcn, from_date, to_date, ed
-                   FROM dbo.mcaid_claim_summary
-                   WHERE ed = 1")
-  )
-
-
-#### SET UP DATA FOR ANALYSIS ####
-# Goal is to create cohort of people who spent time at YT or SS
-# Min of 30 continuous days at YT/SS in a year to be included
-yt_ss_30 <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
-                           year_suf = NULL, agency = agency_new, 
-                           enroll_type = enroll_type, dual = dual_elig_m, 
-                           yt = yt, ss = ss, pt_cut = 30, min = F))
-yt_ss_30 <- yt_ss_30 %>% filter(pop_code %in% c(1, 2))
-
-
-# Join to see if person was in old YT properties or not and make new category
-yt_old_cnt <- bind_rows(lapply(seq(12, 17), function(x) {
-  pt <- rlang::sym(paste0("pt", x))
-  year_num = as.numeric(paste0(20, x))
-  
-  yt_old <- yt_mcaid_final %>%
-    filter(!!pt > 0 & yt_old == 1) %>%
-    mutate(year = year_num) %>%
-    distinct(pid2, year, yt_old)
-}))
-
-yt_old_cnt <- yt_old_cnt %>%
-  distinct(pid2) %>%
-  mutate(yt_orig = 1)
-
-yt_ss_30 <- left_join(yt_ss_30, yt_old_cnt, by = "pid2") %>%
-  mutate(yt_orig = ifelse(is.na(yt_orig), 0, yt_orig))
-  
-
-
-### Join demographics and ED events now that only YT and SS people are kept
-yt_ss_ed <- left_join(yt_ss_30, ed, by = c("mid" = "id")) %>%
-  filter(ed == 1 & from_date >= startdate_c & from_date <= enddate_c &
-           agency_new == "SHA" & year(from_date) == year_code) %>%
-  mutate(ed_year = year(from_date))
-
-
-# Count number of ED visits each person had during each period
-yt_ss_ed_sum <- bind_rows(lapply(seq(12, 17), count_acute,
-                                 df = yt_ss_ed,
-                                 group_var = quos(pid2),
-                                 event = ed, event_year = ed_year,
-                                 unit = pid2, person = F))
-
-
-# Combine person-time for each year
-yt_ss_30 <- bind_rows(lapply(seq(12,17), function(x) {
-  ptx <- rlang::sym(paste0("pt", x))
-  year <- paste0(20, x)
-  
-  yt_ss_30 <- yt_ss_30 %>%
-    filter(year_code == year) %>%
-    group_by(pid2, year_code, yt, ss) %>%
-    mutate(pt = sum(!!ptx)) %>%
-    ungroup()
-  
-  yt_ss_30 <- yt_ss_30 %>%
-    arrange(pid2, startdate_c, enddate_c) %>%
-    group_by(pid2) %>%
-    slice(n()) %>%
-    ungroup()
-}))
-
-# Set up age12 for everyone even if missing (may make negative #s)
-yt_ss_30 <- yt_ss_30 %>%
-  mutate(age12 = case_when(
-    !is.na(age12) ~ age12,
-    !is.na(age13) ~ age13 - 1,
-    !is.na(age14) ~ age14 - 2,
-    !is.na(age15) ~ age15 - 3,
-    !is.na(age16) ~ age16 - 4,
-    !is.na(age17) ~ age17 - 5
-  ))
-
-# Set up length12 for everyone even if missing (may make negative #s)
-yt_ss_30 <- yt_ss_30 %>%
-  mutate(length12 = case_when(
-    !is.na(length12) ~ length12,
-    !is.na(length13) ~ length13 - 1,
-    !is.na(length14) ~ length14 - 2,
-    !is.na(length15) ~ length15 - 3,
-    !is.na(length16) ~ length16 - 4,
-    !is.na(length17) ~ length17 - 5
-  ))
-
-
-# Only keep relevant columns (no need to keep SS since YT = 0 == SS)
-# Only need age and length from baseline (2012)
-yt_ss_30 <- yt_ss_30 %>%
-  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12,
-         length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
-  rename(year = year_code) %>%
-  distinct()
-
-
-
-# Join ED back to overall population
-yt_ss_ed_join <- left_join(yt_ss_30, yt_ss_ed_sum,
-                           by = c("pid2", "year")) %>%
-  mutate(count = ifelse(is.na(count), 0, count)) %>%
-  rename(ed_count = count)
-
-
-### Need to reshape household income vars in a single column
-yt_ss_ed_join <- melt(yt_ss_ed_join,
-              id.vars = c("year", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
-                          "age12", "length12", "pt", "ed_count"),
-              variable.name = "inc_yr", value.name = "inc")
-
-# Format and summarize
-# Need distinct as there were multiple income group combos per year
-yt_ss_ed_join <- yt_ss_ed_join %>%
-  mutate(inc_yr = as.numeric(paste0("20", str_sub(inc_yr, -6, -5)))) %>%
-  filter(year == inc_yr) %>%
-  arrange(pid2, year, pt) %>%
-  select(-inc_yr) %>%
-  distinct()
-
-
-### Set up censoring and most recent hh_inc per capita
-yt_ss_ed_join <- yt_ss_ed_join %>%
-  arrange(pid2, year) %>%
-  group_by(pid2) %>%
-  mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
-                           (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
-         cens_r = ifelse((is.na(lead(year, 1)) & year < 2017) | 
-                           (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0),
-         # Take first non-missing hh_inc
-         inc_min = inc[which(!is.na(inc))[1]]
-         ) %>%
-  ungroup()
-
-
-### Set up for modeling
-yt_ed <- yt_ss_ed_join %>%
-  arrange(pid2, yt, year) %>%
-  group_by(pid2, yt) %>%
-  mutate(timevar = row_number() - 1) %>%
-  ungroup() %>%
-  mutate(
-    rate = case_when(
-      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
-      TRUE ~ ed_count / (pt / 365)
-      ),
-    # Set up variables where transformation doesn't work in Zelig function
-    pt_log = log(pt),
-    year_0 = year - 2012
-  ) %>%
-  filter(!(is.na(ethn_c) | is.na(gender_c) | 
-             is.na(age12) | is.na(length12) | is.na(inc)) &
-           year <= 2017) %>%
-  # Set up cumulative sum for time in YT since redevelopment
-  mutate(yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
-  # Make lagged variables
-  group_by(pid2) %>%
-  mutate(
-    yt_lag = case_when(
-      year == 2012 ~ NA_real_,
-      TRUE ~ lag(yt, 1)
-    ),
-    rate_lag = case_when(
-      rate == 2012 ~ NA_real_,
-      TRUE ~ lag(rate, 1)
-    ),
-    yt_cumsum = cumsum(yt_cumsum)
-  ) %>%
-  ungroup()
-yt_ed <- as.data.frame(yt_ed)
-
-# People who were originally at YT and have stayed/returned vs. new arrivals
-yt_orig_ed <- yt_ss_ed_join %>%
-  arrange(pid2, yt, year) %>%
-  filter(yt == 1) %>%
-  group_by(pid2, yt_orig) %>%
-  mutate(timevar = row_number() - 1) %>%
-  ungroup() %>%
-  mutate(
-    rate = case_when(
-      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
-      TRUE ~ ed_count / (pt / 365)
-    ),
-    # Set up variables where transformation doesn't work in Zelig function
-    pt_log = log(pt),
-    year_0 = year - 2012
-  ) %>%
-  filter(!(is.na(ethn_c) | is.na(gender_c) | 
-             is.na(age12) | is.na(length12) | is.na(inc)) &
-           year <= 2017)
-yt_orig_ed <- as.data.frame(yt_orig_ed)
-
-
-
-# Make matrix of all possible years
-all_years <- yt_ed %>% distinct(pid2)
-all_years <- data.frame(pid2 = rep(all_years$pid2, each = 6), year = rep(seq(2012, 2017), times = length(all_years)))
-# yt_ed_all_yr <- left_join(all_years, distinct(yt_ed, pid2, ethn_c, gender_c, age12, inc_min), by = c("pid2"))
-# yt_ed_all_yr <- left_join(yt_ed_all_yr, select(yt_ed, pid2, year, yt, yt_orig, length12, pt, ed_count, inc, rate, pt_log), by = c("pid2", "year")) %>%
-#   # Remake year_0
-#   mutate(year_0 = year - 2012)
-
-yt_ed_all_yr <- left_join(all_years, yt_ed, by = c("pid2", "year")) %>%
-  group_by(pid2) %>%
-  fill(ethn_c, gender_c, age12, inc_min, length12) %>%
-  ungroup()
-yt_ed_all_yr <- yt_ed_all_yr %>% 
-  mutate(
-    cens = ifelse(is.na(yt), 1, 0),
-    # Remake year_0
-    year_0 = year - 2012,
-    # Set up cumulative sum for time in YT since redevelopment
-    yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
-  # Make lagged variables
-  group_by(pid2) %>%
-  mutate(
-    yt_lag = case_when(
-      year == 2012 ~ NA_real_,
-      TRUE ~ lag(yt, 1)
-      ),
-    rate_lag = case_when(
-      rate == 2012 ~ NA_real_,
-      TRUE ~ lag(rate, 1)
-      ),
-    yt_cumsum = cumsum(yt_cumsum)
-    ) %>%
-  ungroup()
-
-
-
-#### END DATA SETUP ####
-
-
 #### FUNCTIONS ####
 predict_f <- function(model, group_var, group1, group2, yt_only = F) {
   
   #Set up quosure
   group_quo <- enquo(group_var)
- 
+  
   predicted <- yt_ss_ed_join %>%
     mutate(adj_pred = predict(model, newdata = yt_ss_ed_join, type = "response"))
   
@@ -395,6 +135,312 @@ plot_f <- function(df, labels, title, groups) {
 }
 
 
+#### BRING IN DATA ####
+# Bring in combined PHA/Medicaid data with some demographics already run ####
+# Only bring in necessary columns
+system.time(
+  yt_mcaid_final <- dbGetQuery(db.apde51, 
+                               "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
+                               gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
+                               age12, age13, age14, age15, age16, age17,
+                               agency_new, enroll_type, dual_elig_m, yt, yt_old,
+                               yt_new, ss,  yt_ever, ss_ever, place, start_type, end_type,
+                               length12, length13, length14, length15, length16, length17, 
+                               hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
+                               hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
+                               FROM housing_mcaid_yt")
+  )
+
+# Filter to only include YT and SS residents
+yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
+
+
+# ED visits (using broad definition)
+system.time(
+  ed <- dbGetQuery(db.claims51, 
+                   "SELECT id, tcn, from_date, to_date, ed, ed_emergent_nyu, ed_nonemergent_nyu
+                   FROM dbo.mcaid_claim_summary
+                   WHERE ed = 1")
+  )
+
+
+#### SET UP DATA FOR ANALYSIS ####
+# Goal is to create cohort of people who spent time at YT or SS
+# Min of 30 continuous days at YT/SS in a year to be included
+yt_ss_30 <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
+                           year_suf = NULL, agency = agency_new, 
+                           enroll_type = enroll_type, dual = dual_elig_m, 
+                           yt = yt, ss = ss, pt_cut = 30, min = F))
+yt_ss_30 <- yt_ss_30 %>% filter(pop_code %in% c(1, 2))
+
+
+# Join to see if person was in old YT properties or not and make new category
+yt_old_cnt <- bind_rows(lapply(seq(12, 17), function(x) {
+  pt <- rlang::sym(paste0("pt", x))
+  year_num = as.numeric(paste0(20, x))
+  
+  yt_old <- yt_mcaid_final %>%
+    filter(!!pt > 0 & yt_old == 1) %>%
+    mutate(year = year_num) %>%
+    distinct(pid2, year, yt_old)
+}))
+
+yt_old_cnt <- yt_old_cnt %>%
+  distinct(pid2) %>%
+  mutate(yt_orig = 1)
+
+yt_ss_30 <- left_join(yt_ss_30, yt_old_cnt, by = "pid2") %>%
+  mutate(yt_orig = ifelse(is.na(yt_orig), 0, yt_orig))
+  
+
+
+### Join demographics and ED events now that only YT and SS people are kept
+yt_ss_ed <- left_join(yt_ss_30, ed, by = c("mid" = "id")) %>%
+  filter(ed == 1 & from_date >= startdate_c & from_date <= enddate_c &
+           agency_new == "SHA" & year(from_date) == year_code) %>%
+  mutate(ed_year = year(from_date))
+
+
+# Count number of ED visits each person had during each period
+yt_ss_ed_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+                                 df = yt_ss_ed,
+                                 group_var = quos(pid2),
+                                 age_var = NULL, len_var = NULL,
+                                 event = ed, event_year = ed_year,
+                                 unit = pid2, person = F,
+                                 birth = NULL))
+
+yt_ss_ed_avoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+                                 df = yt_ss_ed,
+                                 group_var = quos(pid2),
+                                 age_var = NULL, len_var = NULL,
+                                 event = ed_nonemergent_nyu, event_year = ed_year,
+                                 unit = pid2, person = F,
+                                 birth = NULL))
+
+yt_ss_ed_unavoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+                                       df = yt_ss_ed,
+                                       group_var = quos(pid2),
+                                       age_var = NULL, len_var = NULL,
+                                       event = ed_emergent_nyu, event_year = ed_year,
+                                       unit = pid2, person = F,
+                                       birth = NULL))
+
+
+# Combine person-time for each year
+yt_ss_30 <- bind_rows(lapply(seq(12,17), function(x) {
+  ptx <- rlang::sym(paste0("pt", x))
+  year <- paste0(20, x)
+  
+  yt_ss_30 <- yt_ss_30 %>%
+    filter(year_code == year) %>%
+    group_by(pid2, year_code, yt, ss) %>%
+    mutate(pt = sum(!!ptx)) %>%
+    ungroup()
+  
+  yt_ss_30 <- yt_ss_30 %>%
+    arrange(pid2, startdate_c, enddate_c) %>%
+    group_by(pid2) %>%
+    slice(n()) %>%
+    ungroup()
+}))
+
+# Set up age12 for everyone even if missing (may make negative #s)
+yt_ss_30 <- yt_ss_30 %>%
+  mutate(age12 = case_when(
+    !is.na(age12) ~ age12,
+    !is.na(age13) ~ age13 - 1,
+    !is.na(age14) ~ age14 - 2,
+    !is.na(age15) ~ age15 - 3,
+    !is.na(age16) ~ age16 - 4,
+    !is.na(age17) ~ age17 - 5
+  ))
+
+# Set up length12 for everyone even if missing (may make negative #s)
+yt_ss_30 <- yt_ss_30 %>%
+  mutate(length12 = case_when(
+    !is.na(length12) ~ length12,
+    !is.na(length13) ~ length13 - 1,
+    !is.na(length14) ~ length14 - 2,
+    !is.na(length15) ~ length15 - 3,
+    !is.na(length16) ~ length16 - 4,
+    !is.na(length17) ~ length17 - 5
+  ))
+
+
+# Only keep relevant columns (no need to keep SS since YT = 0 == SS)
+# Only need age and length from baseline (2012)
+yt_ss_30 <- yt_ss_30 %>%
+  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12,
+         length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+  rename(year = year_code) %>%
+  distinct()
+
+
+
+# Join ED visits back to overall population
+yt_ss_ed_join <- left_join(yt_ss_30, yt_ss_ed_sum,
+                           by = c("pid2", "year")) %>%
+  mutate(count = ifelse(is.na(count), 0, count)) %>%
+  rename(ed_count = count)
+
+yt_ss_ed_join <- left_join(yt_ss_ed_join, yt_ss_ed_avoid_sum,
+                           by = c("pid2", "year")) %>%
+  mutate(count = ifelse(is.na(count), 0, count)) %>%
+  rename(ed_avoid_count = count)
+
+yt_ss_ed_join <- left_join(yt_ss_ed_join, yt_ss_ed_unavoid_sum,
+                           by = c("pid2", "year")) %>%
+  mutate(count = ifelse(is.na(count), 0, count)) %>%
+  rename(ed_unavoid_count = count)
+
+
+### Need to reshape household income vars in a single column
+yt_ss_ed_join <- melt(yt_ss_ed_join,
+              id.vars = c("year", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
+                          "age12", "length12", "pt", 
+                          "ed_count", "ed_avoid_count", "ed_unavoid_count"),
+              variable.name = "inc_yr", value.name = "inc")
+
+# Format and summarize
+# Need distinct as there were multiple income group combos per year
+yt_ss_ed_join <- yt_ss_ed_join %>%
+  mutate(inc_yr = as.numeric(paste0("20", str_sub(inc_yr, -6, -5)))) %>%
+  filter(year == inc_yr) %>%
+  arrange(pid2, year, pt) %>%
+  select(-inc_yr) %>%
+  distinct()
+
+
+### Set up censoring and most recent hh_inc per capita
+yt_ss_ed_join <- yt_ss_ed_join %>%
+  arrange(pid2, year) %>%
+  group_by(pid2) %>%
+  mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
+                           (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
+         cens_r = ifelse((is.na(lead(year, 1)) & year < 2017) | 
+                           (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0),
+         # Take first non-missing hh_inc
+         inc_min = inc[which(!is.na(inc))[1]]
+         ) %>%
+  ungroup()
+
+
+### Set up for modeling
+yt_ed <- yt_ss_ed_join %>%
+  arrange(pid2, yt, year) %>%
+  group_by(pid2, yt) %>%
+  mutate(timevar = row_number() - 1) %>%
+  ungroup() %>%
+  mutate(
+    ed_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
+      TRUE ~ ed_count / (pt / 365)
+      ),
+    ed_avoid_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_avoid_count / (pt / 366),
+      TRUE ~ ed_avoid_count / (pt / 365)
+    ),
+    ed_unavoid_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_unavoid_count / (pt / 366),
+      TRUE ~ ed_unavoid_count / (pt / 365)
+    ),
+    # Set up variables where transformation doesn't work in Zelig function
+    pt_log = log(pt),
+    year_0 = year - 2012
+  ) %>%
+  filter(!(is.na(ethn_c) | is.na(gender_c) | 
+             is.na(age12) | is.na(length12) | is.na(inc)) &
+           year <= 2017) %>%
+  # Set up cumulative sum for time in YT since redevelopment
+  mutate(yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
+  # Make lagged variables
+  group_by(pid2) %>%
+  mutate(
+    yt_lag = case_when(
+      year == 2012 ~ NA_real_,
+      TRUE ~ lag(yt, 1)
+    ),
+    rate_lag = case_when(
+      ed_rate == 2012 ~ NA_real_,
+      TRUE ~ lag(ed_rate, 1)
+    ),
+    yt_cumsum = cumsum(yt_cumsum)
+  ) %>%
+  ungroup()
+yt_ed <- as.data.frame(yt_ed)
+
+# People who were originally at YT and have stayed/returned vs. new arrivals
+yt_orig_ed <- yt_ss_ed_join %>%
+  arrange(pid2, yt, year) %>%
+  filter(yt == 1) %>%
+  group_by(pid2, yt_orig) %>%
+  mutate(timevar = row_number() - 1) %>%
+  ungroup() %>%
+  mutate(
+    ed_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_count / (pt / 366),
+      TRUE ~ ed_count / (pt / 365)
+    ),
+    ed_avoid_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_avoid_count / (pt / 366),
+      TRUE ~ ed_avoid_count / (pt / 365)
+    ),
+    ed_unavoid_rate = case_when(
+      year %in% c(2012, 2016) ~ ed_unavoid_count / (pt / 366),
+      TRUE ~ ed_unavoid_count / (pt / 365)
+    ),
+    # Set up variables where transformation doesn't work in Zelig function
+    pt_log = log(pt),
+    year_0 = year - 2012
+  ) %>%
+  filter(!(is.na(ethn_c) | is.na(gender_c) | 
+             is.na(age12) | is.na(length12) | is.na(inc)) &
+           year <= 2017)
+yt_orig_ed <- as.data.frame(yt_orig_ed)
+
+
+
+# Make matrix of all possible years
+all_years <- yt_ed %>% distinct(pid2)
+all_years <- data.frame(pid2 = rep(all_years$pid2, each = 6), year = rep(seq(2012, 2017), times = length(all_years)))
+# yt_ed_all_yr <- left_join(all_years, distinct(yt_ed, pid2, ethn_c, gender_c, age12, inc_min), by = c("pid2"))
+# yt_ed_all_yr <- left_join(yt_ed_all_yr, select(yt_ed, pid2, year, yt, yt_orig, length12, pt, ed_count, inc, rate, pt_log), by = c("pid2", "year")) %>%
+#   # Remake year_0
+#   mutate(year_0 = year - 2012)
+
+yt_ed_all_yr <- left_join(all_years, yt_ed, by = c("pid2", "year")) %>%
+  group_by(pid2) %>%
+  fill(ethn_c, gender_c, age12, inc_min, length12) %>%
+  ungroup()
+
+yt_ed_all_yr <- yt_ed_all_yr %>% 
+  mutate(
+    cens = ifelse(is.na(yt), 1, 0),
+    # Remake year_0
+    year_0 = year - 2012,
+    # Set up cumulative sum for time in YT since redevelopment
+    yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)
+    ) %>%
+  # Make lagged variables
+  group_by(pid2) %>%
+  mutate(
+    yt_lag = case_when(
+      year == 2012 ~ NA_real_,
+      TRUE ~ lag(yt, 1)
+      ),
+    rate_lag = case_when(
+      ed_rate == 2012 ~ NA_real_,
+      TRUE ~ lag(ed_rate, 1)
+      ),
+    yt_cumsum = cumsum(yt_cumsum)
+    ) %>%
+  ungroup()
+
+
+
+#### END DATA SETUP ####
+
 
 #### BASIC STATS ####
 # Summary of censoring
@@ -432,49 +478,104 @@ hist(yt_ed$rate[yt_ed$rate != 0])
 
 
 ### Plot ED visits over time
-yt_ed_sum <- yt_ss_ed_join %>%
-  filter(year < 2018) %>%
-  group_by(yt, year) %>%
-  summarise(ed_count = sum(ed_count, na.rm = T),
-            pt = sum(pt, na.rm = T)) %>%
-  ungroup() %>%
-  mutate(
-    rate =  case_when(
-      year %in% c(2012, 2016) ~ ed_count/ (pt / 366) * 1000,
-      TRUE ~ ed_count/ (pt / 365) * 1000
+yt_ed_sum_f <- function(ed_type = c("all", "avoid", "unavoid")) {
+  
+  if (ed_type == "all") {
+    ed <- quo(ed_count)
+    type <- "All ED visits"
+  } else if (ed_type == "avoid") {
+    ed <- quo(ed_avoid_count)
+    type <- "Potentially avoidable ED visits"
+  } else if (ed_type == "unavoid") {
+    ed <- quo(ed_unavoid_count)
+    type <- "Unavoidable ED visits"
+  }
+  
+  output <- yt_ss_ed_join %>%
+    filter(year < 2018) %>%
+    group_by(yt, year) %>%
+    summarise(ed_count = sum(!!ed, na.rm = T),
+              pt = sum(pt, na.rm = T)) %>%
+    ungroup() %>%
+    mutate(
+      rate = case_when(
+        year %in% c(2012, 2016) ~ ed_count / (pt / 366) * 1000,
+        TRUE ~ ed_count / (pt / 365) * 1000
       ),
-    yt = ifelse(yt == 1, "YT", "Scattered sites")) %>%
-  rowwise() %>%
-  mutate(
-    ci95_lb = case_when(
-      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
-      TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
-    ),
-    ci95_ub = case_when(
-      year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
-      TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+      yt = ifelse(yt == 1, "YT", "Scattered sites"),
+      ed_type = type) %>%
+    rowwise() %>%
+    mutate(
+      ci95_lb = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[1] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(ed_count)$conf.int[1] / (pt / 365) * 1000
+      ),
+      ci95_ub = case_when(
+        year %in% c(2012, 2016) ~ poisson.test(ed_count)$conf.int[2] / (pt / 366) * 1000,
+        TRUE ~ poisson.test(ed_count)$conf.int[2] / (pt / 365) * 1000
+      )
     )
-  ) %>%
-  ungroup()
+  
+  return(output)
+}
 
-# Prepare simple plot
-ed_plot <- ggplot(data = yt_ed_sum, aes(x = year, y = rate)) +
-  geom_ribbon(aes(ymin = ci95_lb, ymax = ci95_ub, group = yt, fill = yt == "YT"), 
-              alpha = 0.4,
-              show.legend = F) +
-  geom_line(aes(color = yt, group = yt), size = 1.3) +
-  scale_fill_manual(values = c("orange", "cyan2"), name="fill") +
-  scale_color_manual("YT residency", 
-                     values = c("YT" = "blue2", "Scattered sites" = "orangered3")) +
+yt_ed_sum_all <- yt_ed_sum_f(ed_type = "all")
+yt_ed_sum_avoid <- yt_ed_sum_f(ed_type = "avoid")
+yt_ed_sum_unavoid <- yt_ed_sum_f(ed_type = "unavoid")
+
+
+yt_ed_sum <- bind_rows(yt_ed_sum_all, yt_ed_sum_avoid, yt_ed_sum_unavoid) %>%
+  select(yt, year, ed_type, ed_count, pt, rate, ci95_lb, ci95_ub)
+
+
+# YT vs SS, broken out by ED type
+ed_plot <- ggplot(data = yt_ed_sum, aes(x = year)) +
+  geom_line(aes(y = rate, color = yt), size = 1.3) +
+  scale_color_manual(name = "YT residency", 
+                     values = c("YT" = "blue2",
+                                "Scattered sites" = "orangered3")) +
+  geom_ribbon(aes(ymin = ci95_lb, ymax = ci95_ub, fill = yt),
+              alpha = 0.4) + 
+  scale_fill_manual(name = "YT residency",
+                    values = c("YT" = "cyan2",
+                               "Scattered sites" = "orange")) +
   ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
   ylab("Rate (per 1,000 person-years)") +
   theme(axis.text = element_text(size = 14),
         axis.title = element_text(size = 16),
         legend.title = element_blank(),
-        legend.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.position = "bottom",
         panel.background = element_rect(fill = "grey95"))
-ed_plot
+ed_plot + facet_grid(ed_type ~ ., scales = "free_y")
+
+
+
+# ED visit types, broken out by YT/SS
+ed_plot <- ggplot(data = yt_ed_sum, aes(x = year)) +
+  geom_line(aes(y = rate, color = ed_type), size = 1.3) +
+  scale_color_manual(name = "ED visit type", 
+                     values = c("All ED visits" = "blue2",
+                                "Potentially avoidable ED visits" = "orangered3",
+                                "Unavoidable ED visits" = "grey23")) +
+  geom_ribbon(aes(ymin = ci95_lb, ymax = ci95_ub, fill = ed_type),
+              alpha = 0.4) + 
+  scale_fill_manual(name = "ED visit type",
+                    values = c("All ED visits" = "cyan2",
+                               "Potentially avoidable ED visits" = "orange",
+                               "Unavoidable ED visits" = "grey48")) +
+  ggtitle("Emergency department visit rates (unadjusted)") +
+  xlab("Year") +
+  ylab("Rate (per 1,000 person-years)") +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.position = "bottom",
+        panel.background = element_rect(fill = "grey95"))
+ed_plot + facet_grid(yt ~ .)
+
 
 
 #### CAUSES OF ED VISITS ####
