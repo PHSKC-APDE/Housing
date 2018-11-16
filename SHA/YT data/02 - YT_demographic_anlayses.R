@@ -122,11 +122,12 @@ yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
   return(result)
 }
 
-# Summarise age using different persont-time thresholds
+# Summarise age using different person-time thresholds
 # use long = T to generate output for Tableau
-age_summ_f <- function(df, year = 12, cutoff = 0, long = F) {
+age_summ_f <- function(df, year = 12, cutoff = 0, long = F,
+                       pt_suf = NULL) {
   
-  ptx <- rlang::sym(paste0("pt", year, "_h"))
+  ptx <- rlang::sym(paste0("pt", year, pt_suf))
   agex <- rlang::sym(paste0("age", year))
   
   if (long == F) {
@@ -182,18 +183,19 @@ yt_demogs_f(df = yt_ss, group = quos(yt, time_housing), unit = pid2)
 
 ### Create summary stats for Tableau
 total <- yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2) %>%
-  mutate(category = "Total",
-         group = "Enrolled at any point in the year",
+  mutate(category = "Number of residents",
+         group = "Total",
          data = pop)
 gender <- yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2) %>%
   mutate(category = "Gender", group = gender_c, data = percent)
-gender$group <- demo_codes$gender_c[match(gender$group, demo_codes$code)]
-ethn <- yt_demogs_f(df = yt_ss, group = quos(yt, ethn), unit = pid2) %>%
-  mutate(category = "Race/ethnicity", group = ethn, data = percent)
-age <- bind_rows(lapply(seq(12,17), age_summ_f, df = yt_ss, cutoff = 0, long = T))
+ethn <- yt_demogs_f(df = yt_ss, group = quos(yt, ethn_c), unit = pid2) %>%
+  mutate(category = "Race/ethnicity", group = ethn_c, data = percent)
+age <- bind_rows(lapply(seq(12,17), age_summ_f, df = yt_ss, cutoff = 0, 
+                             pt_suf = "_h", long = T))
 
-summ_stat <- bind_rows(total, gender, ethn, age) %>%
-  select(date, yt, category, group, data)
+summ_stat_ever <- bind_rows(total, gender, ethn, age) %>%
+  select(date, yt, category, group, data) %>%
+  mutate(cohort = "Ever a resident")
 
 rm(total, gender, ethn, age)
 gc()
@@ -286,7 +288,7 @@ addWorksheet(wb_output, "yt_stats")
 addWorksheet(wb_output, "yt_demogs")
 
 # Add data
-writeData(wb_output, sheet = "yt_stats", x = summ_stat)
+writeData(wb_output, sheet = "yt_stats", x = summ_stat_ever)
 writeData(wb_output, sheet = "yt_demogs", x = yt_counts_final)
 
 # Export workbook
@@ -301,8 +303,79 @@ rm(summ_stat)
 gc()
 
 
+#### 2) Demographics of people in YT/SS enrolled 30+ days on Medicaid, 2012–2017 ####
+# Assign people to a location for each calendar year
+# NB. lapply is causing R to freeze, runnning spearately for now
+yt_coded12_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 12, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
+yt_coded13_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 13, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
+yt_coded14_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 14, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
+yt_coded15_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 15, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
+yt_coded16_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 16, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
+yt_coded17_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 17, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
 
-#### 2) Look at drop off by year ####
+
+# Bind together
+yt_coded_min <- bind_rows(yt_coded12_min, yt_coded13_min, yt_coded14_min,
+                          yt_coded15_min, yt_coded16_min, yt_coded17_min)
+rm(list = ls(pattern = "yt_coded1"))
+gc()
+
+
+### Create summary stats for Tableau
+total <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ],
+                     group = quos(yt), unit = pid2) %>%
+  mutate(category = "Number of residents",
+         group = "Total",
+         data = pop)
+gender <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ], 
+                      group = quos(yt, gender_c), unit = pid2) %>%
+  mutate(category = "Gender", group = gender_c, data = percent)
+ethn <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ], 
+                    group = quos(yt, ethn_c), unit = pid2) %>%
+  mutate(category = "Race/ethnicity", group = ethn_c, data = percent)
+age <- bind_rows(lapply(seq(12,17), age_summ_f, 
+                        df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ],
+                        cutoff = 0, long = T))
+
+summ_stat_mcaid <- bind_rows(total, gender, ethn, age) %>%
+  select(date, yt, category, group, data) %>%
+  mutate(cohort = "Simultaneous non-dual Medicaid and housing coverage")
+
+rm(total, gender, ethn, age)
+gc()
+
+
+### Write Tableau-ready output (requires #1 above to have been run)
+summ_stat <- bind_rows(summ_stat_ever, summ_stat_mcaid)
+
+# Export workbook
+write.xlsx(summ_stat, file = paste0(housing_path, 
+                                      "/OrganizedData/Summaries/YT/YT summary enrollment_", 
+                                      Sys.Date(), ".xlsx"),
+             overwrite = T)
+
+
+
+
+#### 3) Look at drop off by year ####
 # Make function to show the proportion of people still enrolled after x days
 # Group results by YT (yt = 1) or SS (yt = 0)
 surv_f <- function(df, year = 2012) {
