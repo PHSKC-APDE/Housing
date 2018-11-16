@@ -4,10 +4,10 @@
 \alias{popcount}
 \title{Counting population and person-time in the joint PHA/Medicaid data}
 \usage{
-popcount(df, group_var = quos(agency_new), agency = NULL, enroll = NULL,
-  unit = NULL, startdate = NULL, enddate = NULL, birth = NULL,
-  length = NULL, numeric = TRUE, wc = FALSE, wc_min = 0, wc_max = 6,
-  ...)
+popcount(df, group_var = quos(agency_new), agency = NULL,
+  enroll = NULL, unit = NULL, startdate = NULL, enddate = NULL,
+  birth = NULL, length = NULL, numeric = TRUE, wc = FALSE,
+  wc_min = 0, wc_max = 6, ...)
 }
 \arguments{
 \item{df}{A data frame}

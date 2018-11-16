@@ -19,7 +19,7 @@
 #' string. Currently hard coded to attach to ageXX where XX is the year.
 #' @param event The acute health event of interest. Should match a field name in
 #' the df.
-#' @param event_yr The field that identifies which calendar year the event 
+#' @param event_year The field that identifies which calendar year the event 
 #' occurred in (acute events only).
 #' @param unit A named variable that determines the unit to count over. 
 #' Default unit of analysis is pid2 (individuals) but pid should be used with 
@@ -78,7 +78,9 @@ count_acute <- function(df,
   
   # Figure out which DOB field to use (if needed for age calcs)
   # Required if looking at well-child age
-  if (str_detect(quo_name(event_quo), "wc") == TRUE | !missing(birth)) {
+  if (str_detect(quo_name(event_quo), "wc") == TRUE | 
+      (!missing(birth) & !is.null(birth))) {
+    
     if(!missing(birth)) {
       birth <- enquo(birth)
     } else if("dob_c" %in% names(df)) {
@@ -106,7 +108,7 @@ count_acute <- function(df,
   }
   
   # Add age and length year-specific variables to grouping id needed
-  if (!missing(age_var)) {
+  if (!missing(age_var) & !is.null(age_var)) {
     agex <- quo(!! rlang::sym(paste0("age", year, age_var)))
     # Make a new variable with the name we want to use in grouping
     df <- df %>%
@@ -115,7 +117,7 @@ count_acute <- function(df,
     group_var <- append(group_var, quo(age_group))
   } 
   
-  if (!missing(len_var)) {
+  if (!missing(len_var) & !is.null(len_var)) {
     lengthx <- quo(!! rlang::sym(paste0("length", year, len_var)))
     # Make a new variable with the name we want to use in grouping
     df <- df %>%

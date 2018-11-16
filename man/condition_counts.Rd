@@ -7,8 +7,8 @@
 \title{Count the number of events/population with condition by desired grouping}
 \usage{
 count_acute(df, year, group_var = quos(agency_new), age_var = NULL,
-  len_var = NULL, event = NULL, event_year = event_year, unit = NULL,
-  person = FALSE, birth = NULL)
+  len_var = NULL, event = NULL, event_year = event_year,
+  unit = NULL, person = FALSE, birth = NULL)
 
 count_chronic(df_chronic = chronic, df_pop = chronic_pop,
   condition = NULL, year = 12)
@@ -33,6 +33,9 @@ string. Currently hard coded to attach to ageXX where XX is the year.}
 \item{event}{The acute health event of interest. Should match a field name in
 the df.}
 
+\item{event_year}{The field that identifies which calendar year the event 
+occurred in (acute events only).}
+
 \item{unit}{A named variable that determines the unit to count over. 
 Default unit of analysis is pid2 (individuals) but pid should be used with 
 data not matched to Medicaid. The other option is hhold_id_new for households.}
@@ -45,9 +48,6 @@ use when calculating age (normally dob_c or dob_h but can also use
 hh_dob_m6 if calculating age at the household level). Currently only needed 
 if using a well-child indicator (could be extended to calculate age for a
 non-calendar year period though).}
-
-\item{event_yr}{The field that identifies which calendar year the event 
-occurred in (acute events only).}
 }
 \description{
 These functions count the number of acute events/people with conditions for
