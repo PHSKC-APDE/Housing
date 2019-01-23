@@ -282,9 +282,6 @@ popcount <- function(df,
                 pt_days = sum(overlap_amount)) %>%
       ungroup()
     
-    
-    print(sum(ever$pt_days))
-    
     # Allocate an individual to a PHA/program based on rules:
     # 1) Medicaid only and PHA only = Medicaid row with most time
     #   (rationale is we can look at the health data for Medicaid portion at least)
@@ -334,8 +331,8 @@ popcount <- function(df,
           agency_norm == 2 & enroll_norm == 3 ~ 2,
           agency_norm == 0 ~ 4
         ))
-    } else if (str_detect(to_lower(paste(group_var, collapse = "")), "agency") &
-               str_detect(to_lower(paste(group_var, collapse = "")), "enroll")) {
+    } else if (str_detect(str_to_lower(paste(group_var, collapse = "")), "agency") &
+               str_detect(str_to_lower(paste(group_var, collapse = "")), "enroll")) {
       stop("Agency and enroll must be both numeric or character")
     }
     

@@ -148,7 +148,8 @@ yt_popcode <- function(df, year = 12, year_pre = "pt", year_suf = NULL,
                               coded$pt_tmp >= pt_cut & coded$dual_tmp == "N", 4)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
-                              is.na(coded$agency_tmp) & coded$enroll_tmp == "m" & 
+                              (is.na(coded$agency_tmp) | coded$agency_tmp == "Non-PHA") & 
+                              coded$enroll_tmp == "m" & 
                               coded$dual_tmp == "N", 5)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$enroll_tmp == "b" & 
@@ -166,7 +167,8 @@ yt_popcode <- function(df, year = 12, year_pre = "pt", year_suf = NULL,
                               coded$pt_tmp >= pt_cut & coded$dual_tmp == "Y", 9)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
-                              is.na(coded$agency_tmp) & coded$enroll_tmp == "m" & 
+                              (is.na(coded$agency_tmp) | coded$agency_tmp == "Non-PHA") & 
+                              coded$enroll_tmp == "m" & 
                               coded$dual_tmp == "Y", 10)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$enroll_tmp == "b" & 
@@ -184,7 +186,8 @@ yt_popcode <- function(df, year = 12, year_pre = "pt", year_suf = NULL,
                               coded$pt_tmp >= pt_cut & is.na(coded$dual_tmp), 14)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
-                              is.na(coded$agency_tmp) & coded$enroll_tmp == "m" & 
+                              (is.na(coded$agency_tmp) | coded$agency_tmp == "Non-PHA") & 
+                              coded$enroll_tmp == "m" & 
                               is.na(coded$dual_tmp), 15)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$agency_tmp == "SHA" & 
