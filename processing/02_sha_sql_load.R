@@ -34,10 +34,10 @@ library(tidyverse) # Used to manipulate data
 library(RJSONIO)
 library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
 
 set_data_envr(METADATA,"sha_data")
 
@@ -50,51 +50,60 @@ if(sql == TRUE) {
 sha3a_new <- fread(file = 
                      file.path(sha_path,
                                sha3a_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"),
+                   na.strings = c("NA", "", "NULL", "N/A"),
                    stringsAsFactors = F)
 sha3b_new <- fread(file = file.path(sha_path,
                                        sha3b_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
 sha5a_new <- fread(file = file.path(sha_path,
                                        sha5a_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
 sha5b_new <- fread(file = file.path(sha_path,
                                        sha5b_new_fn),
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
 
 
 # Bring in suffix corrected SHA data
 sha1a <- fread(file = file.path(sha_path,
                                    sha1a_fn), 
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 sha1b <- fread(file = file.path(sha_path,
                                    sha1b_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 sha1c <- fread(file = file.path(sha_path,
                                    sha1c_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), stringsAsFactors = F)
+               na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
 sha2a <- fread(file = file.path(sha_path,
                                    sha2a_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 sha2b <- fread(file = file.path(sha_path,
                                    sha2b_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 sha2c <- fread(file = file.path(sha_path,
                                    sha2c_fn),
-                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 sha4a <- fread(file = file.path(sha_path,
                                    sha4a_fn),
-                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
+               na.strings = c("NA", "", "NULL", "N/A"), 
                stringsAsFactors = F)
 
+if (UW == TRUE) {
+  sha6a_new <- fread(file = file.path(sha_path, sha6a_new_fn),
+                     na.strings = c("NA", "", "NULL", "N/A"),
+                     stringsAsFactors = F)
+  
+  sha6b_new <- fread(file = file.path(sha_path, sha6b_new_fn),
+                     na.strings = c("NA", "", "NULL", "N/A"),
+                     stringsAsFactors = F)
+}
 
 # Bring in voucher data
 
@@ -115,13 +124,24 @@ sha_portfolio_codes  <- read.xlsx(file.path(
 
 ### First deduplicate data to avoid extra rows being made when joined
 # Make list of data frames to deduplicate
-dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, 
-            sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
-            sha3a_new = sha3a_new, sha3b_new = sha3b_new, 
-            sha4a = sha4a, 
-            sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_prog_codes = sha_prog_codes, 
-            sha_portfolio_codes = sha_portfolio_codes)
+if (UW == TRUE) {
+  dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, 
+              sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
+              sha3a_new = sha3a_new, sha3b_new = sha3b_new, 
+              sha4a = sha4a, 
+              sha5a_new = sha5a_new, sha5b_new = sha5b_new,
+              sha6a_new = sha6a_new, sha6b_new = sha6b_new,
+              sha_prog_codes = sha_prog_codes, 
+              sha_portfolio_codes = sha_portfolio_codes)
+} else {
+  dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, 
+              sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
+              sha3a_new = sha3a_new, sha3b_new = sha3b_new, 
+              sha4a = sha4a, 
+              sha5a_new = sha5a_new, sha5b_new = sha5b_new,
+              sha_prog_codes = sha_prog_codes, 
+              sha_portfolio_codes = sha_portfolio_codes)
+}
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -136,7 +156,7 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
@@ -192,6 +212,24 @@ sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new),
                                                     fields$SHA_new_hcv)])
 sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
                                                     fields$SHA_new_hcv)])
+
+if (UW == TRUE) {
+  sha6a_new <- setnames(sha6a_new, fields$PHSKC[match(names(sha6a_new), fields$SHA_new_ph)])
+
+  # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
+  colnames(sha6a_new)[10] <- "hh_lname"
+  colnames(sha6a_new)[11] <- "hh_fname"
+  colnames(sha6a_new)[12] <- "hh_mname"
+
+  sha6b_new <- setnames(sha6b_new, fields$PHSKC[match(names(sha6b_new), 
+                                                    fields$SHA_new_ph)])
+  sha6a_new <- sha6a_new %>%
+    mutate(property_id = as.character(property_id),
+           act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
+           mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
+           r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
+  )
+}
 
 sha_prog_codes <- setnames(sha_prog_codes, 
                            fields$PHSKC[match(names(sha_prog_codes), 
@@ -490,9 +528,15 @@ inc_clean_f <- function(df) {
   
 }
 }
-# Make list of data frames with income or asset variables
-dfs_inc <- list(sha1b = sha1b, sha1c = sha1c, sha2b = sha2b, sha2c = sha2c, 
-                sha3b_new = sha3b_new, sha5b_new = sha5b_new)
+
+# Make list of data frames with income or asset 
+if (UW == TRUE) {
+  dfs_inc <- list(sha1b = sha1b, sha1c = sha1c, sha2b = sha2b, sha2c = sha2c, 
+                sha3b_new = sha3b_new, sha5b_new = sha5b_new, sha6b_new = sha6b_new)
+} else {  
+  dfs_inc <- list(sha1b = sha1b, sha1c = sha1c, sha2b = sha2b, sha2c = sha2c, 
+                  sha3b_new = sha3b_new, sha5b_new = sha5b_new)
+}
 
 # Apply function to all relevant data frames (takes a few minutes to run)
 income_assets <- lapply(dfs_inc, inc_clean_f)
@@ -524,7 +568,8 @@ if(UW == TRUE) {
     select(-hh_fname,-mname)
     
   names(sha1a.fix) <- names(sha1a)
-
+  names(sha1a.fix)[57] = "v57"
+  
   sha1a.fix <- sha1a.fix %>%
     select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, lnamesuf = 57, fname:55)
 
@@ -576,6 +621,10 @@ sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
 sha3 <- left_join(sha3a_new, sha3b_new, 
                   by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 
+if (UW == TRUE){
+  sha6 <- left_join(sha6a_new, sha6b_new, 
+                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+}
 
 # Add source field to track where each row came from
 sha1 <- sha1 %>% mutate(sha_source = "sha1")
@@ -583,6 +632,9 @@ sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
 if (UW == TRUE) {
+  
+  sha6 <- sha6 %>% mutate(sha_source = "sha6")
+  
   ### Clean column types before append ### change to match new mappings  check other things
   sha1 <- sha1 %>%
           mutate(subs_type = as.character(subs_type),
@@ -604,9 +656,14 @@ if (UW == TRUE) {
             mutate(subs_type = as.character(subs_type),
                   unit_zip = as.character(unit_zip),
                   rent_tenant = as.numeric(rent_tenant))
+  
+  sha6 <- sha6 %>%
+    mutate(subs_type = as.character(subs_type),
+           unit_zip = as.character(unit_zip),
+           rent_tenant = as.numeric(rent_tenant))
 
   # Append data and drop data fields not being used (data from SHA are blank)
-  sha_ph <- bind_rows(sha1, sha2, sha3)
+  sha_ph <- bind_rows(sha1, sha2, sha3, sha6)
 } else {
   sha_ph <- bind_rows(sha1, sha2, sha3) %>%
   select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
@@ -953,6 +1010,7 @@ rm(list = ls(pattern = "sha2"))
 rm(list = ls(pattern = "sha3"))
 rm(list = ls(pattern = "sha4"))
 rm(list = ls(pattern = "sha5"))
+rm(list = ls(pattern = "sha6"))
 rm(list = ls(pattern = "sha_"))
 rm(list = ls(pattern = "hh_"))
 rm(field_name_mapping_fn)
