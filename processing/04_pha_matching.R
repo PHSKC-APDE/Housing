@@ -36,16 +36,17 @@ library(phonics) # used to extract phonetic version of names
 library(RJSONIO)
 library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
 
 set_data_envr(METADATA,"combined")
-
+if (UW == FALSE) {
 #### Bring in data ####
 # Assumes pha_combining.R has been run at some point
 pha <- readRDS(file = paste0(housing_path, pha_fn))
+}
 
 ### Remove duplicate records in preparation for matching
 pha_dedup <- pha %>%
@@ -1090,10 +1091,11 @@ pha_clean$pid <- group_indices(pha_clean, ssn_id_m6, lname_new_m6,
                                fname_new_m6, dob_m6)
 pha_clean <- pha_clean %>% select(pid, ssn_new:hh_id_new)
 
-
+if (UW == FALSE) {
 #### Save point ####
 saveRDS(pha_clean, file = paste0(housing_path, pha_clean_fn))
 # "/OrganizedData/pha_matched.Rda"
+}
 
 # Remove data frames and values made along the way
 rm(list = ls(pattern = "pha_new[1-6]*$"))
