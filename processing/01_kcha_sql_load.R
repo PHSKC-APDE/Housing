@@ -26,13 +26,56 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(openxlsx) # Used to import/export Excel files
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
+if(!require(housing)){
+  install.packages("housing")
+  require(housing) # contains many useful functions for cleaning
+}
+
+if(!require(odbc)){
+  install.packages("odbc")
+  require(odbc) # Used to connect to SQL server
+}
+
+if(!require(openxlsx)){
+  install.packages("openxlsx")
+  require(openxlsx) # Used to import/export Excel files
+}
+
+if(!require(data.table)){
+  install.packages("data.table")
+  require(data.table) # Used to read in csv files more efficiently
+}
+
+if(!require(tidyverse)){
+  install.packages("tidyverse")
+  require(tidyverse) # Used to manipulate data
+}
+
+if(!require(RJSONIO)){
+  install.packages("RJSONIO")
+  require(RJSONIO)
+}
+
+if(!require(RCurl)){
+  install.packages("RCurl")
+  require(RCurl)
+}
+
+if(!require(lubridate)){
+  install.packages("lubridate")
+  require(lubridate)
+}
+
+if(!require(RecordLinkage)){
+  install.packages("RecordLinkage")
+  require(RecordLinkage)
+}
+
+if(!require(phonics)){
+  install.packages("phonics")
+  require(phonics)
+}
+
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))

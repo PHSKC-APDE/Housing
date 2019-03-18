@@ -26,13 +26,13 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(openxlsx) # Used to import/export Excel files
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
+require(housing) # contains many useful functions for cleaning
+require(odbc) # Used to connect to SQL server
+require(openxlsx) # Used to import/export Excel files
+require(data.table) # Used to read in csv files more efficiently
+require(tidyverse) # Used to manipulate data
+require(RJSONIO)
+require(RCurl)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))

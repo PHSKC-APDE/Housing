@@ -36,23 +36,23 @@
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 
-library(openxlsx) # Used to import/export Excel files
-library(data.table) # used to read in csv files and rename fields
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
+require(openxlsx) # Used to import/export Excel files
+require(data.table) # used to read in csv files and rename fields
+require(tidyverse) # Used to manipulate data
+require(RJSONIO)
+require(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
 
 set_data_envr(METADATA,"combined")
 
-
+if (UW == FALSE) {
 #### Bring in data #####
 pha_recoded <- readRDS(file = paste0(housing_path, pha_recoded_fn))
-
+}
 
 ##### Addresses #####
 # Remove written NAs and make actually missing
@@ -340,18 +340,20 @@ pha_cleanadd <- pha_cleanadd %>%
 
 rm(adds_specific)
 
-if (UW == FALSE) {
+if (UW == TRUE) {
+  print('skip gocoding') 
+  pha_cleanadd_geocoded <- pha_cleanadd } else {
   #### STOP HERE TO RUN GEOCODING ####
   saveRDS(pha_cleanadd, file = paste0(housing_path, 
                                     "/OrganizedData/pha_cleanadd_midpoint.Rda"))
-}
+
 
 #### START HERE IF GEOCODING HAS BEEN COMPLETED ####
 ### Bring mid-point data back in
 pha_cleanadd_geocoded <- readRDS(file = paste0(housing_path, 
                                       pha_cleanadd_geocoded_fn))
 
-
+}
 #### Merge KCHA development data now that addresses are clean #####
 pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
   mutate(dev_city = paste0(unit_city_new, ", ", unit_state_new, " ", unit_zip_new),
@@ -361,7 +363,7 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
 
 # HCV
 # Bring in data
-kcha_dev_adds <- data.table::fread(file = file.path(kcha_dev_adds_path_fn), 
+kcha_dev_adds <- data.table::fread(file = file.path(housing_path, kcha_dev_adds_path_fn), 
                                         stringsAsFactors = FALSE)
 # Bring in variable name mapping table
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
@@ -420,7 +422,14 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
          property_type = ifelse(is.na(property_type.y), property_type.x, property_type.y)) %>%
   select(-portfolio.x, -portfolio.y, -property_name.x, -property_name.y, -property_type.x, -property_type.y)
 
-
+if (UW == TRUE){
+  rm(fields)
+  rm(secondary)
+  rm(secondary_init)
+  rm(pha_recoded)
+  rm(pha_cleanadd)
+  gc()
+} else {
 #### Save point ####
 saveRDS(pha_cleanadd_geocoded, file = paste0(housing_path, pha_cleanadd_geocoded_fn))
 
@@ -430,3 +439,4 @@ rm(secondary_init)
 rm(pha_recoded)
 rm(pha_cleanadd)
 gc()
+}

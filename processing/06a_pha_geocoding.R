@@ -22,7 +22,8 @@
 # 2017-09, split into separate files 2017-10
 # 
 ###############################################################################
-
+if (UW == TRUE) {
+  print("geocoding skipped") } else {
 #### Set up global parameter and call in libraries ####
 library(openxlsx) # Used to import/export Excel files
 library(data.table) # used to read in csv files and rename fields
@@ -389,3 +390,4 @@ rm(opencage_key)
 rm(i)
 
 gc()
+  }

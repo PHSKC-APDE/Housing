@@ -28,13 +28,13 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
-library(housing) # contains many useful functions for cleaning
-library(tidyverse) # Used to manipulate data
-library(lubridate) # used to manipulate dates
-library(RecordLinkage) # used to clean up duplicates in the data
-library(phonics) # used to extract phonetic version of names
-library(RJSONIO)
-library(RCurl)
+require(housing) # contains many useful functions for cleaning
+require(tidyverse) # Used to manipulate data
+require(lubridate) # used to manipulate dates
+require(RecordLinkage) # used to clean up duplicates in the data
+require(phonics) # used to extract phonetic version of names
+require(RJSONIO)
+require(RCurl)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))

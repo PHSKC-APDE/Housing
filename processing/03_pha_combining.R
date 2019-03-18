@@ -24,12 +24,12 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
+require(housing) # contains many useful functions for cleaning
+require(odbc) # Used to connect to SQL server
+require(data.table) # Used to read in csv files more efficiently
+require(tidyverse) # Used to manipulate data
+require(RJSONIO)
+require(RCurl)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))

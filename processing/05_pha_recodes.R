@@ -38,8 +38,10 @@ METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/me
 
 set_data_envr(METADATA,"combined")
 
-if (UW == FALSE){
 #### Bring in data ####
+if (UW == TRUE) {
+  "skip load of pha_clean"
+} else {
 pha_clean <- readRDS(file = paste0(housing_path, pha_clean_fn))
 }
 
@@ -63,6 +65,38 @@ pha_recoded <- pha_clean %>%
 
 
 # Identify individuals with contradictory race values and set to Y
+if (UW == TRUE) {
+  pha_recoded <- pha_recoded %>%
+    group_by(pid) %>%
+    mutate_at(vars(r_white_new:r_hisp_new), funs(tot = sum(., na.rm = TRUE))) %>%
+    ungroup() %>%
+    mutate_at(vars(r_white_new_tot:r_hisp_new_tot), 
+              funs(replace(., which(. > 0), 1))) %>%
+    mutate(r_white_new = ifelse(r_white_new_tot == 1, 1, 0),
+           r_black_new = ifelse(r_black_new_tot == 1, 1, 0),
+           r_aian_new = ifelse(r_aian_new_tot == 1, 1, 0),
+           r_asian_new = ifelse(r_asian_new_tot == 1, 1, 0),
+           r_nhpi_new = ifelse(r_nhpi_new_tot == 1, 1, 0),
+           r_hisp_new = ifelse(r_hisp_new_tot == 1, 1, 0),
+           # Find people with multiple races
+           r_multi_new = rowSums(cbind(r_white_new_tot, r_black_new_tot, 
+                                       r_aian_new_tot, r_asian_new_tot,
+                                       r_nhpi_new_tot), na.rm = TRUE),
+           r_multi_new = ifelse(r_multi_new > 1, 1, 0)) %>%
+    # make new variable to look at people with one race only
+    mutate_at(vars(r_white_new:r_nhpi_new), 
+              funs(alone = ifelse(r_multi_new == 1, 0, .))) %>%
+    # make single race variable
+    mutate(race_new = case_when(
+      r_white_new_alone == 1 ~ "White only",
+      r_black_new_alone == 1 ~ "Black only",
+      r_aian_new_alone == 1 ~ "AIAN only",
+      r_asian_new_alone == 1 ~ "Asian only",
+      r_nhpi_new_alone == 1 ~ "NHPI only",
+      r_multi_new == 1 ~ "Multiple race",
+      TRUE ~ ""
+    ))
+} else {
 pha_recoded <- pha_recoded %>%
   group_by(pid) %>%
   mutate_at(vars(r_white_new:r_hisp_new), funs(tot = sum(., na.rm = TRUE))) %>%
@@ -96,7 +130,7 @@ pha_recoded <- pha_recoded %>%
   # Drop earlier race variables
   select(-r_white, -r_black, -r_aian, -r_asian, -r_nhpi, 
          -race, -contains("_new_tot"), -contains("_alone"), -r_multi_new)
-
+}
 
 ### Fill in missing gender information (won't work if all are missing, also
 # will not fill in any initial NAs)
@@ -107,13 +141,15 @@ pha_recoded <- pha_recoded %>%
 
 
 #### Add other recodes later ####
-
-if (UW == FALSE){
 #### Save point ####
+if (UW == TRUE) {
+  "skip save point"
+  rm(pha_clean)
+  gc()
+} else {
 saveRDS(pha_recoded, file = paste0(housing_path, 
                                    pha_recoded_fn))
-}
 #### Clean up ####
 rm(pha_clean)
 gc()
-
+}
