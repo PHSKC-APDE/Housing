@@ -20,9 +20,18 @@ pha_compare_old <-  fread(file = "//home/joseh/data/HILD/pha_longitudinal_09_18.
                           na.strings = c("NA", "", "NULL", "N/A"),
                           stringsAsFactors = F)
 
+#dropped_cases <- readRDS(file = "//home/joseh/data/Housing/OrganizedData/drop_track.Rda")
+
 # Original File 2018 located in S3
 # 326,594 cases
-# Rebase file 
+# assumptions:
+# code in: https://github.com/arokem/Housing/tree/uw/processing 
+# was ran to create that file 
+# issue:
+# drop cases were already in place
+# https://github.com/arokem/Housing/blob/uw/processing/07_pha_consolidation.R#L217-L232
+
+# Rebase file should recreate original data file in S3 but doesn't 
 # 259,096 cases
 # Rebase w/updated data file
 # 279,372 cases
