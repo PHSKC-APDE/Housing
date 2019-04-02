@@ -1,4 +1,4 @@
-MTW50058_num,SHA_old,SHA_new_ph,SHA_new_hcv,SHA_prog_port_codes,KCHA_modified,KCHA_eop,PHSKC
+mtw50058_num,sha_old,sha_new_ph,sha_new_hcv,sha_prog_port_codes,kcha_modified,kcha_eop,common_name
 01a,agencyname1a,agencyname1a,,,h1a,,agency
 02a,actiontype2a,actiontype2a,actiontype2a,,h2a,HUD-50058 2a Type of Action,act_type
 02a,,,actiontype2a,,,,act_type
