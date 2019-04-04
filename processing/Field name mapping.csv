@@ -38,8 +38,8 @@ mtw50058_num,sha_old,sha_new_ph,sha_new_hcv,sha_prog_port_codes,kcha_modified,kc
 03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,hhold_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,list_date
-04b,,zipcodebeforeadmission4b,,,box4b,,list_zip
-04c,,homelessatadmission4c,,,box4c,,list_homeless
+04b,,zipcodebeforeadmission4b,,,box04b,,list_zip
+04c,,homelessatadmission4c,,,box04c,,list_homeless
 04e,,assistedunderthe1937housingact4e,,,,,housing_act
 05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,,h5a1a,,unit_add
 05a1b,,,,,h5a1b,,unit_apt
