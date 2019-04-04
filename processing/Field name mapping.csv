@@ -132,7 +132,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,memberuniqueidentifier,,,,mbr_id
 ,,,,,householdid,,hhold_id
 ,,,,,subsidy_id,,subsidy_id
-,,,,,,Voucher Number,vouch_num
+,,,,,vouchernumber,Voucher Number,vouch_num
 ,,majorprogram,majorprogram,,,,major_prog
 ,,,programtype,Program.Type,program_type,Program Type,prog_type
 ,,,,programtype,,,prog_type
