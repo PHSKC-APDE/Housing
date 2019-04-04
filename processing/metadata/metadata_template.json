@@ -1,34 +1,43 @@
 {
     "sha_data":{
         "sha_path": "//path_to/SHA_data_folder/",
-        "sha3a_new_fn": "file_name.type",
-        "sha3b_new_fn": "file_name.type",
-        "sha5a_new_fn": "file_name.type",
-        "sha5b_new_fn": "file_name.type",
-        "sha1a_fn": "file_name.type",
-        "sha1b_fn": "file_name.type",
-        "sha1c_fn": "file_name.type",
-        "sha2a_fn": "file_name.type",
-        "sha2b_fn": "file_name.type",
-        "sha2c_fn": "file_name.type",
-        "sha4a_fn": "file_name.type",
+        "sha1a_2004_2006_fn": "file_name.type",
+        "sha1b_2004_2006_fn": "file_name.type",
+        "sha1c_2004_2006_fn": "file_name.type",
+        "sha2a_2007_2012_fn": "file_name.type",
+        "sha2b_2007_2012_fn": "file_name.type",
+        "sha2c_2007_2012_fn": "file_name.type",
+        "sha3a_2012_2017_fn": "file_name.type",
+        "sha3a_2018_2018_fn": "file_name.type",
+        "sha3b_2012_2017_fn": "file_name.type",
+        "sha3b_2018_2018_fn": "file_name.type",
+        "sha4_2004_2006_fn": "file_name.type",
+        "sha5a_2006_2017_fn": "file_name.type",
+        "sha5b_2006_2017_fn": "file_name.type",
+        "sha5_2018_2018_fn": "file_name.type",                
         "sha_vouch_type_fn": "file_name.type",
         "sha_prog_codes_fn": "file_name.type",
         "sql": "TRUE if you're using this"
+        "add_2018": "TRUE if you have 2018 data to load"
     },
     "kcha_data": {
         "kcha_path": "//path_to/KCHA_data_folder/",
         "panel_1_2004_2015_fname": "file_name.type",
         "panel_2_2004_2015_fname": "file_name.type",
         "panel_3_2004_2015_fname": "file_name.type",
-        "panel_1_2016_fname": "file_name.type",
-        "panel_2_2016_fname": "file_name.type",
-        "panel_3_2016_fname": "file_name.type",
-        "panel_1_2017_fname": "file_name.type",
-        "panel_2_2017_fname": "file_name.type",
-        "panel_3_2017_fname": "file_name.type",
+        "panel_1_2016_2016_fname": "file_name.type",
+        "panel_2_2016_2016_fname": "file_name.type",
+        "panel_3_2016_2016_fname": "file_name.type",
+        "panel_1_2017_2017_fname": "file_name.type",
+        "panel_2_2017_2017_fname": "file_name.type",
+        "panel_3_2017_2017_fname": "file_name.type",
+        "panel_1_2018_2018_fname": "file_name.type",
+        "panel_2_2018_2018_fname": "file_name.type",
+        "panel_3_2018_2018_fname": "file_name.type",
         "kcha_eop_fname": "file_name.type",
-        "sql": "TRUE if you're using this"
+        "kcha_portfolio_codes_fn": "file_name.type",
+        "sql": "TRUE if you're using this",
+        "add_2018": "TRUE if you have 2018 data to load"
     },
     "combined": {
         "housing_path": "path_to_housing/OrganizedData_folder",
@@ -47,6 +56,4 @@
         "pha_longitudinal_fn": "file_name.type"
     }
 }
-
-
 
