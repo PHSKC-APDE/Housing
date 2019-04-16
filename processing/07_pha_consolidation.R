@@ -37,8 +37,8 @@ require(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
-
+local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
+METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
 set_data_envr(METADATA,"combined")
 
 if (UW == TRUE) {
@@ -50,8 +50,8 @@ pha_cleanadd_geocoded <- readRDS(file = paste0(housing_path,
 }
 
 pha_cleanadd_sort <- pha_cleanadd_geocoded %>%
-  arrange(pid, act_date, agency_new, prog_type) # %>%
-  # sample_n(5000)
+  arrange(pid, act_date, agency_new, prog_type) 
+
 rm(pha_cleanadd_geocoded)
 
 #### Create key variables ####
@@ -262,7 +262,6 @@ drop_track <- left_join(drop_track, drop_temp, by = "row")
 pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop != 1)
 dfsize_head - nrow(pha_cleanadd_sort)
 
-
 #### Clean up duplicate rows - multiple EOP types (droptype == 2) ####
 # Some duplicate rows where there is both an EOP action (#6) and an
 # expiration of voucher equivalent (#11) (same program)
@@ -300,8 +299,10 @@ if (dfsize2 == dfsize) {
 }
 dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 
-
-
+# 
+ if (UW == TRUE) {
+   print("skip 3")
+ } else {
 #### Clean up duplicate rows - cert IDs etc. (droptype == 3) ####
 # Some duplicate rows are because of multiple incomes/assets information 
 # reported at the same action date 
@@ -328,6 +329,7 @@ drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
 # Finish dropping rows
 pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
 dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
+}
 
 #### Drop rows with missing address data that are not port outs (droptype = 4) ####
 dfsize_head <- nrow(pha_cleanadd_sort)
@@ -1304,7 +1306,6 @@ if (UW == TRUE) {
   rm(list = ls(pattern = "dfsize"))
   pha_cleanadd_sort_dedup <- pha_cleanadd_sort
   rm(pha_cleanadd_sort)
-  saveRDS(drop_track, file = paste0(housing_path, "drop_track.Rda"))
   gc() } else {
 #### Export drop tracking data ####
 saveRDS(drop_track, file = paste0(housing_path, "drop_track.Rda"))

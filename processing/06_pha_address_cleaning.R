@@ -366,7 +366,7 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
 kcha_dev_adds <- data.table::fread(file = file.path(housing_path, kcha_dev_adds_path_fn), 
                                         stringsAsFactors = FALSE)
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
                    header = TRUE, stringsAsFactors = FALSE)
 kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
 

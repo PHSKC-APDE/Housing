@@ -42,9 +42,12 @@ METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/me
 set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
+if (UW == TRUE) {
+  print("skip data load")
+} else {
 pha_cleanadd_sort_dedup <- readRDS(file = paste0(
   housing_path, pha_cleanadd_sort_dedup_fn))
-
+}
 
 
 ### Strip out some variables that no longer have meaning 
@@ -216,6 +219,7 @@ rm(zips)
 #### Save point ####
 # saveRDS(pha_longitudinal, file = paste0(housing_path, pha_longitudinal_fn))
 
+write.csv(pha_longitudinal, file = "/home/ubuntu/data/HILD/pha_test_subprocess_4_19.csv")
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)
 gc()

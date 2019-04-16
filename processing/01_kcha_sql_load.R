@@ -26,23 +26,25 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
+
 if(!require(housing)){
-  install.packages("housing")
+  devtools::install_github("PHSKC-APDE/Housing")
   require(housing) # contains many useful functions for cleaning
 }
 
-if(!require(odbc)){
+if(UW == TRUE) {
+  print("odbc not needed") } else {
   install.packages("odbc")
   require(odbc) # Used to connect to SQL server
 }
 
 if(!require(openxlsx)){
-  install.packages("openxlsx")
+  install.packages("openxlsx", repos='http://cran.us.r-project.org')
   require(openxlsx) # Used to import/export Excel files
 }
 
 if(!require(data.table)){
-  install.packages("data.table")
+  install.packages("data.table", repos='http://cran.us.r-project.org')
   require(data.table) # Used to read in csv files more efficiently
 }
 
@@ -52,12 +54,12 @@ if(!require(tidyverse)){
 }
 
 if(!require(RJSONIO)){
-  install.packages("RJSONIO")
+  install.packages("RJSONIO", repos='http://cran.us.r-project.org')
   require(RJSONIO)
 }
 
 if(!require(RCurl)){
-  install.packages("RCurl")
+  install.packages("RCurl", repos='http://cran.us.r-project.org')
   require(RCurl)
 }
 
@@ -67,22 +69,27 @@ if(!require(lubridate)){
 }
 
 if(!require(RecordLinkage)){
-  install.packages("RecordLinkage")
+  install.packages("RecordLinkage", repos='http://cran.us.r-project.org')
   require(RecordLinkage)
 }
 
 if(!require(phonics)){
-  install.packages("phonics")
+  install.packages("phonics", repos='http://cran.us.r-project.org')
   require(phonics)
 }
-
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
-
-set_data_envr(METADATA,"kcha_data")
+if (aws == TRUE) {
+  print('Running from python')
+  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+  set_data_envr(METADATA, "kcha_data") } else {
+    
+  local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
+  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+  set_data_envr(METADATA,"kcha_data")
+}
 
 if (sql == TRUE) {
   db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -164,7 +171,7 @@ if (UW == TRUE) {
 }
 
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
                    header = TRUE, stringsAsFactors = FALSE)
 
 
@@ -270,7 +277,8 @@ kcha_2016_full <- kcha_2016_full %>% mutate(kcha_source = "kcha2016")
 kcha_2017_full <- kcha_2017_full %>% mutate(kcha_source = "kcha2017")
 
 ### Append latest extract
-kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)
+kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)# %>%
+  #sample_n(1000)
 
 
 #### Remove temporary files ####
@@ -756,4 +764,3 @@ rm(METADATA)
 rm(script)
 rm(set_data_envr)
 gc()
-

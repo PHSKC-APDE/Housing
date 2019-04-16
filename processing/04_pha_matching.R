@@ -42,7 +42,7 @@ eval(parse(text = script))
 METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
 
 set_data_envr(METADATA,"combined")
-if (UW == FALSE) {
+if (sql == TRUE) {
 #### Bring in data ####
 # Assumes pha_combining.R has been run at some point
 pha <- readRDS(file = paste0(housing_path, pha_fn))

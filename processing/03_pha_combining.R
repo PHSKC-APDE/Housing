@@ -267,7 +267,7 @@ pha <- pha %>%
   mutate(gender_new_cnt = ifelse(ssn_new_junk == 0 | ssn_c_junk == 0, n(), NA)) %>%
   ungroup()
 
-if (UW == FALSE) {
+if (sql == TRUE) {
 #### Save point ####
 saveRDS(pha, file = paste0(housing_path, pha_fn))
 }

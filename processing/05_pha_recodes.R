@@ -131,7 +131,7 @@ pha_recoded <- pha_recoded %>%
   select(-r_white, -r_black, -r_aian, -r_asian, -r_nhpi, 
          -race, -contains("_new_tot"), -contains("_alone"), -r_multi_new)
 }
-
+names(pha_recoded)
 ### Fill in missing gender information (won't work if all are missing, also
 # will not fill in any initial NAs)
 pha_recoded <- pha_recoded %>%

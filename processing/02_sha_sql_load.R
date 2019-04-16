@@ -37,9 +37,15 @@ require(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
-
-set_data_envr(METADATA,"sha_data")
+if (aws == TRUE) {
+  print('Running from python')
+  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+  set_data_envr(METADATA, "sha_data") } else {
+    
+    local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
+    METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+    set_data_envr(METADATA,"sha_data")
+}
 
 if(sql == TRUE) {
   db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -156,18 +162,17 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
-
+###
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
 if (UW == TRUE) {
-fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
-
-fields_uw <- fields_uw %>%
-         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
-         mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
-}
-###
+  fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
+  
+  fields_uw <- fields_uw %>%
+    mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
+    mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
+} 
 
 # Get rid of spaces, characters, and capitals in existing names
 # Makes it easier to accommodate changes in names provided by SHA
@@ -182,7 +187,6 @@ list2env(df_rename, .GlobalEnv)
 rm(dfs)
 rm(df_rename)
 gc()
-
 
 # Apply new names to columns
 sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
@@ -541,7 +545,7 @@ if (UW == TRUE) {
 # Apply function to all relevant data frames (takes a few minutes to run)
 income_assets <- lapply(dfs_inc, inc_clean_f)
 
-# Bring back data frames from list
+ # Bring back data frames from list
 list2env(income_assets, .GlobalEnv)
 rm(dfs_inc)
 rm(income_assets)
@@ -777,7 +781,8 @@ if (UW == TRUE) {
 }
 
 #### Append data ####
-sha <- bind_rows(sha_ph, sha_hcv)
+sha <- bind_rows(sha_ph, sha_hcv)# %>%
+  #sample_n(1000)
 
 
 ### Fix up conflicting and missing income
@@ -1022,4 +1027,3 @@ rm(set_data_envr)
 rm(METADATA)
 rm(sql)
 gc()
-
