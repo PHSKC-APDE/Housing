@@ -300,7 +300,7 @@ if (dfsize2 == dfsize) {
 dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 
 # 
- if (UW == TRUE) {
+if (UW == TRUE) {
    print("skip 3")
  } else {
 #### Clean up duplicate rows - cert IDs etc. (droptype == 3) ####
@@ -1301,8 +1301,6 @@ sum(pha_cleanadd_sort$truncated, na.rm = T)
 
 if (UW == TRUE) {
   rm(drop_temp)
-  rm(pha_cleanadd)
-  rm(pha_cleanadd_geocoded)
   rm(list = ls(pattern = "dfsize"))
   pha_cleanadd_sort_dedup <- pha_cleanadd_sort
   rm(pha_cleanadd_sort)

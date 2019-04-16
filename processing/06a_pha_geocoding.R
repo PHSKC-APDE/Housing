@@ -34,14 +34,14 @@ library(rgdal) # Used to convert coordinates between ESRI and Google output
 library(sf) # newer package for working with spatial data
 
 
-if(UW == FALSE) {
-  bounds <- "& bounds=47,-122.7|48,-121"
-  bounds_opencage <- c(-123, 46.8, -120.5, 48.5)
+
+bounds <- "& bounds=47,-122.7|48,-121"
+bounds_opencage <- c(-123, 46.8, -120.5, 48.5)
 
 
 #### BRING IN DATA ####
 pha_cleanadd <- readRDS(file.path(housing_path, "/OrganizedData/pha_cleanadd_midpoint.Rda"))
-}
+
 ### If addresses have already been geocoded, bring them in here
 # Initial geocoding results (differs from future approaches)
 esri_20170824 <- read.xlsx(file.path(housing_path,
