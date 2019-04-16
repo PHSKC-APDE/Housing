@@ -37,15 +37,9 @@ require(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-if (aws == TRUE) {
-  print('Running from python')
-  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
-  set_data_envr(METADATA, "sha_data") } else {
-    
-    local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
-    METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
-    set_data_envr(METADATA,"sha_data")
-}
+local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
+METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+set_data_envr(METADATA, "sha_data")
 
 if(sql == TRUE) {
   db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -162,7 +156,7 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 ###
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
@@ -189,14 +183,14 @@ rm(df_rename)
 gc()
 
 # Apply new names to columns
-sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), 
-                                                    fields$SHA_new_ph)])
+sha1a <- setnames(sha1a, fields$common_name[match(names(sha1a), fields$sha_old)])
+sha1b <- setnames(sha1b, fields$common_name[match(names(sha1b), fields$sha_old)])
+sha1c <- setnames(sha1c, fields$common_name[match(names(sha1c), fields$sha_old)])
+sha2a <- setnames(sha2a, fields$common_name[match(names(sha2a), fields$sha_old)])
+sha2b <- setnames(sha2b, fields$common_name[match(names(sha2b), fields$sha_old)])
+sha2c <- setnames(sha2c, fields$common_name[match(names(sha2c), fields$sha_old)])
+sha3a_new <- setnames(sha3a_new, fields$common_name[match(names(sha3a_new), 
+                                                    fields$sha_new_ph)])
 
 if (UW == TRUE) {
 # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
@@ -205,28 +199,28 @@ if (UW == TRUE) {
   colnames(sha3a_new)[12] <- "hh_mname"
 }
 
-sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), 
-                                                    fields$SHA_new_ph)])
+sha3b_new <- setnames(sha3b_new, fields$common_name[match(names(sha3b_new), 
+                                                    fields$sha_new_ph)])
 sha_portfolio_codes <- setnames(sha_portfolio_codes, 
-                                fields$PHSKC[match(names(sha_portfolio_codes), 
-                                                   fields$SHA_prog_port_codes)])
+                                fields$common_name[match(names(sha_portfolio_codes), 
+                                                   fields$sha_prog_port_codes)])
 
-sha4a <- setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
-sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), 
-                                                    fields$SHA_new_hcv)])
-sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
-                                                    fields$SHA_new_hcv)])
+sha4a <- setnames(sha4a, fields$common_name[match(names(sha4a), fields$sha_old)])
+sha5a_new <- setnames(sha5a_new, fields$common_name[match(names(sha5a_new), 
+                                                    fields$sha_new_hcv)])
+sha5b_new <- setnames(sha5b_new, fields$common_name[match(names(sha5b_new), 
+                                                    fields$sha_new_hcv)])
 
 if (UW == TRUE) {
-  sha6a_new <- setnames(sha6a_new, fields$PHSKC[match(names(sha6a_new), fields$SHA_new_ph)])
+  sha6a_new <- setnames(sha6a_new, fields$common_name[match(names(sha6a_new), fields$sha_new_ph)])
 
   # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
   colnames(sha6a_new)[10] <- "hh_lname"
   colnames(sha6a_new)[11] <- "hh_fname"
   colnames(sha6a_new)[12] <- "hh_mname"
 
-  sha6b_new <- setnames(sha6b_new, fields$PHSKC[match(names(sha6b_new), 
-                                                    fields$SHA_new_ph)])
+  sha6b_new <- setnames(sha6b_new, fields$common_name[match(names(sha6b_new), 
+                                                    fields$sha_new_ph)])
   sha6a_new <- sha6a_new %>%
     mutate(property_id = as.character(property_id),
            act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
@@ -236,8 +230,8 @@ if (UW == TRUE) {
 }
 
 sha_prog_codes <- setnames(sha_prog_codes, 
-                           fields$PHSKC[match(names(sha_prog_codes), 
-                                              fields$SHA_prog_port_codes)])
+                           fields$common_name[match(names(sha_prog_codes), 
+                                              fields$sha_prog_port_codes)])
 
 # UW DATA
 if (UW == TRUE){
@@ -781,8 +775,7 @@ if (UW == TRUE) {
 }
 
 #### Append data ####
-sha <- bind_rows(sha_ph, sha_hcv)# %>%
-  #sample_n(1000)
+sha <- bind_rows(sha_ph, sha_hcv)
 
 
 ### Fix up conflicting and missing income
