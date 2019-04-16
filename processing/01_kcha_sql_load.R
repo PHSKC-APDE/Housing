@@ -32,11 +32,9 @@ if(!require(housing)){
   require(housing) # contains many useful functions for cleaning
 }
 
-if(UW == TRUE) {
-  print("odbc not needed") } else {
-  install.packages("odbc")
-  require(odbc) # Used to connect to SQL server
-}
+
+require(odbc) # Used to connect to SQL server
+
 
 if(!require(openxlsx)){
   install.packages("openxlsx", repos='http://cran.us.r-project.org')
@@ -171,7 +169,7 @@ if (UW == TRUE) {
 }
 
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
                    header = TRUE, stringsAsFactors = FALSE)
 
 
@@ -680,7 +678,7 @@ kcha_long <- left_join(kcha_long, hhold_size, by = "hh_id_temp")
 
 
 #### Rename variables ####
-kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- setnames(kcha_long, fields$common_name[match(names(kcha_long), fields$kcha_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
@@ -696,8 +694,8 @@ kcha_long <- kcha_long %>%
 # Bring in data and rename variables
 kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, kcha_portfolio_codes_fn))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, 
-                                 fields$PHSKC[match(names(kcha_portfolio_codes), 
-                                                    fields$KCHA_modified)])
+                                 fields$common_name[match(names(kcha_portfolio_codes), 
+                                                    fields$kcha_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
