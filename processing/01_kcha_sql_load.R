@@ -79,15 +79,9 @@ if(!require(phonics)){
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-if (aws == TRUE) {
-  print('Running from python')
-  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
-  set_data_envr(METADATA, "kcha_data") } else {
-    
-  local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
-  METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
-  set_data_envr(METADATA,"kcha_data")
-}
+local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
+METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+set_data_envr(METADATA, "kcha_data")
 
 if (sql == TRUE) {
   db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")

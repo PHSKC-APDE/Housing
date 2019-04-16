@@ -34,8 +34,8 @@ library(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
-
+local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
+METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
 set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
@@ -131,7 +131,7 @@ pha_recoded <- pha_recoded %>%
   select(-r_white, -r_black, -r_aian, -r_asian, -r_nhpi, 
          -race, -contains("_new_tot"), -contains("_alone"), -r_multi_new)
 }
-names(pha_recoded)
+
 ### Fill in missing gender information (won't work if all are missing, also
 # will not fill in any initial NAs)
 pha_recoded <- pha_recoded %>%

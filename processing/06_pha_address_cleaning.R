@@ -45,11 +45,13 @@ require(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/joseh/source/Housing/processing/metadata/metadata.json")
-
+local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
+METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
 set_data_envr(METADATA,"combined")
 
-if (UW == FALSE) {
+if (UW == TRUE) {
+  "skip load of pha_recoded"
+} else {
 #### Bring in data #####
 pha_recoded <- readRDS(file = paste0(housing_path, pha_recoded_fn))
 }
@@ -366,9 +368,9 @@ pha_cleanadd_geocoded <- pha_cleanadd_geocoded %>%
 kcha_dev_adds <- data.table::fread(file = file.path(housing_path, kcha_dev_adds_path_fn), 
                                         stringsAsFactors = FALSE)
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
                    header = TRUE, stringsAsFactors = FALSE)
-kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$PHSKC[match(names(kcha_dev_adds), fields$KCHA_modified)])
+kcha_dev_adds <- data.table::setnames(kcha_dev_adds, fields$common_name[match(names(kcha_dev_adds), fields$kcha_modified)])
 
 
 # Drop spare rows and deduplicate
