@@ -34,7 +34,6 @@ mtw50058_num,sha_old,sha_new_ph,sha_new_hcv,sha_prog_port_codes,kcha_modified,kc
 03k5,,racenativehawaiianotherpacificislanderindicator3k5,,,,,r_nhpi
 03m,ethnicity3m,ethnicity3m,ethnicity3m,,h3m,,r_hisp
 03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,,h3n,,ssn
-03n,,ssn,ssn,,,,hh_ssn
 03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,hhold_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,list_date
