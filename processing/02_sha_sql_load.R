@@ -34,75 +34,74 @@ library(tidyverse) # Used to manipulate data
 library(RJSONIO)
 library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
-eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
+source(file = paste0(getwd(), "/processing/metadata/set_data_env.r"))
+METADATA <- RJSONIO::fromJSON(paste0(getwd(), "/processing/metadata/metadata.json"))
 
 set_data_envr(METADATA,"sha_data")
 
 if(sql == TRUE) {
-  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+  db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 }
 
 
-#### Bring in data ####
-sha3a_new <- fread(file = 
+#### BRING IN DATA ####
+### Unchanged data
+sha3a_2012_2017 <- fread(file = 
                      file.path(sha_path,
-                               sha3a_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"),
+                               sha3a_2012_2017_fn), 
+                   na.strings = c("NA", "", "NULL", "N/A"),
                    stringsAsFactors = F)
-sha3b_new <- fread(file = file.path(sha_path,
-                                       sha3b_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+sha3b_2012_2017 <- fread(file = file.path(sha_path,
+                                       sha3b_2012_2017_fn), 
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
-sha5a_new <- fread(file = file.path(sha_path,
-                                       sha5a_new_fn), 
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+sha5a_2006_2017 <- fread(file = file.path(sha_path,
+                                       sha5a_2006_2017_fn), 
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
-sha5b_new <- fread(file = file.path(sha_path,
-                                       sha5b_new_fn),
-                   na.strings = c("NA", " ", "", "NULL", "N/A"), 
+sha5b_2006_2017 <- fread(file = file.path(sha_path,
+                                       sha5b_2006_2017_fn),
+                   na.strings = c("NA", "", "NULL", "N/A"), 
                    stringsAsFactors = F)
 
-
-# Bring in suffix corrected SHA data
-sha1a <- fread(file = file.path(sha_path,
-                                   sha1a_fn), 
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-sha1b <- fread(file = file.path(sha_path,
-                                   sha1b_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-sha1c <- fread(file = file.path(sha_path,
-                                   sha1c_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), stringsAsFactors = F)
-sha2a <- fread(file = file.path(sha_path,
-                                   sha2a_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-sha2b <- fread(file = file.path(sha_path,
-                                   sha2b_fn),
-               na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-sha2c <- fread(file = file.path(sha_path,
-                                   sha2c_fn),
-                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-sha4a <- fread(file = file.path(sha_path,
-                                   sha4a_fn),
-                  na.strings = c("NA", " ", "", "NULL", "N/A"), 
-               stringsAsFactors = F)
-
-
-# Bring in voucher data
-
-### UW DATA 
-if (UW == TRUE){
-sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
+if (add_2018 == TRUE) {
+  sha3a_2018_2018 <- fread(file = file.path(sha_path, sha3a_2018_2018_fn), 
+                           na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+  sha3b_2018_2018 <- fread(file = file.path(sha_path, sha3b_2018_2018_fn), 
+                           na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+  
+  sha5a_2018_2018 <- read.xlsx(file.path(sha_path, sha5a_2018_2018_fn),
+                              detectDates = T)
+  sha5b_2018_2018 <- fread(file = file.path(sha_path,
+                                            sha5b_2018_2018_fn),
+                           na.strings = c("NA", "", "NULL", "N/A"), 
+                           stringsAsFactors = F)
 }
-###
+
+
+### Suffix-corrected data
+sha1a_2004_2006 <- fread(file = file.path(sha_path, sha1a_2004_2006_fn), 
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha1b_2004_2006 <- fread(file = file.path(sha_path, sha1b_2004_2006_fn),
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha1c_2004_2006 <- fread(file = file.path(sha_path, sha1c_2004_2006_fn),
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha2a_2007_2012 <- fread(file = file.path(sha_path, sha2a_2007_2012_fn),
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha2b_2007_2012 <- fread(file = file.path(sha_path, sha2b_2007_2012_fn),
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha2c_2007_2012 <- fread(file = file.path(sha_path, sha2c_2007_2012_fn),
+                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+sha4_2004_2006 <- fread(file = file.path(sha_path, sha4_2004_2006_fn),
+                        na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+
+
+### Voucher data
+if (UW == TRUE){
+  sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
+}
+
 sha_prog_codes <- read.xlsx(file.path(
   sha_path, sha_prog_codes_fn), 2)
 
@@ -112,16 +111,32 @@ sha_portfolio_codes  <- read.xlsx(file.path(
 
 
 #### PREP DATA SETS FOR JOINING ####
-
 ### First deduplicate data to avoid extra rows being made when joined
 # Make list of data frames to deduplicate
-dfs <- list(sha1a = sha1a, sha1b = sha1b, sha1c = sha1c, 
-            sha2a = sha2a, sha2b = sha2b, sha2c = sha2c, 
-            sha3a_new = sha3a_new, sha3b_new = sha3b_new, 
-            sha4a = sha4a, 
-            sha5a_new = sha5a_new, sha5b_new = sha5b_new,
-            sha_prog_codes = sha_prog_codes, 
-            sha_portfolio_codes = sha_portfolio_codes)
+if (add_2018 == TRUE) {
+  dfs <- list(sha1a_2004_2006 = sha1a_2004_2006, sha1b_2004_2006 = sha1b_2004_2006, 
+              sha1c_2004_2006 = sha1c_2004_2006, 
+              sha2a_2007_2012 = sha2a_2007_2012, sha2b_2007_2012 = sha2b_2007_2012, 
+              sha2c_2007_2012 = sha2c_2007_2012, 
+              sha3a_2012_2017 = sha3a_2012_2017, sha3b_2012_2017 = sha3b_2012_2017,
+              sha3a_2018_2018 = sha3a_2018_2018, sha3b_2018_2018 = sha3b_2018_2018,
+              sha4_2004_2006 = sha4_2004_2006, 
+              sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
+              sha5a_2018_2018 = sha5a_2018_2018, sha5b_2018_2018 = sha5b_2018_2018,
+              sha_prog_codes = sha_prog_codes, 
+              sha_portfolio_codes = sha_portfolio_codes)
+} else {
+  dfs <- list(sha1a_2004_2006 = sha1a_2004_2006, sha1b_2004_2006 = sha1b_2004_2006, 
+              sha1c_2004_2006 = sha1c_2004_2006, 
+              sha2a_2007_2012 = sha2a_2007_2012, sha2b_2007_2012 = sha2b_2007_2012, 
+              sha2c_2007_2012 = sha2c_2007_2012, 
+              sha3a_2012_2017 = sha3a_2012_2017, sha3b_2012_2017 = sha3b_2012_2017,
+              sha4_2004_2006 = sha4_2004_2006, 
+              sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
+              sha_prog_codes = sha_prog_codes, 
+              sha_portfolio_codes = sha_portfolio_codes)
+}
+
 
 # Deduplicate data
 df_dedups <- lapply(dfs, function(data) {
@@ -136,16 +151,19 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
          header = TRUE, stringsAsFactors = FALSE)
 
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
 if (UW == TRUE) {
-fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
-
-fields_uw <- fields_uw %>%
-         mutate_at(vars(SHA_old:SHA_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
-         mutate_at(vars(SHA_old:SHA_new_ph), funs(tolower(.)))
+  fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/Field%20name%20mapping.csv"), 
+                     header = TRUE, stringsAsFactors = FALSE)
+  
+  fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
+  
+  fields_uw <- fields_uw %>%
+    mutate_at(vars(sha_old:sha_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
+    mutate_at(vars(sha_old:sha_new_ph), funs(tolower(.)))
 }
 ###
 
@@ -164,53 +182,57 @@ rm(df_rename)
 gc()
 
 
-# Apply new names to columns
-sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), 
-                                                    fields$SHA_new_ph)])
+# Apply new names to columns and tweak action type column (UW only)
+if (UW == T) {
+  sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
+  sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
+  sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
+  sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
+  sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
+  sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
+  sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
+  
+  # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
+  colnames(sha3a_2012_2017)[10] <- "hh_lname"
+  colnames(sha3a_2012_2017)[11] <- "hh_fname"
+  colnames(sha3a_2012_2017)[12] <- "hh_mname"
+  
+  sha_vouch_type <- data.table::setnames(sha_vouch_type, fields_uw$PHSKC[match(names(sha_vouch_type), 
+                                                                               fields_uw$SHA_new_hcv)])
+  sha_vouch_type <- sha_vouch_type %>%
+    mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
+                                              'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
+                                              'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
+                                              'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
+                                              'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
+                                              else = NA")),
+           act_date = as.Date(act_date, origin = "1899-12-30")) # 1899 is needed because of an excel date bug
+} else {
+  sha1a_2004_2006 <- setnames(sha1a_2004_2006, fields$common_name[match(names(sha1a_2004_2006), fields$sha_old)])
+  sha1b_2004_2006 <- setnames(sha1b_2004_2006, fields$common_name[match(names(sha1b_2004_2006), fields$sha_old)])
+  sha1c_2004_2006 <- setnames(sha1c_2004_2006, fields$common_name[match(names(sha1c_2004_2006), fields$sha_old)])
+  sha2a_2007_2012 <- setnames(sha2a_2007_2012, fields$common_name[match(names(sha2a_2007_2012), fields$sha_old)])
+  sha2b_2007_2012 <- setnames(sha2b_2007_2012, fields$common_name[match(names(sha2b_2007_2012), fields$sha_old)])
+  sha2c_2007_2012 <- setnames(sha2c_2007_2012, fields$common_name[match(names(sha2c_2007_2012), fields$sha_old)])
+  sha3a_2012_2017 <- setnames(sha3a_2012_2017, fields$common_name[match(names(sha3a_2012_2017), fields$sha_new_ph)])
+  sha3b_2012_2017 <- setnames(sha3b_2012_2017, fields$common_name[match(names(sha3b_2012_2017), fields$sha_new_ph)])
+  sha4_2004_2006 <- setnames(sha4_2004_2006, fields$common_name[match(names(sha4_2004_2006), fields$sha_old)])
+  sha5a_2006_2017 <- setnames(sha5a_2006_2017, fields$common_name[match(names(sha5a_2006_2017), fields$sha_new_hcv)])
+  sha5b_2006_2017 <- setnames(sha5b_2006_2017, fields$common_name[match(names(sha5b_2006_2017), fields$sha_new_hcv)])
 
-if (UW == TRUE) {
-# Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
-  colnames(sha3a_new)[10] <- "hh_lname"
-  colnames(sha3a_new)[11] <- "hh_fname"
-  colnames(sha3a_new)[12] <- "hh_mname"
+  sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$common_name[match(names(sha_portfolio_codes), 
+                                                                                fields$sha_prog_port_codes)])  
+  sha_prog_codes <- setnames(sha_prog_codes, fields$common_name[match(names(sha_prog_codes), 
+                                                                      fields$sha_prog_port_codes)])
+  if (add_2018 == T) {
+    sha3a_2018_2018 <- setnames(sha3a_2018_2018, fields$common_name[match(names(sha3a_2018_2018), fields$sha_new_ph)])
+    sha3b_2018_2018 <- setnames(sha3b_2018_2018, fields$common_name[match(names(sha3b_2018_2018), fields$sha_new_ph)])
+    sha5a_2018_2018 <- setnames(sha5a_2018_2018, fields$common_name[match(names(sha5a_2018_2018), fields$sha_new_hcv)])
+    sha5b_2018_2018 <- setnames(sha5b_2018_2018, fields$common_name[match(names(sha5b_2018_2018), fields$sha_new_hcv)])
+  }
 }
 
-sha3b_new <- setnames(sha3b_new, fields$PHSKC[match(names(sha3b_new), 
-                                                    fields$SHA_new_ph)])
-sha_portfolio_codes <- setnames(sha_portfolio_codes, 
-                                fields$PHSKC[match(names(sha_portfolio_codes), 
-                                                   fields$SHA_prog_port_codes)])
 
-sha4a <- setnames(sha4a, fields$PHSKC[match(names(sha4a), fields$SHA_old)])
-sha5a_new <- setnames(sha5a_new, fields$PHSKC[match(names(sha5a_new), 
-                                                    fields$SHA_new_hcv)])
-sha5b_new <- setnames(sha5b_new, fields$PHSKC[match(names(sha5b_new), 
-                                                    fields$SHA_new_hcv)])
-
-sha_prog_codes <- setnames(sha_prog_codes, 
-                           fields$PHSKC[match(names(sha_prog_codes), 
-                                              fields$SHA_prog_port_codes)])
-
-# UW DATA
-if (UW == TRUE){
-sha_vouch_type <- data.table::setnames(sha_vouch_type, fields_uw$PHSKC[match(names(sha_vouch_type), 
-                                        fields_uw$SHA_new_hcv)])
-sha_vouch_type <- sha_vouch_type %>%
-  mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
-                                       'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
-                                       'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 'Issuance of Voucher' = 10;
-                                       'New Admission' = 1; 'Other Change of Unit' = 7; 'Port-Out Update (Not Submitted To MTCS)' = 16;
-                                       'Portability Move-in' = 4; 'Portability Move-out' = 5; 'Portablity Move-out' = 5; 'Void' = 15;
-                                       else = NA")),
-          act_date=as.Date(act_date, origin = "1899-12-30")) # 1899 is needed because of an excel date bug
-}
-###
 
 #### INCOME SECTIONS ####
 # Need to do the following:
@@ -385,94 +407,100 @@ inc_clean_f <- function(df) {
   # Still need ways to optimize this code
   if ("mbr_id" %in% names(df)) {
     df_inc <- df %>%
-      distinct(cert_id, mbr_id, increment, inc_code, 
-               inc, inc_excl, inc_adj, inc_fixed_temp) %>%
-    group_by(cert_id, mbr_id, increment) %>%
-      summarise(
-        inc = sum(inc, na.rm = T), 
-        inc_excl = sum(inc_excl, na.rm = T),
-        inc_adj = sum(inc_adj, na.rm = T),
-        inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
-      group_by(cert_id) %>%
-      mutate(
-        hh_inc = sum(inc, na.rm = T), 
-        hh_inc_excl = sum(inc_excl, na.rm = T),
-        hh_inc_adj = sum(inc_adj, na.rm = T)) %>%
-      ungroup()
-
-    df_ass <- df %>%
-      distinct(cert_id, mbr_id, increment, asset_type, asset_val, asset_inc) %>%
-      group_by(cert_id, mbr_id, increment) %>%
-      summarise(
-        asset_val = sum(asset_val, na.rm = T), 
-        asset_inc = sum(asset_inc, na.rm = T)) %>%
-      group_by(cert_id) %>%
-      mutate(
-        hh_asset_val = sum(asset_val, na.rm = T), 
-        hh_asset_inc = sum(asset_inc, na.rm = T)) %>%
-      ungroup()
+      distinct(cert_id, mbr_id, increment, inc_code, inc, inc_excl, inc_adj, inc_fixed_temp)
     
-    df <- left_join(df_inc, df_ass, by = c("cert_id", "mbr_id", "increment"))
+    # Switch to using data.table for grouped operations since it's much faster
+    df_inc <- setDT(df_inc)
+    
+    df_inc_summary <- df_inc[, list(inc = sum(inc, na.rm = T), 
+                             inc_excl = sum(inc_excl, na.rm = T),
+                             inc_adj = sum(inc_adj, na.rm = T),
+                             inc_fixed = min(inc_fixed_temp, na.rm = T)),
+                             by = .(cert_id, mbr_id, increment)]
+    df_inc_summary_hh <- df_inc_summary[, list(hh_inc = sum(inc, na.rm = T), 
+                                            hh_inc_excl = sum(inc_excl, na.rm = T),
+                                            hh_inc_adj = sum(inc_adj, na.rm = T)),
+                                     by = "cert_id"]
+    df_inc_summary <- merge(df_inc_summary, df_inc_summary_hh, by = "cert_id")
+    df_inc_summary <- setDF(df_inc_summary)
+
+    
+    df_ass <- df %>%
+      distinct(cert_id, mbr_id, increment, asset_type, asset_val, asset_inc)
+    df_ass <- setDT(df_ass)
+    
+    df_ass_summary <- df_ass[, lapply(.SD, sum, na.rm = T),
+                             by = .(cert_id, mbr_id, increment),
+                             .SDcols = c("asset_val", "asset_inc")]
+    
+    df_ass_summary_hh <- df_ass_summary[, list(hh_asset_val = sum(asset_val, na.rm = T), 
+                                            hh_asset_inc = sum(asset_inc, na.rm = T)),
+                                     by = "cert_id"]
+    
+    df_ass_summary <- merge(df_ass_summary, df_ass_summary_hh, by = "cert_id")
+    df_ass_summary <- setDF(df_ass_summary)
+
+    df <- left_join(df_inc_summary, df_ass_summary, by = c("cert_id", "mbr_id", "increment"))
     
   } else if ("incasset_id" %in% names(df) & "inc_mbr_num" %in% names(df)) {
     if ("inc" %in% names(df) & !("asset_val" %in% names(df))) {
-      df <- df %>%
-        group_by(incasset_id, inc_mbr_num) %>%
-        mutate(
-          inc = sum(inc, na.rm = T), 
-          inc_excl = sum(inc_excl, na.rm = T),
-          inc_adj = sum(inc_adj, na.rm = T),
-          inc_fixed = min(inc_fixed_temp, na.rm = T)) %>%
-        ungroup() %>%
-        select(-inc_fixed_temp, -inc_code) %>%
-        distinct() %>%
-        group_by(incasset_id) %>%
-        mutate(
-          hh_inc = sum(inc, na.rm = T), 
-          hh_inc_excl = sum(inc_excl, na.rm = T),
-          hh_inc_adj = sum(inc_adj, na.rm = T)) %>%
-        ungroup()
+      df_inc <- setDT(df)
+      df_inc <- df_inc[, list(inc = sum(inc, na.rm = T), 
+                              inc_excl = sum(inc_excl, na.rm = T),
+                              inc_adj = sum(inc_adj, na.rm = T),
+                              inc_fixed = min(inc_fixed_temp, na.rm = T)),
+                       by = .(incasset_id, inc_mbr_num)]
+
+      df_inc <- unique(df_inc)
+      
+      df_inc_hh <- df_inc[, list(hh_inc = sum(inc, na.rm = T), 
+                                 hh_inc_excl = sum(inc_excl, na.rm = T),
+                                 hh_inc_adj = sum(inc_adj, na.rm = T)),
+                          by = "incasset_id"]
+      
+      df_inc <- merge(df_inc, df_inc_hh, on = "incasset_id")
+      df <- setDF(df_inc)
     }
     if (!("inc" %in% names(df)) & "asset_val" %in% names(df)) {
-      df <- df %>%
-        group_by(incasset_id, inc_mbr_num) %>%
-        mutate(
-          asset_val = sum(asset_val, na.rm = T), 
-          asset_inc = sum(asset_inc, na.rm = T)
-        ) %>%
-        ungroup() %>%
-        select(-asset_type) %>%
-        distinct() %>%
-        group_by(incasset_id) %>%
-        mutate(
-          hh_asset_val = sum(asset_val, na.rm = T), 
-          hh_asset_inc = sum(asset_inc, na.rm = T)
-        ) %>%
-          ungroup()
+      
+      df_ass <- setDT(df)
+      df_ass <- df_ass[, lapply(.SD, sum, na.rm = T),
+                       by = .(incasset_id, inc_mbr_num),
+                       .SDcols = c("asset_val", "asset_inc")]
+      
+      df_ass <- df_ass[, asset_type := NULL]
+      df_ass <- unique(df_ass)
+      
+      df_ass_hh <- df_ass[, list(hh_asset_val = sum(asset_val, na.rm = T), 
+                                 hh_asset_inc = sum(asset_inc, na.rm = T)),
+                          by = "incasset_id"]
+      
+      df_ass <- merge(df_ass, df_ass_hh, on = "incasset_id")
+      df <- setDF(df_ass)
     }
     if ("inc" %in% names(df) & "asset_val" %in% names(df)) {
-      df <- df %>%
-        group_by(incasset_id, inc_mbr_num) %>%
-        mutate(
-          inc = sum(inc, na.rm = T), 
-          inc_excl = sum(inc_excl, na.rm = T),
-          inc_adj = sum(inc_adj, na.rm = T),
-          inc_fixed = min(inc_fixed_temp, na.rm = T),
-          asset_val = sum(asset_val, na.rm = T), 
-          asset_inc = sum(asset_inc, na.rm = T)
-        ) %>%
-        ungroup() %>%
-        select(-inc_fixed_temp, -inc_code, -asset_type) %>%
-        distinct() %>%
-        group_by(incasset_id) %>%
-        mutate(
-          hh_inc = sum(inc, na.rm = T), 
-          hh_inc_excl = sum(inc_excl, na.rm = T),
-          hh_inc_adj = sum(inc_adj, na.rm = T),
-          hh_asset_val = sum(asset_val, na.rm = T), 
-          hh_asset_inc = sum(asset_inc, na.rm = T)
-        ) %>%
-        ungroup()
+      df_inc_ass <- setDT(df)
+      
+      df_inc_ass <- df_inc_ass[, list(inc = sum(inc, na.rm = T), 
+                                      inc_excl = sum(inc_excl, na.rm = T),
+                                      inc_adj = sum(inc_adj, na.rm = T),
+                                      inc_fixed = min(inc_fixed_temp, na.rm = T),
+                                      asset_val = sum(asset_val, na.rm = T), 
+                                      asset_inc = sum(asset_inc, na.rm = T)),
+                               by = .(incasset_id, inc_mbr_num)]
+
+      df_inc_ass <- unique(df_inc_ass)
+      
+      df_inc_ass_hh <- df_inc_ass[, list(hh_inc = sum(inc, na.rm = T), 
+                                         hh_inc_excl = sum(inc_excl, na.rm = T),
+                                         hh_inc_adj = sum(inc_adj, na.rm = T),
+                                         hh_asset_val = sum(asset_val, na.rm = T), 
+                                         hh_asset_inc = sum(asset_inc, na.rm = T)),
+                                  by = "incasset_id"]
+      
+      df_inc_ass <- merge(df_inc_ass, df_inc_ass_hh, by = "incasset_id")
+      
+      df <- setDF(df_inc_ass)
     }
   } else if ("incasset_id" %in% names(df) & !("inc_mbr_num" %in% names(df))) {
     df <- df %>%
@@ -490,9 +518,19 @@ inc_clean_f <- function(df) {
   
 }
 }
+
 # Make list of data frames with income or asset variables
-dfs_inc <- list(sha1b = sha1b, sha1c = sha1c, sha2b = sha2b, sha2c = sha2c, 
-                sha3b_new = sha3b_new, sha5b_new = sha5b_new)
+if (add_2018 == T) {
+  dfs_inc <- list(sha1b_2004_2006 = sha1b_2004_2006, sha1c_2004_2006 = sha1c_2004_2006, 
+                  sha2b_2007_2012 = sha2b_2007_2012, sha2c_2007_2012 = sha2c_2007_2012, 
+                  sha3b_2012_2017 = sha3b_2012_2017, sha5b_2006_2017 = sha5b_2006_2017,
+                  sha3b_2018_2018 = sha3b_2018_2018, sha5b_2018_2018 = sha5b_2018_2018)
+} else {
+  dfs_inc <- list(sha1b_2004_2006 = sha1b_2004_2006, sha1c_2004_2006 = sha1c_2004_2006, 
+                  sha2b_2007_2012 = sha2b_2007_2012, sha2c_2007_2012 = sha2c_2007_2012, 
+                  sha3b_2012_2017 = sha3b_2012_2017, sha5b_2006_2017 = sha5b_2006_2017)
+}
+
 
 # Apply function to all relevant data frames (takes a few minutes to run)
 income_assets <- lapply(dfs_inc, inc_clean_f)
@@ -505,76 +543,94 @@ rm(income_assets)
 
 #### JOIN PUBLIC HOUSING FILES ####
 # Clean up mismatching variables
-sha2a <- yesno_f(sha2a, ph_rent_ceiling)
-sha2a <- mutate(sha2a, fhh_ssn = as.character(fhh_ssn))
+sha2a_2007_2012 <- yesno_f(sha2a_2007_2012, ph_rent_ceiling)
+sha2a_2007_2012 <- mutate(sha2a_2007_2012, fhh_ssn = as.character(fhh_ssn))
 # Fix the variable mappings for this: SSN and fname, mname, lname,  
-sha3a_new <- sha3a_new %>%
+sha3a_2012_2017 <- sha3a_2012_2017 %>%
   mutate(property_id = as.character(property_id),
          act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
          mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
          r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
   )
 
+if (add_2018 == T) {
+  sha3a_2018_2018 <- sha3a_2018_2018 %>%
+    mutate(property_id = as.character(property_id),
+           act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
+           mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
+           r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
+    )
+}
+
 # UW DATA CODE
-# Add suffix columns to sha1a
+# Add suffix columns to sha1a_2004_2006
 if(UW == TRUE) {
-  sha1a.fix <- sha1a %>%
+  sha1a_2004_2006.fix <- sha1a_2004_2006 %>%
     filter(v56!="") %>%
     mutate(v57="",hh_lnamesuf=hh_fname, lnamesuf=mname) %>%
     select(-hh_fname,-mname)
     
-  names(sha1a.fix) <- names(sha1a)
+  names(sha1a_2004_2006.fix) <- names(sha1a_2004_2006)
 
-  sha1a.fix <- sha1a.fix %>%
+  sha1a_2004_2006.fix <- sha1a_2004_2006.fix %>%
     select(incasset_id:hh_lname, hh_lnamesuf = 56, hh_fname:lname, lnamesuf = 57, fname:55)
 
-  sha1a.good <- sha1a %>% filter(is.na(v56)) %>%
+  sha1a_2004_2006.good <- sha1a_2004_2006 %>% filter(is.na(v56)) %>%
                   mutate(hh_lnamesuf="", lnamesuf="") %>%
                   select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname,lnamesuf,
                     fname:fhh_ssn, -v56)
 
-  sha1a <- rbind(sha1a.good,sha1a.fix) %>%
+  sha1a_2004_2006 <- rbind(sha1a_2004_2006.good,sha1a_2004_2006.fix) %>%
     mutate(mbr_num=as.integer(mbr_num))
 
-  # Add suffix columns sha2a
-  sha2a.good <- sha2a %>%
+  # Add suffix columns sha2a_2007_2012
+  sha2a_2007_2012.good <- sha2a_2007_2012 %>%
     filter(is.na(v57)) %>%
     rename(hh_lnamesuf=v57, lnamesuf=v58) %>%
     mutate(lnamesuf="") %>%
     select(incasset_id:hh_lname,hh_lnamesuf,hh_fname:lname, 
       lnamesuf,fname:fhh_ssn)
 
-  sha2a.fix1 <-
-    sha2a %>%
+  sha2a_2007_2012.fix1 <-
+    sha2a_2007_2012 %>%
     filter(v57!="", is.na(v58)) %>%
     mutate(lnamesuf=fname, hh_lnamesuf="") %>%
     select(incasset_id:hh_lname, hh_lnamesuf, hh_fname:lname, 
       lnamesuf, mname:v57)
 
-  names(sha2a.fix1) <- names(sha2a.good)
+  names(sha2a_2007_2012.fix1) <- names(sha2a_2007_2012.good)
 
-  sha2a.fix2 <-
-    sha2a %>% filter(!is.na(v58)) %>%
+  sha2a_2007_2012.fix2 <-
+    sha2a_2007_2012 %>% filter(!is.na(v58)) %>%
       mutate(lnamesuf=mname, hh_lnamesuf=hh_fname) %>%
       select(incasset_id:hh_lname, hh_lnamesuf, hh_mname:fname, 
         lnamesuf, dob:v58)
 
-  names(sha2a.fix2) <- names(sha2a.good)
+  names(sha2a_2007_2012.fix2) <- names(sha2a_2007_2012.good)
 
-  sha2a <- rbind(sha2a.good, sha2a.fix1, sha2a.fix2) %>%
+  sha2a_2007_2012 <- rbind(sha2a_2007_2012.good, sha2a_2007_2012.fix1, sha2a_2007_2012.fix2) %>%
     mutate(mbr_num=as.integer(mbr_num))
 }
 ###
 
 # Join household, income, and asset tables
-sha1 <- left_join(sha1a, sha1b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
-sha1 <- left_join(sha1, sha1c, by = c("incasset_id"))
+sha1 <- left_join(sha1a_2004_2006, sha1b_2004_2006, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha1 <- left_join(sha1, sha1c_2004_2006, by = c("incasset_id"))
 
-sha2 <- left_join(sha2a, sha2b, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
-sha2 <- left_join(sha2, sha2c, by = c("incasset_id"))
+sha2 <- left_join(sha2a_2007_2012, sha2b_2007_2012, by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+sha2 <- left_join(sha2, sha2c_2007_2012, by = c("incasset_id"))
 
-sha3 <- left_join(sha3a_new, sha3b_new, 
-                  by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+if (add_2018 == T) {
+  sha3 <- bind_rows(left_join(sha3a_2012_2017, sha3b_2012_2017, 
+                             by = c("incasset_id", "mbr_num" = "inc_mbr_num")),
+                    left_join(sha3a_2018_2018, sha3b_2018_2018, 
+                              by = c("incasset_id", "mbr_num" = "inc_mbr_num")))
+                    
+} else {
+  sha3 <- left_join(sha3a_2012_2017, sha3b_2012_2017, 
+                    by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
+}
+
 
 
 # Add source field to track where each row came from
@@ -614,14 +670,12 @@ if (UW == TRUE) {
 
 # Fix more formats
 sha_ph <- sha_ph %>%
-  mutate(property_id = ifelse(as.numeric(property_id) < 10 & 
-                                !is.na(as.numeric(property_id)), 
-                              paste0("00", property_id),
-                              ifelse(as.numeric(property_id) >= 10 & 
-                                       as.numeric(property_id) < 100 & 
-                                       !is.na(as.numeric(property_id)), 
-                                     paste0("0", property_id),
-                              property_id))) %>%
+  mutate(property_id = case_when(
+    as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)) ~ paste0("00", property_id),
+    as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & 
+      !is.na(as.numeric(property_id)) ~ paste0("0", property_id),
+    TRUE ~ property_id)
+  ) %>%
   mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
 
 # Join with portfolio data
@@ -636,19 +690,19 @@ sha_ph <- mutate(sha_ph,
 
 #### JOIN HCV FILES ####
 # Clean up mismatching variables
-sha4a <- sha4a %>%
+sha4_2004_2006 <- sha4_2004_2006 %>%
   mutate(mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
          # Truncate increment numbers to match the reference list when joined
          increment_old = increment,
          increment = str_sub(increment, 1, 5)) %>%
   mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
 
-sha4a <- yesno_f(sha4a, r_white, r_black, r_aian, r_asian, r_nhpi, 
+sha4_2004_2006 <- yesno_f(sha4_2004_2006, r_white, r_black, r_aian, r_asian, r_nhpi, 
                 portability, disability)
-sha4a <- sha4a %>% mutate(r_hisp = ifelse(r_hisp == 2 & !is.na(r_hisp), 
+sha4_2004_2006 <- sha4_2004_2006 %>% mutate(r_hisp = ifelse(r_hisp == 2 & !is.na(r_hisp), 
                                         0, r_hisp))
 
-sha5a_new <- sha5a_new %>%
+sha5a_2006_2017 <- sha5a_2006_2017 %>%
   mutate(
     act_type = car::recode(
       act_type, c("'Annual HQS Inspection Only' = 13; 
@@ -660,34 +714,72 @@ sha5a_new <- sha5a_new %>%
                   'Other Change of Unit' = 7; 
                   'Port-Out Update (Not Submitted To MTCS)' = 16;
                   'Portability Move-in' = 4; 'Portability Move-out' = 5; 
-                  'Portablity Move-out' = 5; 'Void' = 15; else = NA"))
-    ) %>%
+                  'Portablity Move-out' = 5; 'Void' = 15; else = NA"))) %>%
   mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%Y-%m-%d")))
 
 
-sha5a_new <- yesno_f(sha5a_new, portability, disability, tb_rent_ceiling)
-sha5a_new <- sha5a_new %>%
+sha5a_2006_2017 <- yesno_f(sha5a_2006_2017, portability, disability, tb_rent_ceiling)
+sha5a_2006_2017 <- sha5a_2006_2017 %>%
   mutate(r_hisp = as.numeric(case_when(
-    r_hisp == "1 " ~ 1,
-    r_hisp == "2 " ~ 0
+    r_hisp %in% c("1 ", "1") ~ 1,
+    r_hisp %in% c("2 ", "2") ~ 0
   )))
 
+if (add_2018 == T) {
+  sha5a_2018_2018 <- sha5a_2018_2018 %>%
+    mutate(
+      act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 
+                    'Annual Reexamination' = 2;
+                    'Annual Reexamination Searching' = 9; 'End Participation' = 6;
+                    'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
+                    'Historical Adjustment' = 14; 'Interim Reexamination' = 3; 
+                    'Issuance of Voucher' = 10; 'New Admission' = 1; 
+                    'Other Change of Unit' = 7; 
+                    'Port-Out Update (Not Submitted To MTCS)' = 16;
+                    'Portability Move-in' = 4; 'Portability Move-out' = 5; 
+                    'Portablity Move-out' = 5; 'Void' = 15; else = NA")),
+      r_hisp = as.numeric(case_when(
+        r_hisp %in% c("1 ", "1") ~ 1,
+        r_hisp %in% c("2 ", "2") ~ 0
+      ))
+      ) %>%
+    # Several fields came through as character because of NULL text
+    # Checked that NULL is the only chracter so ignore warning message about NAs
+    mutate_at(vars(unit_zip, bed_cnt, rent_tenant, rent_mixfam, cost_month, rent_gross,
+                   rent_tenant_owner, rent_mixfam_owner), 
+              funs(as.numeric(.))) %>%
+    mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%Y-%m-%d", 
+                                                        origin = "1899-12-30")))
+  
+  
+  sha5a_2018_2018 <- yesno_f(sha5a_2018_2018, portability, disability, tb_rent_ceiling)
+}
 
 # Join with income and asset files
-sha4 <- left_join(sha4a, sha1b, 
+sha4 <- left_join(sha4_2004_2006, sha1b_2004_2006, 
                   by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
-sha4 <- left_join(sha4, sha1c, by = c("incasset_id"))
+sha4 <- left_join(sha4, sha1c_2004_2006, by = c("incasset_id"))
 sha4 <- left_join(sha4, sha_prog_codes, by = c("increment"))
 
 if (UW == TRUE) {
-  sha5 <- left_join(sha5a_new, sha5b_new, 
+  sha5 <- left_join(sha5a_2006_2017, sha5b_2006_2017, 
                     by = c("cert_id", "mbr_id"))
   sha5 <- left_join(sha5, sha_vouch_type, by = c("cert_id", "hh_id", "mbr_id", "act_type", "act_date"))
   sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
 } else {
-  sha5 <- left_join(sha5a_new, sha5b_new,
-                    by = c("cert_id", "mbr_id", "increment"))
-  sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+  if (add_2018 == T) {
+    sha5 <- bind_rows(
+      left_join(sha5a_2006_2017, sha5b_2006_2017,
+                by = c("cert_id", "mbr_id", "increment")),
+      left_join(sha5a_2018_2018, sha5b_2018_2018,
+                by = c("cert_id", "mbr_id", "increment")))
+    
+    sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+  } else {
+    sha5 <- left_join(sha5a_2006_2017, sha5b_2006_2017,
+                      by = c("cert_id", "mbr_id", "increment"))
+    sha5 <- left_join(sha5, sha_prog_codes, by = c("increment"))
+  }
 }
 
 # Add source field to track where each row came from
@@ -728,17 +820,18 @@ sha <- bind_rows(sha_ph, sha_hcv)
 # fill in gaps (rather than mutate, which is slow)
 # Data recorded in the HH fields do not add up to the calculated HH income
 # Need to standardize, calculated data seems more accurate
-hh_inc_y <- sha %>%
-  filter(!is.na(hh_inc.y)) %>%
-  group_by(incasset_id, cert_id, increment) %>%
-  summarise(hh_inc.y = max(hh_inc.y, na.rm = T)) %>%
-  ungroup()
 
-hh_inc_adj_y <- sha %>%
-  filter(!is.na(hh_inc.y)) %>%
-  group_by(incasset_id, cert_id, increment) %>%
-  summarise(hh_inc_adj.y = max(hh_inc_adj.y, na.rm = T)) %>%
-  ungroup()
+# Temporarily switch to data.table because it's ~50 times faster
+hh_inc_y <- setDT(sha)
+hh_inc_y <- hh_inc_y[!is.na(hh_inc.y), .(hh_inc.y = max(hh_inc.y, na.rm = T)),
+                      by = .(incasset_id, cert_id, increment)]
+hh_inc_y <- setDF(hh_inc_y)
+
+hh_inc_adj_y <- setDT(sha)
+hh_inc_adj_y <- hh_inc_adj_y[!is.na(hh_inc.y), 
+                             .(hh_inc_adj.y = max(hh_inc_adj.y, na.rm = T)),
+                             by = .(incasset_id, cert_id, increment)]
+hh_inc_adj_y <- setDF(hh_inc_adj_y)
 
 
 sha <- left_join(sha, hh_inc_y, by = c("incasset_id", "cert_id", "increment"))
@@ -774,11 +867,15 @@ sha <- sha %>%
            !is.na(hh_inc_deduct) ~ hh_inc_tot - hh_inc_deduct
          ))
 
-  
 
-### Fix up a few more format issues
-sha <- sha %>%
-  mutate_at(vars(act_date, admit_date, dob), funs(as.Date(., format = "%m/%d/%Y")))
+if (UW == T) {
+  ### Fix up a few more format issues
+  # Note, code changes above made this unnecessary for non-UW flow. Added UW
+  # if statement for now.
+  
+  sha <- sha %>%
+    mutate_at(vars(act_date, admit_date, dob), funs(as.Date(., format = "%m/%d/%Y")))
+}
 
 
 # Set up mbr_num head of households (will be important later when cleaning up names)
@@ -797,9 +894,9 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn &
 # ISSUE 3: Not all households have member numbers or are missing #1
 # FIX 3: Make sure the HoH has member number = 1
 
-### Set up temp household ID  unique to a household and action date
-sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, 
-                                   unit_city, act_date, act_type, incasset_id)
+### Set up temp household ID  unique to a household, action date, and cert/asset IDs
+sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, unit_city, 
+                                act_date, act_type, cert_id, incasset_id)
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
 # Check for households with >1 people listed as HoH
@@ -874,28 +971,21 @@ mbr_miss <- anti_join(sha, min_mbr, by = "hh_id_temp") %>%
   arrange(hh_id_temp, ssn, lname, fname)
 
 # Find the HoH and label them as member #1
-mbr_miss <- mbr_miss %>%
-  # Try matching on SSN
-  mutate(mbr_num = ifelse(ssn == hh_ssn, 1, mbr_num)) %>%
-  group_by(hh_id_temp) %>%
-  mutate(done = max(mbr_num, na.rm = T)) %>%
-  ungroup() %>%
-  # Then try name combos
-  mutate(mbr_num = ifelse(is.infinite(done) & 
-                            toupper(lname) == toupper(hh_lname) & 
-                            toupper(fname) == toupper(hh_fname), 
-                          1, mbr_num)) %>%
-  select(-done)
+# Switch to data.table for speed boost
+mbr_miss <- setDT(mbr_miss)
+mbr_miss[, mbr_num := ifelse(ssn == hh_ssn, 1, mbr_num)][, done := max(mbr_num, na.rm = T), by = "hh_id_temp"] 
+mbr_miss[, mbr_num := ifelse(is.infinite(done) & 
+                               toupper(lname) == toupper(hh_lname) & 
+                               toupper(fname) == toupper(hh_fname), 
+                             1, mbr_num)][, done := NULL]
 
 # If multiple people were flagged as #1, take the oldest
 # Common when there are children and parents with the same name or DOB typos
 # If same DOB, take row with middle inital, then no last name suffix
-mbr_miss <- mbr_miss %>%
-  arrange(hh_id_temp, mbr_num, dob, hh_mname, desc(hh_lnamesuf)) %>%
-  group_by(hh_id_temp) %>%
-  mutate(mbr_num = ifelse(row_number() > 1, NA, mbr_num)) %>%
-  ungroup()
-
+setorder(mbr_miss, hh_id_temp, mbr_num, dob, hh_mname, -hh_lnamesuf, na.last = T)
+mbr_miss[, row_tmp := rowid(hh_id_temp)][, mbr_num := ifelse(row_tmp > 1, NA, mbr_num), 
+                                    by = "hh_id_temp"]
+mbr_miss <- setDF(mbr_miss)
 
 # Restrict to the newly identified HoHs and join back to main data
 mbr_miss_join <- mbr_miss %>%
@@ -922,29 +1012,36 @@ rm(mbr_miss_join)
 ### Transfer over data to rows with missing programs and vouchers
 # (not all rows were joined earlier and it is easier to clean up at this point 
 # once duplicate rows are deleted)
-sha <- sha %>%
-  arrange(ssn, lname, fname, dob, act_date) %>%
-  group_by(ssn, lname, fname, dob) %>%
-  mutate(prog_type = ifelse(is.na(prog_type) & !is.na(lag(prog_type, 1)) & 
-                          unit_add == lag(unit_add, 1), 
-                          lag(prog_type, 1), prog_type),
-         vouch_type = ifelse(is.na(vouch_type) & !is.na(lag(vouch_type, 1)) & 
-                              unit_add == lag(unit_add, 1), 
-                            lag(vouch_type, 1), vouch_type)) %>%
-  ungroup()
+sha <- setDT(sha)
+setorder(sha, ssn, lname, fname, dob, act_date)
+sha[, c("prog_type", "vouch_type") :=
+      list(ifelse(is.na(prog_type) & !is.na(lag(prog_type, 1)) & 
+                    unit_add == lag(unit_add, 1), 
+                  lag(prog_type, 1), prog_type),
+           ifelse(is.na(vouch_type) & !is.na(lag(vouch_type, 1)) & 
+                    unit_add == lag(unit_add, 1), 
+                  lag(vouch_type, 1), vouch_type)),
+    by = .(ssn, lname, fname, dob)]
+sha <- setDF(sha)
 
 
 if(sql == TRUE) {
 ##### Load to SQL server #####
 # May need to delete table first if data structure and columns have changed
-  dbRemoveTable(db.apde51, name = "sha_combined")
-  dbWriteTable(db.apde51, name = "sha_combined", 
-              value = as.data.frame(sha), overwrite = T,
-              field.types = c(
-                act_date = "date",
-                admit_date = "date",
-                dob = "date"
-              ))
+  
+  tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_sha")
+  
+  if (dbExistsTable(db_apde51, tbl_id_meta)) {
+    dbRemoveTable(db_apde51, tbl_id_meta)
+  }
+  
+  dbWriteTable(db_apde51, tbl_id_meta, sha, overwrite = T,
+               field.types = c(
+                 act_date = "date",
+                 admit_date = "date",
+                 dob = "date"
+               ))
+  rm(tbl_id_meta)
 }
 
 ##### Remove temporary files #####
