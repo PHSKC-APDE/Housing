@@ -14,10 +14,11 @@
         "sha4_2004_2006_fn": "file_name.type",
         "sha5a_2006_2017_fn": "file_name.type",
         "sha5b_2006_2017_fn": "file_name.type",
-        "sha5_2018_2018_fn": "file_name.type",                
+        "sha5a_2018_2018_fn": "file_name.type",
+        "sha5b_2018_2018_fn": "file_name.type",
         "sha_vouch_type_fn": "file_name.type",
         "sha_prog_codes_fn": "file_name.type",
-        "sql": "TRUE if you're using this"
+        "sql": "TRUE if you're using this",
         "UW": "TRUE for UW specific code",
         "add_2018": "TRUE if you have 2018 data to load"
     },
