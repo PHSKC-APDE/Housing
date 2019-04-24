@@ -49,55 +49,55 @@ if (sql == TRUE) {
 
 #### BRING IN DATA ####
 # Some SSNs have temporary IDs in them so should be read in as characters
-kcha_p1_2004_2015 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
+kcha_p1_2004_2015 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
-kcha_p2_2004_2015 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
+kcha_p2_2004_2015 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
-kcha_p3_2004_2015 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
+kcha_p3_2004_2015 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
 
-kcha_p1_2016_2016 <- fread(file = file.path(kcha_path, panel_1_2016_2016_fname),
+kcha_p1_2016_2016 <- fread(file = file.path(kcha_path, panel_1_2016_2016_fn),
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n08")))
-kcha_p2_2016_2016 <- fread(file = file.path(kcha_path, panel_2_2016_2016_fname), 
+kcha_p2_2016_2016 <- fread(file = file.path(kcha_path, panel_2_2016_2016_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n10", "h3n12")))
-kcha_p3_2016_2016 <- fread(file = file.path(kcha_path, panel_3_2016_2016_fname), 
+kcha_p3_2016_2016 <- fread(file = file.path(kcha_path, panel_3_2016_2016_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
 
 
-kcha_p1_2017_2017 <- fread(file = file.path(kcha_path, panel_1_2017_2017_fname), 
+kcha_p1_2017_2017 <- fread(file = file.path(kcha_path, panel_1_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
-kcha_p2_2017_2017 <- fread(file = file.path(kcha_path, panel_2_2017_2017_fname), 
+kcha_p2_2017_2017 <- fread(file = file.path(kcha_path, panel_2_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
-kcha_p3_2017_2017 <- fread(file = file.path(kcha_path, panel_3_2017_2017_fname), 
+kcha_p3_2017_2017 <- fread(file = file.path(kcha_path, panel_3_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
 
 ### Add 2018 data if available
 if (add_2018 == TRUE) {
-  kcha_p1_2018_2018 <- fread(file = file.path(kcha_path, panel_1_2018_2018_fname),
+  kcha_p1_2018_2018 <- fread(file = file.path(kcha_path, panel_1_2018_2018_fn),
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2018_2018 <- fread(file = file.path(kcha_path, panel_2_2018_2018_fname), 
+  kcha_p2_2018_2018 <- fread(file = file.path(kcha_path, panel_2_2018_2018_fn), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2018_2018 <- fread(file = file.path(kcha_path, panel_3_2018_2018_fname), 
+  kcha_p3_2018_2018 <- fread(file = file.path(kcha_path, panel_3_2018_2018_fn), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
 }
 
 
 # Some of the KCHA end of participation data is missing from the original extract
-kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
+kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fn),
                   na.strings = c("NA", "", "NULL", "N/A", "."), 
                   stringsAsFactors = F)
 
@@ -797,9 +797,11 @@ rm(list = ls(pattern = "p[1|2|3]_"))
 rm(list = c("fields", "reshape_f", "kcha_path"))
 rm(hhold_size)
 rm(list = c("kcha_portfolio_codes", "kcha_portfolio_codes_fn"))
+rm(kcha_eop_fn)
 rm(kcha)
 rm(METADATA)
-rm(script)
 rm(set_data_envr)
+rm(add_2018)
+rm(sql)
 gc()
 
