@@ -642,7 +642,7 @@ if (UW == TRUE) {
   ### Clean column types before append ### change to match new mappings  check other things
   sha1 <- sha1 %>%
           mutate(subs_type = as.character(subs_type),
-                hhold_size = as.integer(hhold_size),
+                hh_size = as.integer(hh_size),
                 rent_tenant = as.numeric(rent_tenant),
                 r_hisp = as.numeric(r_hisp),
                 hh_asset_val=as.numeric(hh_asset_val),

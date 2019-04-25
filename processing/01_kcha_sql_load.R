@@ -704,12 +704,12 @@ gc()
 
 # Add number of household members at that time
 # Use summarise and join because mutate crashes things
-hhold_size <- kcha_long %>%
+hh_size <- kcha_long %>%
   group_by(hh_id_temp) %>%
-  summarise(hhold_size = n_distinct(mbr_num)) %>%
+  summarise(hh_size = n_distinct(mbr_num)) %>%
   ungroup()
 
-kcha_long <- left_join(kcha_long, hhold_size, by = "hh_id_temp")
+kcha_long <- left_join(kcha_long, hh_size, by = "hh_id_temp")
 
 
 #### RENAME VARIABLES ####
