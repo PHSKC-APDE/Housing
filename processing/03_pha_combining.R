@@ -26,41 +26,47 @@
 #### Set up global parameter and call in libraries ####
 library(housing) # contains many useful functions for cleaning
 library(odbc) # Used to connect to SQL server
-library(data.table) # Used to read in csv files more efficiently
+library(data.table) # Used to manipulate data
 library(tidyverse) # Used to manipulate data
 library(RJSONIO)
 library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
-eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
-
+source(file = paste0(getwd(), "/processing/metadata/set_data_env.r"))
+METADATA <- RJSONIO::fromJSON(paste0(getwd(), "/processing/metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
+
+#### Bring in data ####
 if(sql == TRUE) {
-  
-  db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-  #### Bring in data ####
-  # This takes ~60 seconds
-  system.time(sha <- DBI::dbReadTable(db.apde51, "sha_combined"))
+  db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+  # This takes ~65 seconds
+  tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_sha")
+  system.time(sha <- DBI::dbReadTable(db_apde51, tbl_id_meta))
 
-  # This takes ~35 seconds
-  system.time(kcha_long <- DBI::dbReadTable(db.apde51, "kcha_reshaped"))
-
+  # This takes ~40 seconds
+  tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_kcha")
+  system.time(kcha_long <- DBI::dbReadTable(db_apde51, tbl_id_meta))
 }
 
 #### Fix up variable formats ####
 # Vars mtw_admit_date & move_in_date missing in UW files
-sha <- date_ymd_f(sha, act_date, admit_date, dob, reexam_date)
+# Switched to catch-all terms to accommodate differences in UW/PHSKC files
+sha <- sha %>% mutate_at(vars(contains("date"), contains("dob")),
+                         funs(as.Date(., format = "%Y-%m-%d")))
 
-sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher),
-                      unit_zip = as.numeric(unit_zip))
+sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher))
 
-kcha_long <- date_ymd_f(kcha_long, act_date, admit_date, dob, hh_dob)
+kcha_long <- kcha_long %>% mutate_at(vars(act_date, admit_date, dob, hh_dob),
+                                     funs(as.Date(., format = "%Y-%m-%d")))
 
+if (UW == F) {
+  # Not sure if UW has this field. If so, can remove the if statement.
+  kcha_long <- kcha_long %>% mutate(list_zip = as.numeric(list_zip))
+}
+  
 
 #### Make variable to track where data came from ####
 sha <- mutate(sha, agency_new = "SHA")
@@ -125,10 +131,10 @@ pha <- pha %>%
 # Find most common DOB by SSN (doesn't work for SSN = NA or 0)
 # Need to figure out how to ID most common or most recent last name for 
 # SSNs like 0 or NA
-pha <- pha %>%
-  group_by(ssn_new, ssn_c, dob) %>%
-  mutate(dob_cnt = ifelse(ssn_new_junk == 0 | ssn_c_junk == 0, n(), NA)) %>%
-  ungroup()
+pha <- setDT(pha)
+pha[, dob_cnt := if_else(ssn_new_junk == 0 | ssn_c_junk == 0, .N, as.integer(0)),
+    by = .(ssn_new, ssn_c, dob)]
+pha <- setDF(pha)
 
 
 ### Names overall
@@ -159,7 +165,6 @@ pha <- pha %>% mutate(
 
 ### Last name suffix
 # Need to look for suffixes in last name if wanting to merge with SHA data
-
 suffix3 <- c(" JR", " SR"," II", " IV")
 suffix4 <- c(" III", " LLL", " 2ND", " 111", " JR.")
 
@@ -174,7 +179,6 @@ pha <- pha %>%
                           str_sub(lname, -3, -1), lnamesuf_new),
     lname_new = ifelse(str_detect(str_sub(lname, -4, -1), paste(suffix4, collapse = "|")),
                        str_sub(lname, 1, -5), lname_new),
-    
     
     # Suffixes in first names
     lnamesuf_new = ifelse(str_detect(str_sub(fname_new, -3, -1), 
@@ -213,18 +217,18 @@ pha <- pha %>%
 
 ### Count which first names appear most often (doesn't work for SSN = NA or 0)
 # Need to figure out how to ID most common or most recent last name for SSNs like 0 or NA
-pha <- pha %>%
-  group_by(ssn_new, ssn_c, fname_new) %>%
-  mutate(fname_new_cnt = ifelse(ssn_new_junk == 0 | ssn_c_junk == 0, n(), NA)) %>%
-  ungroup()
+pha <- setDT(pha)
+pha[, fname_new_cnt := if_else(ssn_new_junk == 0 | ssn_c_junk == 0, .N, as.integer(0)),
+                by = .(ssn_new, ssn_c, fname_new)]
+pha <- setDF(pha)
 
 ### Count which non-blank middle names appear most often (doesn't work for SSN = NA or 0)
 # Need to figure out how to ID most common or most recent last name for SSNs like 0 or NA
-pha_middle <- pha %>%
-  filter(mname_new != "" & (ssn_new_junk == 0 | ssn_c_junk == 0)) %>%
-  group_by(ssn_new, ssn_c, mname_new) %>%
-  summarise(mname_new_cnt = n()) %>%
-  ungroup()
+pha_middle <- setDT(pha)
+pha_middle <- pha_middle[mname_new != "" & (ssn_new_junk == 0 | ssn_c_junk == 0),
+                         .(mname_new_cnt = .N), by = .(ssn_new, ssn_c, mname_new)]
+pha_middle <- setDF(pha_middle)
+
 pha <- left_join(pha, pha_middle, by = c("ssn_new", "ssn_c", "mname_new"))
 rm(pha_middle)
 
@@ -232,13 +236,13 @@ rm(pha_middle)
 # Find the most recent surname used (doesn't work for SSN = NA or 0)
 # NB. Some most recent surnames are blank so use one before that
 # Need to figure out how to ID most common or most recent last name for SSNs like 0 or NA
-pha_last <- pha %>%
-  filter(lname_new != "" & (ssn_new_junk == 0 | ssn_c_junk == 0)) %>%
-  arrange(ssn_new, ssn_c, desc(act_date)) %>%
-  group_by(ssn_new, ssn_c) %>%
-  mutate(lname_rec = lname_new[[1]]) %>%
-  ungroup() %>%
-  distinct(ssn_new, ssn_c, lname_rec)
+pha_last <- setDT(pha)
+setorder(pha_last, ssn_new, ssn_c, -act_date, na.last = T)
+pha_last <- pha_last[lname_new != "" & (ssn_new_junk == 0 | ssn_c_junk == 0),
+                         .(lname_rec = lname_new[[1]]), by = .(ssn_new, ssn_c)]
+pha_last <- setDF(pha_last)
+pha_last <- pha_last %>% distinct(ssn_new, ssn_c, lname_rec)
+
 pha <- left_join(pha, pha_last, by = c("ssn_new", "ssn_c"))
 rm(pha_last)
 
@@ -260,14 +264,16 @@ rm(pha_suffix)
 pha <- pha %>%
   mutate(gender_new = as.numeric(car::recode(gender, c("'F' = 1; 'female' = 1; 'Female' = 1; 
                                                        'M' = 2; 'male  ' = 2; 'Male  ' = 2; 
-                                                       'NULL' = NA; else = NA")))) %>%
-  group_by(ssn_new, ssn_c, gender_new) %>%
-  mutate(gender_new_cnt = ifelse(ssn_new_junk == 0 | ssn_c_junk == 0, n(), NA)) %>%
-  ungroup()
+                                                       'NULL' = NA; else = NA"))))
+
+pha <- setDT(pha)
+pha[, gender_new_cnt := if_else(ssn_new_junk == 0 | ssn_c_junk == 0, .N, as.integer(0)),
+    by = .(ssn_new, ssn_c, gender_new)]
+pha <- setDF(pha)
 
 
 #### Save point ####
-saveRDS(pha, file = paste0(housing_path, pha_fn))
+saveRDS(pha, file = file.path(housing_path, pha_fn))
 
 
 #### Clean up ####
