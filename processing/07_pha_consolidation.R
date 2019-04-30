@@ -299,10 +299,7 @@ if (dfsize2 == dfsize) {
 }
 dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 
-# 
-if (UW == TRUE) {
-   print("skip 3")
- } else {
+
 #### Clean up duplicate rows - cert IDs etc. (droptype == 3) ####
 # Some duplicate rows are because of multiple incomes/assets information 
 # reported at the same action date 
@@ -329,7 +326,6 @@ drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
 # Finish dropping rows
 pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
 dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
-}
 
 #### Drop rows with missing address data that are not port outs (droptype = 4) ####
 dfsize_head <- nrow(pha_cleanadd_sort)
