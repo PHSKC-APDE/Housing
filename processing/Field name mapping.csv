@@ -147,14 +147,17 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,developmentname,,property_name
 ,,,,,Development.Name,,property_name
 ,,,,,Development Name,,property_name
+,,,,,DevelopmentName,,property_name
 ,,projectname,projectname,ProjectName,Property.Name,,property_name
 ,,,,projectname,,,property_name
 ,,projecttype,projecttype,,Property.Type,,property_type
 ,,,,,Property Type,,property_type
 ,,,,,projecttype,,property_type
+,,,,,PropertyType,,property_type
 ,,portfolio,portfolio,Portfolio.Type,Portfolio.Name,,portfolio
 ,,,,portfoliotype,portfolioname,,portfolio
 ,,,,,Portfolio Name,,portfolio
+,,,,,PortfolioName,,portfolio
 ,,,purpose,,,,spec_purp_type
 ,,,shadesiredprogramtypegrouping,,,,prog_group
 ,,shadesiredportfoliogrouping,,,,,portfolio_group
@@ -178,18 +181,25 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,Address,,dev_add
 ,,,,,Address.with.Apt,,dev_add_apt
 ,,,,,Address with Apt,,dev_add_apt
+,,,,,AddresswithApt,,dev_add_apt
 ,,,,,City..State.ZIP,,dev_city
 ,,,,,"City, State ZIP",,dev_city
+,,,,,CityStateZIP,,dev_city
 ,,,,,Unit.Number,,dev_unit
 ,,,,,Unit Number,,dev_unit
+,,,,,UnitNumber,,dev_unit
 ,,,,,Owner.Display.Name,,dev_owner
 ,,,,,Owner Display Name,,dev_owner
+,,,,,OwnerDisplayName,,dev_owner
 ,,,,,Landlord.Display.Name,,dev_landlord
 ,,,,,Landlord Display Name,,dev_landlord
+,,,,,LandlordDisplayName,,dev_landlord
 ,,,,,Acc...Reported.to.HUD,,dev_unit_report
 ,,,,,Acc - Reported to HUD,,dev_unit_report
+,,,,,AccReportedtoHUD,,dev_unit_report
 ,,,,,Unit.Program.Type,,dev_unit_type
 ,,,,,Unit Program Type,,dev_unit_type
+,,,,,UnitProgramType,,dev_unit_type
 ,,,,,Bedrooms,,bed_cnt
 ,,,,,,MTW Rent Calculation Profile,add_yr_eop
 ,,originalmoveindate,,,,,move_in_date
