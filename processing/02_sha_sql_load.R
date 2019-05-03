@@ -717,7 +717,7 @@ sha5a_new <- sha5a_new %>%
                   'Portability Move-in' = 4; 'Portability Move-out' = 5; 
                   'Portablity Move-out' = 5; 'Void' = 15; else = NA"))
     ) %>%
-  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%Y-%m-%d")))
+  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
 
 
 sha5a_new <- yesno_f(sha5a_new, portability, disability, tb_rent_ceiling)
