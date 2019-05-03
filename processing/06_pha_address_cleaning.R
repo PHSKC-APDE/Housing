@@ -518,7 +518,12 @@ if (UW == T) {
 
 # Make concatenated version of address fields
 pha_cleanadd <- pha_cleanadd %>%
-  mutate(unit_concat = paste(unit_add_new, unit_apt_new, unit_city_new, unit_state_new, unit_zip_new, sep = ","))
+  mutate(unit_concat = paste(unit_add_new, unit_apt_new, unit_city_new, 
+                             unit_state_new, unit_zip_new, sep = ",")) %>%
+  # Replace missing with actual NAs
+  mutate(unit_concat = ifelse(unit_concat %in% c("NA,NA,NA,NA,NA",
+                                                 "NA,NA,NA,NA,0"),
+                              NA_character_, unit_concat))
 
 rm(adds_specific)
 
