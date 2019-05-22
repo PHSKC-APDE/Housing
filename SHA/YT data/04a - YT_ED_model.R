@@ -25,6 +25,7 @@ library(medicaid) # contains many useful functions for analyses
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
+library(ggrepel) # Used to fix up labels on graphs
 library(geepack) # Used for GEE models
 library(broom) # Calculates CIs for GEE models
 library(ipw) # Used to make marginal structural models
@@ -271,7 +272,7 @@ yt_ss_30 <- yt_ss_30 %>%
 # Only keep relevant columns (no need to keep SS since YT = 0 == SS)
 # Only need age and length from baseline (2012)
 yt_ss_30 <- yt_ss_30 %>%
-  select(pid2, year_code, yt, yt_orig, ethn_c, gender_c, age12,
+  select(pid2, mid, year_code, yt, yt_orig, ethn_c, gender_c, age12,
          length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
   rename(year = year_code) %>%
   distinct()
@@ -297,7 +298,7 @@ yt_ss_ed_join <- left_join(yt_ss_ed_join, yt_ss_ed_unavoid_sum,
 
 ### Need to reshape household income vars in a single column
 yt_ss_ed_join <- melt(yt_ss_ed_join,
-              id.vars = c("year", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
+              id.vars = c("year", "mid", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
                           "age12", "length12", "pt", 
                           "ed_count", "ed_avoid_count", "ed_unavoid_count"),
               variable.name = "inc_yr", value.name = "inc")
@@ -477,7 +478,7 @@ hist(yt_ed$rate)
 hist(yt_ed$rate[yt_ed$rate != 0])
 
 
-### Plot ED visits over time
+#### Plot ED visits over time ####
 yt_ed_sum_f <- function(ed_type = c("all", "avoid", "unavoid")) {
   
   if (ed_type == "all") {
@@ -528,6 +529,28 @@ yt_ed_sum <- bind_rows(yt_ed_sum_all, yt_ed_sum_avoid, yt_ed_sum_unavoid) %>%
   select(yt, year, ed_type, ed_count, pt, rate, ci95_lb, ci95_ub)
 
 
+# YT vs SS, only all ED and no CI (used in journal article)
+ggplot(data = yt_ed_sum_all, aes(x = year)) +
+  geom_line(aes(y = rate, linetype = yt), size = 1.3) +
+  # ggtitle("Emergency department visit rates (unadjusted)") +
+  xlab("Year") +
+  ylab("Rate (per 1,000 person-years)") +
+  geom_label_repel(aes(y = rate, label=ifelse(year %in% c(2012, 2017), round(rate, 0), ''))) +
+  # expand_limits(y=0) +
+  theme(plot.title = element_text(size = 20),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        # axis.line = element_line(color = "black"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.position = "bottom",
+        panel.background = element_blank(),
+        panel.grid.major = element_line(color = "grey40"),
+        panel.grid.major.x = element_blank(),
+        strip.text.y = element_text(size = 11)
+  )
+
+
 # YT vs SS, broken out by ED type
 ed_plot <- ggplot(data = yt_ed_sum, aes(x = year)) +
   geom_line(aes(y = rate, color = yt), size = 1.3) +
@@ -542,12 +565,19 @@ ed_plot <- ggplot(data = yt_ed_sum, aes(x = year)) +
   ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
   ylab("Rate (per 1,000 person-years)") +
-  theme(axis.text = element_text(size = 14),
+  expand_limits(y=0) +
+  theme(plot.title = element_text(size = 20),
+        axis.text = element_text(size = 14),
         axis.title = element_text(size = 16),
+        axis.line = element_line(color = "black"),
         legend.title = element_blank(),
         legend.text = element_text(size = 12),
         legend.position = "bottom",
-        panel.background = element_rect(fill = "grey95"))
+        panel.background = element_blank(),
+        panel.grid.major = element_line(color = "grey40"),
+        strip.text.y = element_text(size = 11)
+  )
+ed_plot + facet_grid(ed_type ~ .)
 ed_plot + facet_grid(ed_type ~ ., scales = "free_y")
 
 
@@ -755,7 +785,7 @@ ed_causes <- bind_rows(yt_causes_prim, yt_causes_all, ss_causes_prim, ss_causes_
 write.xlsx(ed_causes, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/YT/yt_ed_causes.xlsx")
 
 
-#### MODELS ####
+#### MODELS - ALL ED VISITS ####
 #### Run simple GEE model ####
 # Focus is on YT/SS
 m_gee_crude <- geeglm(ed_count ~ yt + offset(log(pt)),
@@ -1263,6 +1293,88 @@ w_rc <- ipwtm(exposure = cens_r,
 
 
 #### Run structured nested mean model ####
+
+
+#### MODELS - STRATIFIED ED OVERALL ####
+### Look at larger race/ethnicity groups
+# Run GEE Poisson MSM
+m_msm_gee_asian <- geeglm(ed_count ~ yt*year_0 + gender_c + age12 + 
+                      length12 + inc_min + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = yt_ed[yt_ed$ethn_c == "Asian", ],
+                    weights = iptw)
+summary(m_msm_gee_asian)
+exp(cbind(Estimate = coef(m_msm_gee_asian), confint_tidy(m_msm_gee_asian)))
+
+
+m_msm_gee_black <- geeglm(ed_count ~ yt*year_0 + gender_c + age12 + 
+                            length12 + inc_min + offset(log(pt)),
+                          id = pid2, corstr = "independence",
+                          family = "poisson", data = yt_ed[yt_ed$ethn_c == "Black", ],
+                          weights = iptw)
+summary(m_msm_gee_black)
+exp(cbind(Estimate = coef(m_msm_gee_black), confint_tidy(m_msm_gee_black)))
+
+# See if there's an interaction by race and YT/SS
+m_msm_gee_race <- geeglm(ed_count ~ yt*year_0 + yt*ethn_c + gender_c + age12 + 
+                      length12 + inc_min + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = yt_ed,
+                    weights = iptw)
+summary(m_msm_gee_race)
+exp(cbind(Estimate = coef(m_msm_gee_race), confint_tidy(m_msm_gee_race)))
+
+
+
+#### MODELS - AVOIDABLE ED VISITS ####
+### Run simple GEE model
+# Focus is on YT/SS
+m_gee_crude_avoid <- geeglm(ed_avoid_count ~ yt + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed_all_yr)
+m_gee_crude_avoid <- geeglm(ed_avoid_count ~ yt*year_0 + offset(log(pt)),
+                      id = pid2, corstr = "independence",
+                      family = "poisson", data = yt_ed_all_yr)
+
+summary(m_gee_crude_avoid)
+exp(cbind(Estimate = coef(m_gee_crude_avoid), confint_tidy(m_gee_crude_avoid)))
+
+
+### Run marginal structural model
+# Set up IPT weights above
+m_msm_gee_avoid <- geeglm(ed_avoid_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                      length12 + inc_min + offset(log(pt)),
+                    id = pid2, corstr = "independence",
+                    family = "poisson", data = yt_ed,
+                    weights = iptw)
+summary(m_msm_gee_avoid)
+exp(cbind(Estimate = coef(m_msm_gee_avoid), confint_tidy(m_msm_gee_avoid)))
+
+
+
+#### MODELS - UNAVOIDABLE ED VISITS ####
+### Run simple GEE model
+# Focus is on YT/SS
+m_gee_crude_unavoid <- geeglm(ed_unavoid_count ~ yt + offset(log(pt)),
+                            id = pid2, corstr = "independence",
+                            family = "poisson", data = yt_ed_all_yr)
+m_gee_crude_unavoid <- geeglm(ed_unavoid_count ~ yt*year_0 + offset(log(pt)),
+                            id = pid2, corstr = "independence",
+                            family = "poisson", data = yt_ed_all_yr)
+
+summary(m_gee_crude_unavoid)
+exp(cbind(Estimate = coef(m_gee_crude_unavoid), confint_tidy(m_gee_crude_unavoid)))
+
+
+### Run marginal structural model
+# Set up IPT weights above
+m_msm_gee_unavoid <- geeglm(ed_unavoid_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
+                            length12 + inc_min + offset(log(pt)),
+                          id = pid2, corstr = "independence",
+                          family = "poisson", data = yt_ed,
+                          weights = iptw)
+summary(m_msm_gee_unavoid)
+exp(cbind(Estimate = coef(m_msm_gee_unavoid), confint_tidy(m_msm_gee_unavoid)))
 
 
 
