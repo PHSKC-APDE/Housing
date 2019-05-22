@@ -3,9 +3,9 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 hild_dir <- args[1]
-hild_dir <- "/home/ubuntu/data/HILD/" #temp, will pass through python script
-housing_source <- args[2] 
-housing_source <- "/home/joseh/source/Housing/processing/" # temp, will pass through python script
+#hild_dir <- "/home/ubuntu/data/HILD/" #temp, will pass through python script
+housing_source_dir <- args[2] 
+#housing_source_dir <- "/home/joseh/source/Housing/processing/" # temp, will pass through python script
 # local_metadata_path <- args[3]
 
 housing_scripts <- c('01_kcha_sql_load.R',
@@ -18,16 +18,9 @@ housing_scripts <- c('01_kcha_sql_load.R',
                      '07_pha_consolidation.R',
                      '08_pha_analyses_prep.R')
 
-start_time <- Sys.time()
 
 for (rscripts in housing_scripts) {
-  start_time <- Sys.time()
-  source(paste0(housing_source, rscripts))
-  end_time <- Sys.time()
-  print(end_time - start_time)
+  source(paste0(housing_source_dir, rscripts))
 }
-
-end_time <- Sys.time()
-print(end_time - start_time)
 
 

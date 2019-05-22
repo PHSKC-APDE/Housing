@@ -33,12 +33,13 @@ require(data.table) # Used to read in csv files more efficiently
 require(tidyverse) # Used to manipulate data
 require(RJSONIO)
 require(RCurl)
+#devtools::install_github("hadley/dplyr")
+#require(dplyr)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
-METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA, "sha_data")
 
 if(sql == TRUE) {
@@ -855,6 +856,7 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn &
 ### Set up temp household ID  unique to a household and action date
 sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, 
                                    unit_city, act_date, act_type, incasset_id)
+
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
 # Check for households with >1 people listed as HoH

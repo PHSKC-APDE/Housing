@@ -37,8 +37,7 @@ library(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-local_metadata_path = "//home/joseh/source/Housing/processing/metadata/"
-METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
@@ -219,7 +218,7 @@ rm(zips)
 #### Save point ####
 # saveRDS(pha_longitudinal, file = paste0(housing_path, pha_longitudinal_fn))
 
-write.csv(pha_longitudinal, file = paste0(hild_dir,"pha_longitudinal_052019.csv"))
+write.csv(pha_longitudinal, file = paste0(hild_dir,"pha_longitudinal.csv"))
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)
 gc()
