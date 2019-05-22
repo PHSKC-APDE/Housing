@@ -26,20 +26,62 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(openxlsx) # Used to import/export Excel files
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+if(!require(housing)){
+  devtools::install_github("PHSKC-APDE/Housing")
+  require(housing) # contains many useful functions for cleaning
+}
+
+
+require(odbc) # Used to connect to SQL server
+
+
+if(!require(openxlsx)){
+  install.packages("openxlsx", repos='http://cran.us.r-project.org')
+  require(openxlsx) # Used to import/export Excel files
+}
+
+if(!require(data.table)){
+  install.packages("data.table", repos='http://cran.us.r-project.org')
+  require(data.table) # Used to read in csv files more efficiently
+}
+
+if(!require(tidyverse)){
+  install.packages("tidyverse")
+  require(tidyverse) # Used to manipulate data
+}
+
+if(!require(RJSONIO)){
+  install.packages("RJSONIO", repos='http://cran.us.r-project.org')
+  require(RJSONIO)
+}
+
+if(!require(RCurl)){
+  install.packages("RCurl", repos='http://cran.us.r-project.org')
+  require(RCurl)
+}
+
+if(!require(lubridate)){
+  install.packages("lubridate")
+  require(lubridate)
+}
+
+if(!require(RecordLinkage)){
+  install.packages("RecordLinkage", repos='http://cran.us.r-project.org')
+  require(RecordLinkage)
+}
+
+if(!require(phonics)){
+  install.packages("phonics", repos='http://cran.us.r-project.org')
+  require(phonics)
+}
+
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
-
-set_data_envr(METADATA,"kcha_data")
+# housing_source_dir <- "local_path"
+METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+set_data_envr(METADATA, "kcha_data")
 
 if (sql == TRUE) {
   db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -52,40 +94,40 @@ if (sql == TRUE) {
 #### Bring in data ####
 # Some SSNs have temporary IDs in them so should be read in as characters
 kcha_2004_2015_p1 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
-                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           na.strings = c("NA", "", "NULL", "N/A", "."),  
                            stringsAsFactors = F,
                            colClasses = list(character = c("h3n06", "h3n07", 
                                                          "h3n08", "h3n09")))
 kcha_2004_2015_p2 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
-                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           na.strings = c("NA", "", "NULL", "N/A", "."),  
                            stringsAsFactors = F,
                            colClasses = list(character = c("h3n10", "h3n11", 
                                                            "h3g12", "h3n12")))
 kcha_2004_2015_p3 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
-                           na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                           na.strings = c("NA", "", "NULL", "N/A", "."),  
                            stringsAsFactors = F)
 
 kcha_2016_p1 <- fread(file = file.path(kcha_path, panel_1_2016_fname),
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n03", "h3n04", "h3n05",
                                                       "h3n06", "h3n09")))
 kcha_2016_p2 <- fread(file = file.path(kcha_path, panel_2_2016_fname), 
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n11", "h3g12")))
 kcha_2016_p3 <- fread(file = file.path(kcha_path, panel_3_2016_fname), 
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = F,
                       colClasses = list(character = c("h19a9a", "h19b09")))
 
 
 kcha_2017_p1 <- fread(file = file.path(kcha_path, panel_1_2017_fname), 
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = FALSE)
 
 kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname), 
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = F,
                       colClasses = 
                         list(character = c("h3b12", "h3c12", "h3d12", "h3e12", 
@@ -102,16 +144,23 @@ kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname),
                                            "h3k14d", "h3k14e", "h3n14"
                                            )))
 kcha_2017_p3 <- fread(file = file.path(kcha_path, panel_3_2017_fname), 
-                      na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
+                      na.strings = c("NA", "", "NULL", "N/A", "."),  
                       stringsAsFactors = F,
                       colClasses = list(character = c("h19b09", "h19a9a")))
 
 
 # Some of the KCHA end of participation data is missing from the original extract
-kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
-                  na.strings = c("NA", " ", "", "NULL", "N/A", ".", ". "), 
-                  stringsAsFactors = F)
-
+if (UW == TRUE) {
+  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
+                  na.strings = c("NA", "", "NULL", "N/A", "."),  
+                  stringsAsFactors = F) %>% 
+    mutate(HOH.Birthdate = as.Date(HOH.Birthdate, origin = "1899-12-30"), 
+           Effective.Date = as.Date(Effective.Date, origin = "1899-12-30"))
+} else {
+  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
+                    na.strings = c("NA", "", "NULL", "N/A", "."),  
+                    stringsAsFactors = F)
+}
 
 # Bring in variable name mapping table
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
@@ -220,7 +269,8 @@ kcha_2016_full <- kcha_2016_full %>% mutate(kcha_source = "kcha2016")
 kcha_2017_full <- kcha_2017_full %>% mutate(kcha_source = "kcha2017")
 
 ### Append latest extract
-kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)
+kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)# %>%
+  #sample_n(1000)
 
 
 #### Remove temporary files ####
@@ -381,11 +431,19 @@ kcha <- kcha %>%
 #### Add missing end of participation (EOP) certs ####
 # Rename EOP fields to match KCHA
 # NB. No longer using names from the fields csv
+if (UW == TRUE) {
+  kcha_eop <- kcha_eop %>%
+    rename(householdid = `Household.ID`, vouch_num = `Voucher.Number`,
+           hh_ssn = `HOH.SSN`, hh_dob = `HOH.Birthdate`, 
+           hh_lname = `HOH.Full.Name`, program_type = `Program.Type`,
+           h2a = `HUD-50058.2a.Type.of.Action`, h2b = `Effective.Date`)
+} else {
 kcha_eop <- kcha_eop %>%
   rename(householdid = `Household ID`, vouch_num = `Voucher Number`,
          hh_ssn = `HOH SSN`, hh_dob = `HOH Birthdate`, 
          hh_lname = `HOH Full Name`, program_type = `Program Type`,
          h2a = `HUD-50058 2a Type of Action`, h2b = `Effective Date`)
+}
 
 # Fix up variable types
 kcha_eop <- kcha_eop %>%
@@ -614,7 +672,7 @@ kcha_long <- left_join(kcha_long, hhold_size, by = "hh_id_temp")
 
 
 #### Rename variables ####
-kcha_long <- setnames(kcha_long, fields$PHSKC[match(names(kcha_long), fields$KCHA_modified)])
+kcha_long <- setnames(kcha_long, fields$common_name[match(names(kcha_long), fields$kcha_modified)])
 
 
 ##### Clean up some data and make variables for merging #####
@@ -630,8 +688,8 @@ kcha_long <- kcha_long %>%
 # Bring in data and rename variables
 kcha_portfolio_codes <- read.xlsx(file.path(kcha_path, kcha_portfolio_codes_fn))
 kcha_portfolio_codes <- setnames(kcha_portfolio_codes, 
-                                 fields$PHSKC[match(names(kcha_portfolio_codes), 
-                                                    fields$KCHA_modified)])
+                                 fields$common_name[match(names(kcha_portfolio_codes), 
+                                                    fields$kcha_modified)])
 
 # Join and clean up duplicate variables
 kcha_long <- left_join(kcha_long, kcha_portfolio_codes, by = c("property_id"))
@@ -698,4 +756,3 @@ rm(METADATA)
 rm(script)
 rm(set_data_envr)
 gc()
-
