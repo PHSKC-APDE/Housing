@@ -29,6 +29,7 @@ library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
+library(data.table) # Used to manipulate data
 library(pastecs) # Used for summary statistics
 library(medicaid) # helpful counting functions
 
@@ -304,40 +305,10 @@ gc()
 
 
 #### 2) Demographics of people in YT/SS enrolled 30+ days on Medicaid, 2012–2017 ####
-# Assign people to a location for each calendar year
-# NB. lapply is causing R to freeze, runnning spearately for now
-yt_coded12_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 12, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded13_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 13, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded14_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 14, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded15_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 15, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded16_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 16, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded17_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 17, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-
-
-# Bind together
-yt_coded_min <- bind_rows(yt_coded12_min, yt_coded13_min, yt_coded14_min,
-                          yt_coded15_min, yt_coded16_min, yt_coded17_min)
-rm(list = ls(pattern = "yt_coded1"))
-gc()
-
+yt_coded_min <- bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt",
+                                 year_suf = NULL, agency = agency_new,
+                                 enroll_type = enroll_type, dual = dual_elig_m,
+                                 yt = yt, ss = ss, pt_cut = 30, min = T))
 
 ### Create summary stats for Tableau
 total <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ],
