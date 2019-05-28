@@ -37,14 +37,16 @@ library(RCurl)
 script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
-
+METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
+if (UW == TRUE) {
+  print("skip data load")
+} else {
 pha_cleanadd_sort_dedup <- readRDS(file = paste0(
   housing_path, pha_cleanadd_sort_dedup_fn))
-
+}
 
 
 ### Strip out some variables that no longer have meaning 
@@ -214,8 +216,9 @@ rm(zips)
 
 
 #### Save point ####
-saveRDS(pha_longitudinal, file = paste0(housing_path, pha_longitudinal_fn))
+# saveRDS(pha_longitudinal, file = paste0(housing_path, pha_longitudinal_fn))
 
+write.csv(pha_longitudinal, file = paste0(hild_dir,"pha_longitudinal.csv"))
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)
 gc()

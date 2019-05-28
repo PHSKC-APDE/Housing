@@ -24,21 +24,19 @@
 ###############################################################################
 
 #### Set up global parameter and call in libraries ####
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
+require(housing) # contains many useful functions for cleaning
+require(odbc) # Used to connect to SQL server
+require(data.table) # Used to read in csv files more efficiently
+require(tidyverse) # Used to manipulate data
+require(RJSONIO)
+require(RCurl)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON("//home/ubuntu/data/metadata/metadata.json")
-
+METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
-options(max.print = 400, tibble.print_max = 50, scipen = 999)
 
 if(sql == TRUE) {
   
@@ -63,7 +61,10 @@ kcha_long <- date_ymd_f(kcha_long, act_date, admit_date, dob, hh_dob)
 
 
 #### Make variable to track where data came from ####
-sha <- mutate(sha, agency_new = "SHA")
+sha <- sha %>% 
+  mutate(agency_new = "SHA",
+         access_unit = as.numeric(access_unit),
+         access_req = as.numeric(access_req))
 kcha_long <- mutate(kcha_long, agency_new = "KCHA")
 
 
@@ -265,10 +266,10 @@ pha <- pha %>%
   mutate(gender_new_cnt = ifelse(ssn_new_junk == 0 | ssn_c_junk == 0, n(), NA)) %>%
   ungroup()
 
-
+if (sql == TRUE) {
 #### Save point ####
 saveRDS(pha, file = paste0(housing_path, pha_fn))
-
+}
 
 #### Clean up ####
 rm(kcha_long)
