@@ -798,31 +798,30 @@ print(paste0("Drop #10 took ", round(difftime(time_end, time_start, units = "sec
 # This shouldn't matter once the number of years between inspections is applied to the household
 # After that point, the income variable is not used so can be dropped
 
-
+time_start <- Sys.time()
 # Due to missing ages/action dates, need to make separate data frame and merge back
-age_temp <- pha_cleanadd_sort %>%
-  distinct(pid, dob_m6, act_date, mbr_num) %>%
-  filter(!(is.na(dob_m6) | is.na(act_date))) %>%
-  mutate(age = round(interval(start = dob_m6, end = act_date) / years(1), 1),
-         # Fix up wonky birthdates and recalculate age
-         # Negative ages mostly due to incorrect century
-         dob_m6 = as.Date(ifelse(age < -10, format(dob_m6, "19%y-%m-%d"), 
-                                 format(dob_m6)), origin = "1970-01-01"),
-         # Over 100 years and < 116 years treated as genuine if head of household
-         # Over 100 years unlikely to be genuine if not head of household (some are typos, most century errors)
-         dob_m6 = as.Date(
-           case_when(
-             (age > 115 & age < 117 & mbr_num == 1) |
-               (age > 100 & age < 117 & (mbr_num > 1 | is.na(mbr_num))) |
-               (age >= 1000 & format(dob_m6, "%y") < 18) ~ format(dob_m6, "20%y-%m-%d"),
-             age >= 117 & age < 1000 | 
-               (age >= 1000 & format(dob_m6, "%y") > 17) ~  format(dob_m6, "19%y-%m-%d"),
-             TRUE ~ format(dob_m6)), origin = "1970-01-01"),
-         age = round(interval(start = dob_m6, end = act_date) / years(1), 1),
-         adult = ifelse(age >= 18, 1, 0),
-         senior = ifelse(age >= 62, 1, 0)
-  )
-age_temp <- setDT(age_temp)
+age_temp <- pha_cleanadd_sort[, .(pid, dob_m6, act_date, mbr_num)]
+age_temp <- unique(age_temp)
+age_temp <- age_temp[!(is.na(dob_m6) | is.na(act_date))]
+age_temp[, age := round(interval(start = dob_m6, end = act_date) / years(1), 1)]
+# Fix up wonky birthdates and recalculate age (negative ages mostly due to incorrect century)
+age_temp[, dob_m6 := as.Date(ifelse(age < -10, format(dob_m6, "19%y-%m-%d"), 
+                                   format(dob_m6)), origin = "1970-01-01")]
+# Over 100 years and < 116 years treated as genuine if head of household
+# Over 100 years unlikely to be genuine if not head of household (some are typos, most century errors)
+age_temp[, dob_m6 := as.Date(
+  case_when((age > 115 & age < 117 & mbr_num == 1) |
+              (age > 100 & age < 117 & (mbr_num > 1 | is.na(mbr_num))) |
+              (age >= 1000 & format(dob_m6, "%y") < 18) ~ format(dob_m6, "20%y-%m-%d"),
+            age >= 117 & age < 1000 | 
+              (age >= 1000 & format(dob_m6, "%y") > 17) ~  format(dob_m6, "19%y-%m-%d"),
+            TRUE ~ format(dob_m6)), origin = "1970-01-01")]
+age_temp[, age := round(interval(start = dob_m6, end = act_date) / years(1), 1)]
+age_temp[, ':=' (
+  adult = ifelse(age >= 18, 1, 0),
+  senior = ifelse(age >= 62, 1, 0)
+)]
+
 
 # Join back to main data and make relevant variables
 pha_cleanadd_sort <- merge(pha_cleanadd_sort, age_temp,
@@ -880,85 +879,89 @@ pha_cleanadd_sort[, add_yr_temp := case_when(
   TRUE ~ NA_real_
 )]
 
+# Now apply to entire household (only NAs in add_yr_temp should be children or live-in attendants)
+pha_cleanadd_sort[, add_yr := min(add_yr_temp, na.rm = TRUE), by = .(hh_id_new, act_date)]
+# A few cleanup errors lead to some households with no add_yr (shows as infinity) so set to 1 for now
+pha_cleanadd_sort[, add_yr := ifelse(add_yr > 3, 1, add_yr), by = .(hh_id_new, act_date)]
 
-
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  # Now apply to entire household (only NAs in add_yr_temp should be children or live-in attendants)
-  group_by(hh_id_new, act_date) %>%
-  mutate(add_yr = min(add_yr_temp, na.rm = TRUE),
-         # A few cleanup errors lead to some households with no add_yr (shows as infinity) so set to 1 for now
-         add_yr = ifelse(add_yr > 3, 1, add_yr)
-         ) %>%
-  ungroup() %>%
-  select(-add_yr_temp, -dob_m6.x, -dob_m6.y)
+pha_cleanadd_sort[, ':=' (
+  add_yr_temp = NULL,
+  dob_m6.x = NULL,
+  dob_m6.y = NULL
+)]
 
 # Remove temporary data
 rm(age_temp)
 
 
 #### Create start and end dates for a person at that address/progam/agency ####
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, act_date, agency_prog_concat) %>%
-  mutate(
-    # First row for a person = act_date (admit_dates stretch back too far for port ins)
-    # Any change in agency/program/address/PHA billed = act date
-    startdate = as.Date(ifelse(pid != lag(pid, 1) | is.na(lag(pid, 1)) | 
-                                 agency_prog_concat != lag(agency_prog_concat, 1) |
-                                 unit_concat != lag(unit_concat, 1) | cost_pha != lag(cost_pha, 1),
-                               act_date, NA), origin = "1970-01-01"),
-    # Last row for a person or change in agency/program = 
-    #   exit date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
-    # OR mid-point between last date and next household action date if it looks like
-    #    the person has moved out (whichever is smallest of the two)
-    # Other rows where that is the person's last row at that address/PHA billed but same agency/prog = act_date at next address - 1 day
-    # Unless act_date is the same as startdate (e.g., because of different programs), then act_date 
-    enddate = as.Date(
-      case_when(
-        act_type == 5 | act_type == 6 ~  act_date,
-        pid != lead(pid, 1) | is.na(lead(pid, 1 )) |
-          agency_prog_concat != lead(agency_prog_concat, 1) |
-          cost_pha != lead(cost_pha, 1) ~ pmin(today(), act_date + dyears(add_yr),
-                                               act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
-        unit_concat != lead(unit_concat, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
-        unit_concat != lead(unit_concat, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
-      , origin = "1970-01-01")
-  )
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, act_date, agency_prog_concat)]
+pha_cleanadd_sort[, ':=' (
+  # First row for a person = act_date (admit_dates stretch back too far for port ins)
+  # Any change in agency/program/address/PHA billed = act date
+  startdate = as.Date(ifelse(pid != lag(pid, 1) | is.na(lag(pid, 1)) | 
+                               agency_prog_concat != lag(agency_prog_concat, 1) |
+                               unit_concat != lag(unit_concat, 1) | cost_pha != lag(cost_pha, 1),
+                             act_date, NA), origin = "1970-01-01"),
+  # Last row for a person or change in agency/program = 
+  #   exit date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
+  # OR mid-point between last date and next household action date if it looks like
+  #    the person has moved out (whichever is smallest of the two)
+  # Other rows where that is the person's last row at that address/PHA billed but same agency/prog = act_date at next address - 1 day
+  # Unless act_date is the same as startdate (e.g., because of different programs), then act_date 
+  enddate = as.Date(
+    case_when(
+      act_type == 5 | act_type == 6 ~  act_date,
+      pid != lead(pid, 1) | is.na(lead(pid, 1 )) |
+        agency_prog_concat != lead(agency_prog_concat, 1) |
+        cost_pha != lead(cost_pha, 1) ~ pmin(today(), act_date + dyears(add_yr),
+                                             act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
+      unit_concat != lead(unit_concat, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
+      unit_concat != lead(unit_concat, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
+    , origin = "1970-01-01")
+)]
+
+time_end <- Sys.time()
+print(paste0("Setting up years between recertifications took ", 
+             round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
 
 #### Collapse rows to have a single line per person per address per time there (droptype = 11) ####
 # There are a few rows left with no start or end date 
 # (because of the logic around billed PHA and the data issues in that field)
+time_start <- Sys.time()
 dfsize_head <- nrow(pha_cleanadd_sort)
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, act_date, agency_prog_concat) %>%
-  # Bring start and end dates onto a single line per address/program
-  mutate(drop = ifelse(is.na(startdate) & is.na(enddate),
-                       11, 0))
+
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, act_date, agency_prog_concat)]
+# Bring start and end dates onto a single line per address/program
+pha_cleanadd_sort[, drop := ifelse(is.na(startdate) & is.na(enddate), 11, 0)]
+
 # Pull out drop tracking and merge
 drop_temp <- pha_cleanadd_sort %>% select(row, drop)
 drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
   mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
   select(-drop.x, -drop.y)
 # Finish dropping rows
-pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
+pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
 
 
 # Then get start and end dates onto a single line
 # NB. Important to retain the order from the code above
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, act_date, agency_prog_concat) %>%
-  # Bring start and end dates onto a single line per address/program
-  mutate(enddate = as.Date(ifelse(is.na(enddate), lead(enddate, 1), enddate), origin = "1970-01-01"),
-         drop = ifelse(is.na(startdate) | is.na(enddate),
-                       11, 0))
-# Pull out drop tracking and merge (now add field for number of years between inspections)
-drop_temp <- pha_cleanadd_sort %>% select(row, drop, add_yr)
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, act_date, agency_prog_concat)]
+pha_cleanadd_sort[, enddate := as.Date(ifelse(is.na(enddate), lead(enddate, 1), enddate), 
+                                       origin = "1970-01-01")]
+pha_cleanadd_sort[, drop := ifelse(is.na(startdate) | is.na(enddate), 11, 0)]
+
+# Pull out drop tracking and merge
+drop_temp <- pha_cleanadd_sort %>% select(row, drop)
 drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
   mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
   select(-drop.x, -drop.y)
 # Finish dropping rows
-pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
-dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
+pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
+dfsize_head - nrow(pha_cleanadd_sort)
+time_end <- Sys.time()
+print(paste0("Drop #11 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
 
 #### Refine port labels ####
@@ -975,187 +978,146 @@ dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 
 ### Update port information across multiple rows within the same program
 ### Fill in any missing port out fields when the person switched between SHA and KCHA or vice versa
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  mutate(port_out_kcha = ifelse(agency_new == "SHA" & port_in == 1 & cost_pha == "WA002", 1, port_out_kcha),
-         port_out_sha = ifelse(agency_new == "KCHA" & port_in == 1 & cost_pha == "WA001", 1, port_out_sha))
-
+pha_cleanadd_sort[, ':=' (
+  port_out_kcha = ifelse(agency_new == "SHA" & port_in == 1 & cost_pha == "WA002", 1, port_out_kcha),
+  port_out_sha = ifelse(agency_new == "KCHA" & port_in == 1 & cost_pha == "WA001", 1, port_out_sha)
+)]
 
 
 #### Rows where startdate = enddate and also startdate = the next row's startdate (often same program) (droptype = 12) ####
 # Use the same logic as droptype 6 to decide which row to keep
+time_start <- Sys.time()
 dfsize_head <- nrow(pha_cleanadd_sort)
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, startdate, enddate, agency_prog_concat) %>%
-  mutate(
-    # First capture pairs where only one row has the same start and end date
-    drop = ifelse(pid == lead(pid, 1) & startdate == enddate &
-                    startdate == lead(startdate, 1) &
-                    startdate != lead(enddate, 1),
-                  12, 0),
-    drop = ifelse(pid == lag(pid, 1) & startdate == enddate &
-                    startdate == lag(startdate, 1) &
-                    startdate != lag(enddate, 1),
-                  12, drop),
-    # Then find pairs where both rows have the same start and end dates 
-    # (use logic from droptype 05 to decide)
-    # SHA
-    drop = ifelse(
-      (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
-         startdate == enddate & startdate == lead(startdate, 1) &
-         startdate == lead(enddate, 1) &
-         agency_new == "SHA" & lead(agency_new, 1) == "SHA" &
-         ((sha_source < lead(sha_source, 1) & abs(max_date - lead(max_date, 1)) <= 31) | 
-            (sha_source == lead(sha_source, 1) & max_date - lead(max_date, 1) < -31))) |
-        (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) &
-           startdate == enddate & startdate == lag(startdate, 1) &
-           startdate == lag(enddate, 1) &
-           agency_new == "SHA" & lag(agency_new, 1) == "SHA" & 
-           ((sha_source < lag(sha_source, 1) & abs(max_date - lag(max_date, 1)) <= 31) | 
-              (sha_source == lag(sha_source, 1) & max_date - lag(max_date, 1) < -31))),
-      12, drop),
-    # KCHA
-    drop = ifelse(
-      (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
-         startdate == enddate & startdate == lead(startdate, 1) &
-         startdate == lead(enddate, 1) &
-         agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & 
-         ((prog_type == "PH" & lead(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
-             abs(max_date - lead(max_date, 1)) <= 62) |
-            max_date - lead(max_date, 1) > 62)) |
-        (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
-           startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
-           agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" & 
-           ((prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
-               abs(max_date - lag(max_date, 1) <= 62)) |
-              max_date - lag(max_date, 1) > 62)),
-      12, drop),
-    # If there are still pairs within a PHA, keep the program that immediately preceded this pair
-    # SHA
-    drop = ifelse(
-      (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
-         startdate == enddate & startdate == lead(startdate, 1) &
-         startdate == lead(enddate, 1) &
-         agency_new == "SHA" & lead(agency_new, 1) == "SHA" &
-         sha_source == lead(sha_source, 1) &
-         abs(max_date - lead(max_date, 1)) <= 31 &
-         agency_prog_concat != lag(agency_prog_concat, 1)) |
-        (drop == 0 & pid == lag(pid, 1) & startdate == enddate &
-           startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
-           agency_new == "SHA" & lag(agency_new, 1) == "SHA" &
-           sha_source == lag(sha_source, 1) &
-           abs(max_date - lead(max_date, 1)) <= 31 &
-           agency_prog_concat != lag(agency_prog_concat, 2)),
-      12, drop),
-    # KCHA
-    drop = ifelse(
-      (drop == 0 & pid == lead(pid, 1) & startdate == enddate &
-         startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
-         agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" &
-         subsidy_type == lead(subsidy_type, 1) &
-         abs(max_date - lead(max_date, 1)) <= 62 &
-         agency_prog_concat != lag(agency_prog_concat, 1)) |
-        (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
-           startdate == enddate & startdate == lag(startdate, 1) &
-           startdate == lag(enddate, 1) &
-           agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" &
-           subsidy_type == lag(subsidy_type, 1) &
-           abs(max_date - lead(max_date, 1)) <= 62 &
-           agency_prog_concat != lag(agency_prog_concat, 2)),
-      12, drop),
-    # If the pairs come from different agencies, keep the PHA that immediately preceded this pair or the one with the latest max date
-    drop = ifelse(
-      (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
-         startdate == enddate & startdate == lead(startdate, 1) &
-         startdate == lead(enddate, 1) &
-         agency_new != lead(agency_new, 1) & agency_new != lag(agency_new, 1)) |
-        (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) &
-           startdate == enddate & startdate == lag(startdate, 1) &
-           startdate == lag(enddate, 1) &
-           agency_new != lag(agency_new, 1) & agency_new != lag(agency_new, 2)),
-      12, drop),
-    # There are ~50 pairs left that don't fit anything else, drop the second row
-    drop = ifelse(drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
-                    startdate == enddate & startdate == lag(startdate, 1) &
-                    startdate == lag(enddate, 1),
-                  12, drop)
-  )
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, startdate, enddate, agency_prog_concat)]
+# First capture pairs where only one row has the same start and end date
+pha_cleanadd_sort[, drop := ifelse(pid == lead(pid, 1) & startdate == enddate &
+                                     startdate == lead(startdate, 1) &
+                                     startdate != lead(enddate, 1), 12, 0)]
+pha_cleanadd_sort[, drop := ifelse(pid == lag(pid, 1) & startdate == enddate &
+                                     startdate == lag(startdate, 1) &
+                                     startdate != lag(enddate, 1), 12, drop)]
+# Then find pairs where both rows have the same start and end dates 
+# (use logic from droptype 05 to decide)
+# SHA
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
+     startdate == enddate & startdate == lead(startdate, 1) &
+     startdate == lead(enddate, 1) &
+     agency_new == "SHA" & lead(agency_new, 1) == "SHA" &
+     ((sha_source < lead(sha_source, 1) & abs(max_date - lead(max_date, 1)) <= 31) | 
+        (sha_source == lead(sha_source, 1) & max_date - lead(max_date, 1) < -31))) |
+    (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) &
+       startdate == enddate & startdate == lag(startdate, 1) &
+       startdate == lag(enddate, 1) &
+       agency_new == "SHA" & lag(agency_new, 1) == "SHA" & 
+       ((sha_source < lag(sha_source, 1) & abs(max_date - lag(max_date, 1)) <= 31) | 
+          (sha_source == lag(sha_source, 1) & max_date - lag(max_date, 1) < -31))),
+  12, drop)]
+# KCHA
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
+     startdate == enddate & startdate == lead(startdate, 1) &
+     startdate == lead(enddate, 1) &
+     agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & 
+     ((prog_type == "PH" & lead(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
+         abs(max_date - lead(max_date, 1)) <= 62) |
+        max_date - lead(max_date, 1) > 62)) | (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
+       startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
+       agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" & 
+       ((prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
+           abs(max_date - lag(max_date, 1) <= 62)) | max_date - lag(max_date, 1) > 62)),
+  12, drop)]
+# If there are still pairs within a PHA, keep the program that immediately preceded this pair
+# SHA
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
+     startdate == enddate & startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
+     agency_new == "SHA" & lead(agency_new, 1) == "SHA" & sha_source == lead(sha_source, 1) &
+     abs(max_date - lead(max_date, 1)) <= 31 & agency_prog_concat != lag(agency_prog_concat, 1)) |
+    (drop == 0 & pid == lag(pid, 1) & startdate == enddate & 
+       startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
+       agency_new == "SHA" & lag(agency_new, 1) == "SHA" & sha_source == lag(sha_source, 1) &
+       abs(max_date - lead(max_date, 1)) <= 31 & agency_prog_concat != lag(agency_prog_concat, 2)),
+  12, drop)]
+# KCHA
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & pid == lead(pid, 1) & startdate == enddate &
+     startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
+     agency_new == "KCHA" & lead(agency_new, 1) == "KCHA" & subsidy_type == lead(subsidy_type, 1) &
+     abs(max_date - lead(max_date, 1)) <= 62 & agency_prog_concat != lag(agency_prog_concat, 1)) |
+    (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
+       startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) & 
+       agency_new == "KCHA" & lag(agency_new, 1) == "KCHA" &
+       subsidy_type == lag(subsidy_type, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
+       agency_prog_concat != lag(agency_prog_concat, 2)),
+  12, drop)]
+# If the pairs come from different agencies, keep the PHA that immediately 
+#   preceded this pair or the one with the latest max date
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & 
+     startdate == enddate & startdate == lead(startdate, 1) & startdate == lead(enddate, 1) &
+     agency_new != lead(agency_new, 1) & agency_new != lag(agency_new, 1)) |
+    (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) &
+       startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1) &
+       agency_new != lag(agency_new, 1) & agency_new != lag(agency_new, 2)),
+  12, drop)]
+# There are ~50 pairs left that don't fit anything else, drop the second row
+pha_cleanadd_sort[, drop := ifelse(
+  drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & 
+    startdate == enddate & startdate == lag(startdate, 1) & startdate == lag(enddate, 1),
+  12, drop)]
+
 # Pull out drop tracking and merge
 drop_temp <- pha_cleanadd_sort %>% select(row, drop)
 drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
   mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
   select(-drop.x, -drop.y)
 # Finish dropping rows
-pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
-dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
+pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
+dfsize_head - nrow(pha_cleanadd_sort)
+time_end <- Sys.time()
+print(paste0("Drop #12 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
 
 
 #### Deal with overlapping program/agency dates (droptype == 13) ####
+time_start <- Sys.time()
 ### First find rows with identical start and end dates
 dfsize_head <- nrow(pha_cleanadd_sort)
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, startdate, enddate, agency_prog_concat) %>%
-  mutate(
-    # Keep port in row
-    drop = ifelse(
-      (pid == lead(pid, 1) &
-         !is.na(lead(pid, 1)) &
-         startdate == lead(startdate, 1) &
-         enddate == lead(enddate, 1) &
-         port_in == 0 & lead(port_in, 1) == 1) |
-        (pid == lag(pid, 1) &
-           !is.na(lag(pid, 1)) &
-           startdate == lag(startdate, 1) &
-           enddate == lag(enddate, 1) &
-           port_in == 0 & lag(port_in, 1) == 1),
-      13, 0),
-    # If both or neither rows are port in, keep the max date
-    drop = ifelse(
-      (drop == 0 &
-         lead(drop, 1) == 0 &
-         pid == lead(pid, 1) &
-         !is.na(lead(pid, 1)) &
-         startdate == lead(startdate, 1) &
-         enddate == lead(enddate, 1) &
-         max_date < lead(max_date, 1)) |
-        (drop == 0 &
-           lag(drop, 1) == 0 &
-           pid == lag(pid, 1) &
-           !is.na(lag(pid, 1)) &
-           startdate == lag(startdate, 1) &
-           enddate == lag(enddate, 1) &
-           max_date < lag(max_date, 1)),
-      13, drop),
-    # If max_dates and ports are the same, keep any special type programs
-    drop = ifelse(
-      (drop == 0 &
-         lead(drop, 1) == 0 &
-         pid == lead(pid, 1) &
-         !is.na(lead(pid, 1)) &
-         startdate == lead(startdate, 1) &
-         enddate == lead(enddate, 1) &
-         vouch_type_final != "" &
-         !is.na(vouch_type_final) &
-         (lead(vouch_type_final, 1) == "" | is.na(lead(vouch_type_final, 1)))) |
-        (drop == 0 &
-           lag(drop, 1) == 0 &
-           pid == lag(pid, 1) &
-           !is.na(lag(pid, 1)) &
-           startdate == lag(startdate, 1) &
-           enddate == lag(enddate, 1) &
-           vouch_type_final != "" &
-           !is.na(vouch_type_final) &
-           (lag(vouch_type_final, 1) == "" | is.na(lag(vouch_type_final, 1)))),
-      13, drop),
-    # For the remaining ~84 pairs, drop the second row
-    drop = ifelse(drop == 0 &
-                    lag(drop, 1) == 0 &
-                    pid == lag(pid, 1) &
-                    !is.na(lag(pid, 1)) &
-                    startdate == lag(startdate, 1) &
-                    enddate == lag(enddate, 1),
-                  13, drop)
-  )
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, startdate, enddate, agency_prog_concat)]
+# Keep port in row
+pha_cleanadd_sort[, drop := ifelse(
+  (pid == lead(pid, 1) & !is.na(lead(pid, 1)) &
+     startdate == lead(startdate, 1) & enddate == lead(enddate, 1) &
+     port_in == 0 & lead(port_in, 1) == 1) |
+    (pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+       startdate == lag(startdate, 1) & enddate == lag(enddate, 1) &
+       port_in == 0 & lag(port_in, 1) == 1),
+  13, 0)]
+# If both or neither rows are port in, keep the max date
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & !is.na(lead(pid, 1)) &
+     startdate == lead(startdate, 1) & enddate == lead(enddate, 1) &
+     max_date < lead(max_date, 1)) |
+    (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+       startdate == lag(startdate, 1) & enddate == lag(enddate, 1) &
+       max_date < lag(max_date, 1)),
+  13, drop)]
+# If max_dates and ports are the same, keep any special type programs
+pha_cleanadd_sort[, drop := ifelse(
+  (drop == 0 & lead(drop, 1) == 0 & pid == lead(pid, 1) & !is.na(lead(pid, 1)) &
+     startdate == lead(startdate, 1) & enddate == lead(enddate, 1) &
+     vouch_type_final != "" & !is.na(vouch_type_final) &
+     (lead(vouch_type_final, 1) == "" | is.na(lead(vouch_type_final, 1)))) |
+    (drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+       startdate == lag(startdate, 1) & enddate == lag(enddate, 1) &
+       vouch_type_final != "" & !is.na(vouch_type_final) &
+       (lag(vouch_type_final, 1) == "" | is.na(lag(vouch_type_final, 1)))),
+  13, drop)]
+# For the remaining ~84 pairs, drop the second row
+pha_cleanadd_sort[, drop := ifelse(
+  drop == 0 & lag(drop, 1) == 0 & pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+    startdate == lag(startdate, 1) & enddate == lag(enddate, 1), 13, drop)]
 
 
 ### Then find rows with different start dates but the overlap is due to an exit (act_type = 5 or 6 and has the same start/end date)
@@ -1163,23 +1125,17 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 # Be sure not to capture legitimate exits where the program is the same but the address was missing in the exit row
 # NB. Sometimes the addresses are the same and the programs are slightly different
 # Can check up two rows to see
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, startdate, enddate, agency_prog_concat) %>%
-  mutate(drop = ifelse(
-    pid == lag(pid, 1) &
-      !is.na(lag(pid, 1)) &
-      lag(enddate, 1) >= startdate &
-      startdate == enddate &
-      act_type %in% c(5, 6) &
-      !((agency_prog_concat == lag(agency_prog_concat, 1) &
-           unit_concat %in% c(",,,,NA", ",,,,0")) |
-          unit_concat == lag(unit_concat, 1) |
-          (unit_concat %in% c(",,,,NA", ",,,,0") &
-             agency_new == "KCHA" &
-             (prog_type == "TBS8" &
-                lag(prog_type, 1) == "PORT") |
-             prog_type == lag(prog_type, 1))),
-    13, drop))
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, startdate, enddate, agency_prog_concat)]
+pha_cleanadd_sort[, drop := ifelse(
+  pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+    lag(enddate, 1) >= startdate & startdate == enddate & act_type %in% c(5, 6) &
+    !((agency_prog_concat == lag(agency_prog_concat, 1) & is.na(unit_concat)) | 
+        unit_concat == lag(unit_concat, 1) |
+        (is.na(unit_concat) & agency_new == "KCHA" &
+           ((prog_type == "TBS8" & lag(prog_type, 1) == "PORT") |
+              prog_type == lag(prog_type, 1)))),
+  13, drop)]
+
 
 # Pull out drop tracking and merge
 drop_temp <- pha_cleanadd_sort %>% select(row, drop)
@@ -1187,52 +1143,46 @@ drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
   mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
   select(-drop.x, -drop.y)
 # Finish dropping rows
-pha_cleanadd_sort <- pha_cleanadd_sort %>% filter(drop == 0 | is.na(drop))
-dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
+pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
+dfsize_head - nrow(pha_cleanadd_sort)
+time_end <- Sys.time()
+print(paste0("Drop #13 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
 
 ### Truncate overlapping dates
 # Assume that most recent program/agency is the one to count 
 # (will be biased to the second one alphabetically when start dates are the same, if any remain)
-pha_cleanadd_sort <- pha_cleanadd_sort %>%
-  arrange(pid, startdate, enddate, agency_prog_concat) %>%
-  mutate(
-    # Make a note of which rows were truncated
-    truncated = ifelse(pid == lead(pid, 1) &
-                         !is.na(lead(pid, 1)) &
-                         (enddate >= lead(startdate, 1) |
-                            (enddate >= lead(startdate, 1) &
-                               startdate == lead(startdate, 1))),
-                       1, 0),
-    # Now truncate
-    enddate = as.Date(ifelse(
-      # If the start dates aren't the same, use next start date - 1 day
-      pid == lead(pid, 1) &
-        !is.na(lead(pid, 1)) &
-        enddate >= lead(startdate, 1) &
-        startdate != lead(startdate, 1), 
-      lead(startdate, 1) - 1,
-      # If the start dates are the same, set the first end date equal to the start date 
-      # (avoids having negative time in housing but does lead to duplicate rows for a person on a given date)
-      ifelse(pid == lead(pid, 1) &
-               !is.na(lead(pid, 1)) &
-               enddate >= lead(startdate, 1) &
-               startdate == lead(startdate, 1), 
-             startdate, enddate))
-      , origin = "1970-01-01"))
+pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, startdate, enddate, agency_prog_concat)]
+# Make a note of which rows were truncated
+pha_cleanadd_sort[, truncated := ifelse(
+  pid == lead(pid, 1) & !is.na(lead(pid, 1)) & enddate >= lead(startdate, 1), 1, 0)]
+# Now truncate
+pha_cleanadd_sort[, enddate := as.Date(
+  case_when(
+    # If the start dates aren't the same, use next start date - 1 day
+    pid == lead(pid, 1) & !is.na(lead(pid, 1)) & enddate >= lead(startdate, 1) & 
+      startdate != lead(startdate, 1) ~ lead(startdate, 1) - 1,
+    #  If the start dates are the same, set the first end date equal to the start date 
+    # (avoids having negative time in housing but does lead to duplicate rows for a person on a given date)
+    pid == lead(pid, 1) & !is.na(lead(pid, 1)) & enddate >= lead(startdate, 1) & 
+      startdate == lead(startdate, 1) ~ startdate,
+    TRUE ~ enddate
+  ), origin = "1970-01-01")]
+
+
 # See how many rows were affected
 sum(pha_cleanadd_sort$truncated, na.rm = T)
 
 
 #### Export drop tracking data ####
-saveRDS(drop_track, file = paste0(housing_path, "drop_track.Rda"))
+saveRDS(drop_track, file = file.path(housing_path, drop_track_fn))
 #drop_track <- readRDS(file = paste0(housing_path, "/OrganizedData/drop_track.Rda"))
 rm(drop_temp)
 rm(drop_track)
 
 #### Save point ####
 pha_cleanadd_sort_dedup <- pha_cleanadd_sort
-saveRDS(pha_cleanadd_sort_dedup, file = paste0(housing_path, pha_cleanadd_sort_dedup_fn))
+saveRDS(pha_cleanadd_sort_dedup, file = file.path(housing_path, pha_cleanadd_sort_dedup_fn))
 
 ### Clean up remaining data frames
 rm(pha_cleanadd)

@@ -49,13 +49,14 @@
         "pha_clean_fn": "file_name.type",
         "pha_recoded_fn":"file_name.type",
         "pha_cleanadd_fn": "file_name.type",
-        "pha_cleanadd_geocoded_fn":"file_name.type",
         "pha_specific_fn": "file_name.type",
-        "PHA_addresses_matched_ESRI_fn": "file_name.type",
-        "PHA_addresses_matched_google_fn": "file_name.type",
         "kcha_dev_adds_path_fn": "file_name.type",
+		"drop_track_fn": "file_name.type",
         "pha_cleanadd_sort_dedup_fn": "file_name.type",
-        "pha_longitudinal_fn": "file_name.type"
+        "pha_longitudinal_fn": "file_name.type",
+        "pha_cleanadd_geocoded_fn":"file_name.type",
+		"PHA_addresses_matched_ESRI_fn": "file_name.type",
+        "PHA_addresses_matched_google_fn": "file_name.type",
     }
 }
 
