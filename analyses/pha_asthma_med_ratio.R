@@ -8,13 +8,19 @@
 ###############################################################################
 
 ##### Set up global parameter and call in libraries #####
-options(max.print = 350, tibble.print_max = 30, scipen = 999, warning.length = 5000)
+options(max.print = 350, tibble.print_max = 30, scipen = 999, warning.length = 5000,
+        knitr.kable.NA = '')
 
 library(odbc) # Used to connect to SQL server
 library(housing) # contains many useful functions for analyzing housing/Medicaid data
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(claims) # Used to aggregate data
+library(aod) # Used for Wald test in regression analyses
+library(broom) # Used to tidy up regression output
+library(knitr) # Used to make reports
+library(kableExtra) # Used to make reports
+library(rmarkdown) # Used to make reports
 
 
 ##### Connect to the SQL servers #####
@@ -116,25 +122,13 @@ elig_pop <- bind_rows(lapply(months_list, function(x) {
 
 
 ### Asthma medication ratio data
-# If prep code has been run, can pull in people with asthma but ignore the 
-# requirement to have persistent asthma
-amr_1_year <- dbGetQuery(db_claims,
-           "SELECT a.id, a.year_month AS end_year_month, b.amr, 
-           'denominator_1yr' = 1, 
-           CASE WHEN b.amr >= 0.5 THEN 1 ELSE 0 END AS numerator_1yr 
-           FROM
-           (SELECT id, year_month, end_month, past_year, end_month_age, beg_measure_year_month
-           FROM ##asthma_denom 
-           WHERE enroll_flag = 1 AND rx_any = 1 AND dx_exclude = 0) a
-           LEFT JOIN
-           (SELECT id, end_month, amr FROM ##asthma_amr) b
-           ON a.id = b.id AND a.end_month = b.end_month 
-           --WHERE a.end_month = '2017-12-31' 
-           ORDER BY a.id, a.end_month")
-
-
-
 # NOTE THAT THIS CODE WILL NEED TO BE UPDATED ONCE THE NEW ETL PROCESS IS RUN
+amr_1_year <- dbGetQuery(db_claims,
+                         "SELECT end_year_month, id, numerator, denominator
+                         FROM stage.mcaid_perf_measure
+                         WHERE measure_id = 20 --AND end_year_month = '201712'")
+
+
 amr <- dbGetQuery(db_claims,
                   "SELECT end_year_month, id, numerator, denominator
                   FROM stage.mcaid_perf_measure
@@ -149,6 +143,10 @@ housing_amr <- inner_join(housing, elig_pop,
                            "year_month" = "end_year_month")) %>%
   left_join(., amr_1_year, by = c("mid" = "id",
                                   "year_month" = "end_year_month")) %>%
+  rename(denominator = denominator.x,
+         numerator = numerator.x,
+         denominator_1yr = denominator.y,
+         numerator_1yr = numerator.y) %>%
   replace_na(., list(denominator = 0, numerator = 0, 
                      denominator_1yr = 0, numerator_1yr = 0))
 
@@ -160,7 +158,7 @@ housing_amr_cat <- bind_rows(lapply(months_list, function(x) {
   pt_var <- quo_name(paste0("pt", str_sub(x, 3, 4)))
   age_var <- quo_name(paste0("age", str_sub(x, 3, 4)))
   length_var <- quo_name(paste0("length", str_sub(x, 3, 4)))
-  
+
   result <- housing_amr %>%
     filter(end_period == x) %>%
     arrange(pid2, desc(!!sym(pt_var))) %>%
@@ -210,6 +208,7 @@ housing_amr_cat <- bind_rows(lapply(months_list, function(x) {
 
 
 #### ANALYZE DATA ####
+#### Tableau-ready output ####
 ### Look at all groups combined
 asthma_cnt_combined <- tabloop_f(df = housing_amr_cat,
                         dcount = list_var(pid2),
@@ -408,6 +407,223 @@ write.csv(asthma_cnt_supp, paste0(dashh_2_path,
           row.names = F)
 
   
+
+
+
+
+
+#### Regression ####
+# Restrict to 2017 and recode
+amr_regression_df <- housing_amr_cat %>%
+  filter(end_period == "2017-12-31") %>%
+  mutate(pha = ifelse(agency_new == "Non-PHA", 0, 1),
+         age_grp = factor(age_grp,
+                           levels = c("5-11", "12-18", "19-30", "31-50", "51-64"),
+                           labels = c("5-11", "12-18", "19-30", "31-50", "51-64")),
+         length_grp = factor(length_grp,
+                          levels = c("<3 years", "3-6 years", "6+ years"),
+                          labels = c("<3 years", "3-6 years", "6+ years"))
+         )
+
+### Compare asthma among PHA to non-PHA
+asthma_overall <- glm(denominator_1yr ~ pha + age_grp + gender_c + ethn_c,
+                      data = amr_regression_df,
+                      family = "binomial")
+
+summary(asthma_overall)
+
+# Summarise output using broom package
+asthma_overall_output <- tidy(asthma_overall, conf.int = T, exponentiate = T)
+asthma_overall_output <- asthma_overall_output %>%
+  mutate(model = rep("Asthma comparing PHA/non-PHA", nrow(asthma_overall_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+asthma_overall_output_wald <- data.frame(
+  model = rep("Asthma comparing PHA/non-PHA", 3),
+  term = c("Age", "Gender", "Race/ethnicity"),
+  chi2 = c(
+    wald.test(b = coef(asthma_overall), Sigma = vcov(asthma_overall), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(asthma_overall), Sigma = vcov(asthma_overall), Terms = 7:8)$result$chi2[3],
+    wald.test(b = coef(asthma_overall), Sigma = vcov(asthma_overall), Terms = 9:14)$result$chi2[3]
+  )
+)
+
+### Compare asthma within PHAs in public housing
+asthma_pha_hard <- glm(denominator_1yr ~ agency_new + age_grp + gender_c + ethn_c + length_grp + operator_type,
+                         data = filter(amr_regression_df, agency_new != "Non-PHA" & subsidy_type == "HARD UNIT" &
+                                         operator_type != ""),
+                         family = "binomial")
+
+summary(asthma_pha_hard)
+asthma_pha_hard_output <- tidy(asthma_pha_hard, conf.int = T, exponentiate = T)
+asthma_pha_hard_output <- asthma_pha_hard_output %>%
+  mutate(model = rep("Asthma in PHA hard units", nrow(asthma_pha_hard_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+asthma_pha_hard_output_wald <- data.frame(
+  model = rep("Asthma in PHA hard units", 4),
+  term = c("Age", "Gender", "Race/ethnicity", "Length of time"),
+  chi2 = c(
+    wald.test(b = coef(asthma_pha_hard), Sigma = vcov(asthma_pha_hard), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_hard), Sigma = vcov(asthma_pha_hard), Terms = 7:8)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_hard), Sigma = vcov(asthma_pha_hard), Terms = 9:14)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_hard), Sigma = vcov(asthma_pha_hard), Terms = 15:16)$result$chi2[3]
+  )
+)
+
+
+### Compare asthma within PHAs in public housing
+asthma_pha_soft <- glm(denominator_1yr ~ agency_new + age_grp + gender_c + ethn_c + length_grp + vouch_type_final,
+                       data = filter(amr_regression_df, agency_new != "Non-PHA" & subsidy_type == "TENANT BASED/SOFT UNIT"),
+                       family = "binomial")
+
+summary(asthma_pha_soft)
+
+asthma_pha_soft_output <- tidy(asthma_pha_soft, conf.int = T, exponentiate = T)
+asthma_pha_soft_output <- asthma_pha_soft_output %>%
+  mutate(model = rep("Asthma in PHA soft units", nrow(asthma_pha_soft_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+asthma_pha_soft_output_wald <- data.frame(
+  model = rep("Asthma in PHA soft units", 5),
+  term = c("Age", "Gender", "Race/ethnicity", "Time in housing", "Voucher type"),
+  chi2 = c(
+    wald.test(b = coef(asthma_pha_soft), Sigma = vcov(asthma_pha_soft), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_soft), Sigma = vcov(asthma_pha_soft), Terms = 7:8)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_soft), Sigma = vcov(asthma_pha_soft), Terms = 9:14)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_soft), Sigma = vcov(asthma_pha_soft), Terms = 15:16)$result$chi2[3],
+    wald.test(b = coef(asthma_pha_soft), Sigma = vcov(asthma_pha_soft), Terms = 17:21)$result$chi2[3]
+  )
+)
+
+
+### Compare AMR among PHA to non-PHA
+amr_overall <- glm(numerator_1yr ~ pha + age_grp + gender_c + ethn_c,
+                      data = filter(amr_regression_df, denominator_1yr == 1),
+                      family = "binomial")
+
+summary(amr_overall)
+
+# Summarise output using broom package
+amr_overall_output <- tidy(amr_overall, conf.int = T, exponentiate = T)
+amr_overall_output <- amr_overall_output %>%
+  mutate(model = rep("AMR comparing PHA/non-PHA", nrow(amr_overall_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+amr_overall_output_wald <- data.frame(
+  model = rep("AMR comparing PHA/non-PHA", 3),
+  term = c("Age", "Gender", "Race/ethnicity"),
+  chi2 = c(
+    wald.test(b = coef(amr_overall), Sigma = vcov(amr_overall), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(amr_overall), Sigma = vcov(amr_overall), Terms = 7:8)$result$chi2[3],
+    wald.test(b = coef(amr_overall), Sigma = vcov(amr_overall), Terms = 9:14)$result$chi2[3]
+  )
+)
+
+### Compare AMR within PHAs in public housing
+amr_pha_hard <- glm(numerator_1yr ~ agency_new + age_grp + gender_c + ethn_c + length_grp + operator_type,
+                       data = filter(amr_regression_df, agency_new != "Non-PHA" & subsidy_type == "HARD UNIT" &
+                                       operator_type != "" & denominator_1yr == 1),
+                       family = "binomial")
+
+summary(amr_pha_hard)
+amr_pha_hard_output <- tidy(amr_pha_hard, conf.int = T, exponentiate = T)
+amr_pha_hard_output <- amr_pha_hard_output %>%
+  mutate(model = rep("AMR in PHA hard units", nrow(amr_pha_hard_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+amr_pha_hard_output_wald <- data.frame(
+  model = rep("AMR in PHA hard units", 4),
+  term = c("Age", "Gender", "Race/ethnicity", "Time in housing"),
+  chi2 = c(
+    wald.test(b = coef(amr_pha_hard), Sigma = vcov(amr_pha_hard), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(amr_pha_hard), Sigma = vcov(amr_pha_hard), Terms = 7:8)$result$chi2[3],
+    wald.test(b = coef(amr_pha_hard), Sigma = vcov(amr_pha_hard), Terms = 9:14)$result$chi2[3],
+    wald.test(b = coef(amr_pha_hard), Sigma = vcov(amr_pha_hard), Terms = 15:16)$result$chi2[3]
+  )
+)
+
+
+### Compare asthma within PHAs in public housing
+# Exclude small number with multiple gender as all fall in same AMR category
+amr_pha_soft <- glm(numerator_1yr ~ agency_new + age_grp + gender_c + ethn_c + length_grp + vouch_type_final,
+                       data = filter(amr_regression_df, agency_new != "Non-PHA" & 
+                                       subsidy_type == "TENANT BASED/SOFT UNIT" & denominator_1yr == 1 & 
+                                       gender_c != "Multiple"),
+                       family = "binomial")
+
+summary(amr_pha_soft)
+
+amr_pha_soft_output <- tidy(amr_pha_soft, conf.int = T, exponentiate = T)
+amr_pha_soft_output <- amr_pha_soft_output %>%
+  mutate(model = rep("AMR in PHA soft units", nrow(amr_pha_soft_output))) %>%
+  select(model, term, estimate, std.error, p.value, conf.low, conf.high)
+
+amr_pha_soft_output_wald <- data.frame(
+  model = rep("AMR in PHA soft units", 5),
+  term = c("Age", "Gender", "Race/ethnicity", "Time in housing", "Voucher type"),
+  chi2 = c(
+    wald.test(b = coef(amr_pha_soft), Sigma = vcov(amr_pha_soft), Terms = 3:6)$result$chi2[3],
+    wald.test(b = coef(amr_pha_soft), Sigma = vcov(amr_pha_soft), Terms = 7:7)$result$chi2[3],
+    wald.test(b = coef(amr_pha_soft), Sigma = vcov(amr_pha_soft), Terms = 8:15)$result$chi2[3],
+    wald.test(b = coef(amr_pha_soft), Sigma = vcov(amr_pha_soft), Terms = 16:17)$result$chi2[3],
+    wald.test(b = coef(amr_pha_soft), Sigma = vcov(amr_pha_soft), Terms = 17:20)$result$chi2[3]
+  )
+)
+
+
+### Combine together
+model_output <- bind_rows(asthma_overall_output, asthma_pha_hard_output, asthma_pha_soft_output,
+                          amr_overall_output, amr_pha_hard_output, amr_pha_soft_output) %>%
+  mutate_if(is.numeric, round, 4)
+
+model_output_wald <- bind_rows(asthma_overall_output_wald, asthma_pha_hard_output_wald, 
+                               asthma_pha_soft_output_wald,
+                               amr_overall_output_wald, amr_pha_hard_output_wald, 
+                               amr_pha_soft_output_wald) %>%
+  mutate(chi2 = round(chi2, 4))
+
+model_output_overall <- bind_rows(model_output, model_output_wald) %>%
+  mutate(term = str_replace(term, "ethn_c", "Race/ethnicity: "),
+         term = str_replace(term, "gender_c", "Gender: "),
+         term = str_replace(term, "age_grp", "Age: "),
+         term = str_replace(term, "length_grp", "Time in housing: "),
+         term = str_replace(term, "agency_new", "PHA: "),
+         term = str_replace(term, "operator_type", "Operator type: "),
+         term = str_replace(term, "vouch_type_final", "Voucher type: ")) %>%
+  arrange(model, term) %>%
+  rename(odds_ratio = estimate, SE = std.error, p = p.value,
+         ci_lb = conf.low, ci_ub = conf.high) %>%
+  mutate_at(vars(p, chi2),
+            funs(case_when(
+              . == 0 ~ as.character("<0.0001"),
+              TRUE ~ as.character(.)
+              )
+            ))
+
+
+### Write out table
+options(knitr.kable.NA = '')
+temp <- model_output_overall %>% 
+  filter(model == "Asthma comparing PHA/non-PHA") %>%
+  select(-model) %>%
+  mutate(p = case_when(
+    is.na(p) ~ NA_character_,
+    TRUE ~ cell_spec(p, "latex", bold = ifelse(as.numeric(str_replace(p, "<", "")) < 0.05, T, F))
+    ),
+    chi2 = case_when(
+      is.na(chi2) ~ NA_character_,
+      TRUE ~ cell_spec(chi2, "latex", bold = ifelse(as.numeric(str_replace(chi2, "<", "")) < 0.05, T, F))
+      )) %>%
+  kable(format = "latex", booktabs = T, escape = F,
+        caption = "Binomial regression model outputs for 1-yr asthma and  AMR") %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group")
+
+temp <- gsub("(_)", "\\\\\\1", temp)
+
+render(file.path(getwd(), "analyses/pha_asthma_med_ratio_output.Rmd"), "pdf_document",
+       output_file = file.path(dashh_2_path, "Asthma", "pha_asthma_med_ratio_output.pdf"))
 
 
 
