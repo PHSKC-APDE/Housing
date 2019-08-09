@@ -39,6 +39,11 @@ source(file = paste0(getwd(), "/processing/metadata/set_data_env.r"))
 METADATA <- RJSONIO::fromJSON(paste0(getwd(), "/processing/metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
+if (sql == TRUE) {
+  library(odbc) # Used to connect to SQL server
+  db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+}
+
 #### Bring in data ####
 pha_cleanadd_sort_dedup <- readRDS(file.path(housing_path, pha_cleanadd_sort_dedup_fn))
 pha_cleanadd_sort_dedup <- setDT(pha_cleanadd_sort_dedup)
@@ -226,9 +231,50 @@ pha_longitudinal <- merge(pha_longitudinal, zips,
 rm(zips)
 
 
+### Reorder variables
+pha_longitudinal <- pha_longitudinal[, 
+                                     .(pid, ssn_new, ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, 
+                                       dob, gender_new, citizen, disability, relcode, ssn_id_m6, ssn_id_m6_junk, 
+                                       lname_new_m6, fname_new_m6, mname_new_m6, lnamesuf_new_m6, gender_new_m6, 
+                                       dob_m6, age, adult, senior, r_aian_new, r_asian_new, r_black_new, 
+                                       r_nhpi_new, r_white_new, r_hisp_new, race_new, mbr_num, hh_ssn_new, 
+                                       hh_ssn_c, hh_lname, hh_fname, hh_mname, hh_lnamesuf, hh_dob, hh_id, 
+                                       hh_ssn_id_m6, hh_ssn_id_m6_junk, hh_lname_m6, hh_lnamesuf_m6, hh_fname_m6, 
+                                       hh_mname_m6, hh_dob_m6, hh_id_new, list_date, list_zip, list_homeless, 
+                                       housing_act, agency_new, major_prog, prog_type, subsidy_type, operator_type, 
+                                       vouch_type_final, agency_prog_concat, unit_add, unit_apt, unit_apt2, 
+                                       unit_city, unit_state, unit_zip, unit_add_new, unit_apt_new, unit_city_new, 
+                                       unit_state_new, unit_zip_new, unit_concat, property_id, property_name, 
+                                       property_type, portfolio, portfolio_final, unit_id, unit_type, unit_year, 
+                                       access_unit, access_req, access_rec, bed_cnt, admit_date, startdate, enddate, 
+                                       port_in, port_out_kcha, port_out_sha, cost_pha, asset_val, asset_inc, 
+                                       inc_fixed, inc_vary, inc, inc_excl, inc_adj, hh_asset_val, hh_asset_inc, 
+                                       hh_asset_impute, hh_asset_inc_final, hh_inc_fixed, hh_inc_vary, hh_inc, 
+                                       hh_inc_adj, hh_inc_tot, hh_inc_deduct, hh_inc_tot_adj, rent_type, rent_tenant, 
+                                       rent_mixfam, ph_util_allow, ph_rent_ceiling, subs_type, bdrm_voucher, 
+                                       cost_month, rent_owner, tb_util_allow, rent_gross, rent_subs, rent_tenant_owner, 
+                                       rent_mixfam_owner, tb_rent_ceiling, incasset_id, subsidy_id, vouch_num, 
+                                       cert_id, increment, sha_source, kcha_source, eop_source, cov_time, period, 
+                                       start_housing, start_pha, start_prog, time_housing, time_pha, time_prog, 
+                                       age12, age13, age14, age15, age16, age17, agegrp, gender2, disability2, kc_area)]
+
 
 #### Save point ####
 saveRDS(pha_longitudinal, file = file.path(housing_path, pha_longitudinal_fn))
+
+
+#### WRITE RESHAPED DATA TO SQL ####
+if (sql == TRUE) {
+  dbWriteTable(db_apde51, 
+               name = DBI::Id(schema = "stage", table = "pha_"), 
+               value = as.data.frame(pha_longitudinal),
+               field.types = c(dob = "date", dob_m6 = "date",
+                               hh_dob = "date", hh_dob_m6 = "date",
+                               admit_date = "date", startdate = "date",
+                               enddate = "date"),
+               overwrite = T)
+}
+
 
 ### Clean up remaining data frames
 rm(pha_cleanadd_sort_dedup)

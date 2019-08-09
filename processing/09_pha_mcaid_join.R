@@ -26,195 +26,121 @@
 
 ##### Set up global parameter and call in libraries #####
 options(max.print = 350, tibble.print_max = 30, scipen = 999)
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
 library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
+library(glue) # Used to put together SQL queries
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
+library(data.table) # Used to manipulate data
 library(RecordLinkage) # used to make the linkage
 library(phonics) # used to extract phonetic version of names
 
 
 ##### Connect to the servers #####
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-db.claims51 <- dbConnect(odbc(), "PHClaims51")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+db_claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
 ##### Bring in data #####
 ### Housing
-pha_longitudinal <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_longitudinal.Rda"))
+# use stage schema for now but switch to final once QA approach is sorted
+pha_longitudinal <- DBI::dbReadTable(db_apde51, DBI::Id(schema = "stage", table = "pha"))
+
+
+# Dates are being read in as character
+# Seems to be an odbc driver/SQL server issue rather than R; they have type of -9
+pha_longitudinal <- pha_longitudinal %>%
+  mutate(dob = as.Date(dob),
+         dob_m6 = as.Date(dob_m6),
+         hh_dob = as.Date(hh_dob),
+         hh_dob_m6 = as.Date(hh_dob_m6),
+         admit_date = as.Date(admit_date),
+         startdate = as.Date(startdate),
+         enddate = as.Date(enddate))
+
+# Set to a data.table
+pha_longitudinal <- setDT(pha_longitudinal)
 
 
 # Limit to one row per person and only variables used for merging (use most recent row of data)
 # Filter if person's most recent enddate is <2012 since they can't match to Medicaid
-pha_merge <- pha_longitudinal %>%
-  filter(year(enddate) >= 2012) %>%
-  distinct(ssn_id_m6, lname_new_m6, fname_new_m6, mname_new_m6, 
-           dob_m6, gender_new_m6, enddate) %>%
-  arrange(ssn_id_m6, lname_new_m6, fname_new_m6, mname_new_m6, 
-          dob_m6, gender_new_m6, enddate) %>%
-  group_by(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6) %>%
-  slice(n()) %>%
-  ungroup() %>%
-  select(-(enddate)) %>%
-  rename(ssn_new = ssn_id_m6, lname_new = lname_new_m6, 
-         fname_new = fname_new_m6, mname_new = mname_new_m6, 
-         dob = dob_m6, gender_new = gender_new_m6) %>%
-  mutate(dob_y = year(dob), dob_m = month(dob), dob_d = day(dob),
-         # Make a variable to match the Medicaid ID and order vars the same 
-         mid = "") %>%
-  select(mid, ssn_new:dob_d)
+pha_merge <- pha_longitudinal[year(enddate) >= 2012, 
+                              .(ssn_id_m6, lname_new_m6, fname_new_m6, mname_new_m6, 
+                                dob_m6, gender_new_m6, enddate)]
+pha_merge <- unique(pha_merge)
+setorder(pha_merge, ssn_id_m6, lname_new_m6, fname_new_m6, mname_new_m6, 
+         dob_m6, gender_new_m6, enddate, na.last = F)
+pha_merge <- pha_merge[pha_merge[, .I[.N], by = .(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6)]$V1]
+pha_merge[, enddate := NULL]
+setnames(pha_merge, 
+         old = c("ssn_id_m6", "lname_new_m6", "fname_new_m6", "mname_new_m6", 
+                 "dob_m6", "gender_new_m6"),
+         new = c("ssn_new", "lname_new", "fname_new", "mname_new", "dob", "gender_new"))
+pha_merge[, ':=' (
+  dob = as.Date(dob), dob_y = year(dob), dob_m = month(dob), dob_d = day(dob),
+  # Make a variable to match the Medicaid ID and order vars the same 
+  id_mcaid = "")]
+pha_merge <- pha_merge[, .(id_mcaid, ssn_new, lname_new, fname_new, mname_new, 
+                           gender_new, dob, dob_y, dob_m, dob_d)]
 
 
-### Basic Medicaid eligibility table with link to names (~ 60 secs)
-system.time(
-  mcaid <- dbGetQuery(db.claims51,
-                     "SELECT DISTINCT b.mid AS id, c.LAST_NAME AS lname_m, 
-                        c.FIRST_NAME AS fname_m, c.MIDDLE_NAME AS mname_m
-                     FROM (
-                       SELECT a.MEDICAID_RECIPIENT_ID AS mid, max(calmo) as maxdate
-                       FROM (
-                         SELECT MEDICAID_RECIPIENT_ID, 
-                         cast(CLNDR_YEAR_MNTH as bigint) as calmo
-                         from PHClaims.dbo.mcaid_elig_raw
-                         ) AS a
-                       GROUP BY a.MEDICAID_RECIPIENT_ID
-                       ) AS b
-                     
-                     LEFT JOIN (
-                       SELECT MEDICAID_RECIPIENT_ID, LAST_NAME, FIRST_NAME, 
-                          MIDDLE_NAME, CLNDR_YEAR_MNTH
-                       FROM PHClaims.dbo.mcaid_elig_raw
-                       ) AS c
-                     
-                     ON b.mid = c.MEDICAID_RECIPIENT_ID AND 
-                        b.maxdate = c.CLNDR_YEAR_MNTH
-                     ORDER BY id, lname_m, fname_m, mname_m")
+
+### Basic Medicaid eligibility table with link to names (~60 secs)
+system.time(mcaid <- 
+              dbGetQuery(db_claims51,
+              "SELECT DISTINCT b.id_mcaid, c.lname_m, c.fname_m, c.mname_m, c.ssn_new
+              FROM 
+                (SELECT a.id_mcaid, max(calmo) as maxdate
+                FROM 
+                  (SELECT MEDICAID_RECIPIENT_ID AS id_mcaid, CLNDR_YEAR_MNTH as calmo
+                  FROM stage.mcaid_elig) a
+                  GROUP BY a.id_mcaid) b
+                  LEFT JOIN 
+                    (SELECT MEDICAID_RECIPIENT_ID AS id_mcaid, 
+                    LAST_NAME AS lname_m, FIRST_NAME AS fname_m, 
+                    MIDDLE_NAME AS mname_m, SOCIAL_SECURITY_NMBR AS ssn_new,
+                    CLNDR_YEAR_MNTH
+                    FROM stage.mcaid_elig) c
+                  ON b.id_mcaid = c.id_mcaid AND b.maxdate = c.CLNDR_YEAR_MNTH
+              ORDER BY b.id_mcaid, c.lname_m, c.fname_m, c.mname_m, c.ssn_new"))
+
+
+### Bring in time-varying data (eligibility, dual status, address)
+# Make new collapsed from/to dates based on short list of variables (~160 secs)
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/R/elig_timevar_collapse.R")
+system.time(mcaid_dates <- elig_timevar_collapse(
+  db_claims51, source = "mcaid", dual = T, cov_time_day = , full_benefit = T,
+  cov_type = T, mco_id = T, geo_add1_clean = T, geo_add2_clean = T, geo_city_clean = T,
+  geo_state_clean = T, geo_zip_clean = T,
+  geocode_vars = list("geo_zip_centroid", "geo_street_centroid", "geo_tractce10"))
 )
-
-
-### Bring in data that combines new dates for change in elig status or address (~10 mins)
-system.time(
-  mcaid_dates <- dbGetQuery(db.claims51,
-                           "SELECT 	j.id, MIN(j.from_date) AS from_date, MAX(j.to_date) AS to_date, j.dual, 
-                           j.add1_new, j.city_new, j.state_new, j.zip_new, 
-                           datediff(dd, min(j.from_date), max(j.to_date)) + 1 as cov_time_day
-                           
-                           FROM (
-                             select i.id, i.dual, i.add1_new, i.city_new, i.state_new, i.zip_new, i.from_date, i.to_date, i.group_num2,
-                             sum(case when i.group_num2 is null then 0 else 1 end) over
-                             (partition by i.id, i.dual, i.add1_new, i.city_new, i.state_new, i.zip_new 
-                               ORDER BY i.temp_row rows between unbounded preceding and current row) as group_num3
-                             
-                             from (
-                               select h.id, h.dual, h.add1_new, h.city_new, h.state_new, h.zip_new, h.from_date, h.to_date,
-                               case 
-                               when h.from_date - lag(h.to_date) over (partition by h.id, h.dual, h.add1_new, h.city_new, h.state_new, h.zip_new 
-                                                                       ORDER BY h.id, h.from_date) <= 1 then null
-                               else row_number() OVER (partition by h.id, h.dual, h.add1_new, h.city_new, h.state_new, h.zip_new ORDER BY h.from_date)
-                               end as group_num2,
-                               row_number() over (partition by h.id, h.dual, h.add1_new, h.city_new, h.state_new, h.zip_new ORDER BY h.id, h.from_date, h.to_date) AS temp_row
-                               
-                               FROM (
-                                 SELECT g.id, g.dual, g.add1_new, g.city_new, g.state_new, g.zip_new, g.from_date, g.to_date,
-                                 min(g.from_date) OVER (partition by g.id, g.dual,g.add1_new, g.city_new, g.state_new, g.zip_new ORDER BY g.id, g.from_date, g.to_date desc
-                                                        rows between unbounded preceding and current row) as 'min_from',
-                                 
-                                 max(g.to_date) OVER (partition by g.id, g.dual, g.add1_new, g.city_new, g.state_new, g.zip_new order by g.id, g.from_date, g.to_date desc
-                                                      rows between unbounded preceding and current row) as 'max_to'
-                                 
-                                 FROM (
-                                   select f.id, f.dual, f.add1_new, f.city_new, f.state_new, f.zip_new, f.group_num,
-                                   case 
-                                   when f.startdate >= f.fromdate then f.startdate
-                                   when f.startdate < f.fromdate then f.fromdate
-                                   else null
-                                   end as from_date,
-                                   case 
-                                   when f.enddate <= f.todate then f.enddate
-                                   when f.enddate > f.todate then f.todate
-                                   else null
-                                   end as to_date
-                                   
-                                   FROM (
-                                     SELECT e.id, e.dual, e.add1_new, e.city_new, e.state_new, e.zip_new,
-                                     min(calmonth) as startdate, dateadd(day, - 1, dateadd(month, 1, max(calmonth))) as enddate,
-                                     e.group_num, e.fromdate, e.todate
-                                     
-                                     FROM (
-                                       SELECT DISTINCT d.id, d.dual, d.add1_new, d.city_new, d.state_new, d.zip_new,
-                                       d.calmonth, d.group_num, d.fromdate, d.todate
-                                       
-                                       FROM (
-                                         SELECT DISTINCT c.id, c.dual, c.add1_new, c.city_new, c.state_new, c.zip_new,
-                                         c.calmonth, c.fromdate, c.todate,
-                                         datediff(month, 0, calmonth) - 
-                                           row_number() over (partition by c.id, c.dual, c.add1_new,
-                                                              c.city_new, c.state_new, c.zip_new ORDER BY calmonth) as group_num
-                                         
-                                         FROM (
-                                           SELECT DISTINCT a.id, a.dual, CONVERT(DATETIME, CAST(a.CLNDR_YEAR_MNTH as varchar(200)) + '01', 112) AS calmonth,
-                                           a.fromdate, a.todate, b.add1_new, b.city_new, b.state_new, IIF(b.zip_new IS NULL, a.zip, b.zip_new) AS zip_new
-                                           
-                                           from ( 
-                                             SELECT MEDICAID_RECIPIENT_ID AS 'id', DUAL_ELIG AS 'dual', CLNDR_YEAR_MNTH,
-                                             FROM_DATE AS 'fromdate', TO_DATE AS 'todate', 
-                                             RSDNTL_ADRS_LINE_1 AS 'add1', RSDNTL_ADRS_LINE_2 AS 'add2',
-                                             RSDNTL_CITY_NAME as 'city', 
-                                             RSDNTL_STATE_CODE AS 'state', RSDNTL_POSTAL_CODE AS 'zip'
-                                             FROM [PHClaims].[dbo].[mcaid_elig_raw]
-                                           ) a
-                                           LEFT JOIN (
-                                             SELECT add1, add2, city, state, zip, add1_new, city_new, state_new, zip_new
-                                             FROM [PHClaims].[dbo].[mcaid_elig_address_clean]
-                                           ) b
-                                           ON 
-                                           (a.add1 = b.add1 OR (a.add1 IS NULL AND b.add1 IS NULL)) AND 
-                                           (a.add2 = b.add2 OR (a.add2 IS NULL AND b.add2 IS NULL)) AND 
-                                           (a.city = b.city OR (a.city IS NULL AND b.city IS NULL)) AND 
-                                           (a.state = b.state OR (a.state IS NULL AND b.state IS NULL)) AND 
-                                           (a.zip = b.zip OR (a.zip IS NULL AND b.zip IS NULL))
-                                         ) c
-                                       ) d
-                                     ) e
-                                     GROUP BY e.id, e.dual, e.add1_new, e.city_new, e.state_new, e.zip_new, e.group_num, e.fromdate, e.todate
-                                   ) f
-                                 ) g
-                               ) h
-                               where h.from_date >= h.min_from and h.to_date = h.max_to
-                             ) i
-                           ) j
-                           group by j.id, j.dual, j.add1_new, j.city_new, j.state_new, j.zip_new, j.group_num3
-                           order by j.id, from_date"           
-  )
-)
-
 
 
  ### Processed demographics (~6 secs)
-system.time(mcaid_demog <- dbGetQuery(db.claims51,
-                         "SELECT id, ssnnew, dobnew, gender_mx, 
-                          race_mx, latino, maxlang
-                         FROM PHClaims.dbo.mcaid_elig_demoever"))
+system.time(mcaid_demog <- dbGetQuery(
+  db_claims51, "SELECT id_mcaid, dob, gender_me, race_me, race_latino, lang_max
+  FROM final.mcaid_elig_demo"))
 
 
 #### Join data together ####
 ### First bring the Medicaid demographics and dates together and fix formats
-mcaid_join <- left_join(mcaid_dates, mcaid, by = "id") %>%
-  left_join(., mcaid_demog, by = "id") %>%
-  mutate(
-    gender_mx = as.numeric(car::recode(gender_mx, "'Female' = 1; 'Male' = 2; 'Multiple' = 3; else = NA")),
-    dobnew = as.Date(str_sub(dobnew, 1, 10), format("%Y-%m-%d"))
-    )
+mcaid_join <- left_join(mcaid_dates, mcaid, by = "id_mcaid") %>%
+  left_join(., mcaid_demog, by = "id_mcaid") %>%
+  mutate(gender_me = as.numeric(recode(gender_me, "Female" = 1L, "Male" = 2L,
+                                  "Multiple" = 3L, .default = NA_integer_)),
+         from_date = as.Date(from_date),
+         to_date = as.Date(to_date),
+         dob = as.Date(dob))
 
 # Rename matching variables to match housing data and restrict to these vars 
 # (may expand to include race and address later)
 mcaid_merge <- mcaid_join %>%
-  rename(mid = id, ssn_new = ssnnew, lname_new = lname_m, fname_new = fname_m, 
-         mname_new = mname_m, gender_new = gender_mx, dob = dobnew) %>%
+  rename(lname_new = lname_m, fname_new = fname_m, mname_new = mname_m, 
+         gender_new = gender_me) %>%
   # Get columns in the same order as pha_merge
-  select(mid, ssn_new, lname_new, fname_new, mname_new, gender_new, dob) %>%
+  select(id_mcaid, ssn_new, lname_new, fname_new, mname_new, gender_new, dob) %>%
   # Reduce to one row per person
   distinct() %>%
   mutate(dob_y = year(dob), dob_m = month(dob), dob_d = day(dob),
@@ -222,12 +148,12 @@ mcaid_merge <- mcaid_join %>%
          mname_new = ifelse(is.na(mname_new), "", mname_new))
   
 
-##### Match 1 #####
+#### MATCH 1 ####
 # Block on SSN, match other vars
 match1 <- compare.linkage(pha_merge, mcaid_merge, blockfld = c("ssn_new"),
                 strcmp = c("mname_new", "gender_new", "dob_y", "dob_m", "dob_d"),
                 phonetic = c("lname_new", "fname_new"), phonfun = soundex,
-                exclude = c("dob", "mid"))
+                exclude = c("dob", "id_mcaid"))
 
 # Using EpiLink approach
 match1_tmp <- epiWeights(match1)
@@ -250,7 +176,7 @@ pairs1_full <- pairs1 %>%
          dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2 &
          abs(dob.1 - dob.2) <= 731)
   ) %>%
-  select(pair, ssn_new.1:dob_d.1, ssn_new.2:dob_d.2, mid.2, Weight)
+  select(pair, ssn_new.1:dob_d.1, ssn_new.2:dob_d.2, id_mcaid.2, Weight)
 
 
 ##### Match 2 #####
@@ -263,7 +189,7 @@ pha_merge_id <- pha_merge %>%
 match2 <- compare.linkage(pha_merge_id, mcaid_merge, blockfld = c("lname_new"),
                           strcmp = c("mname_new", "gender_new", "dob_y", "dob_m", "dob_d"),
                           phonetic = c("fname_new"), phonfun = soundex,
-                          exclude = c("dob", "ssn_new", "mid"))
+                          exclude = c("dob", "ssn_new", "id_mcaid"))
 
 # Using EpiLink approach
 match2_tmp <- epiWeights(match2)
@@ -278,7 +204,7 @@ pairs2 <- mutate(pairs2, pair = row_number() + max(pairs1$pair))
 # Allow for DOB date/month swaps but otherwise have stricter criteria for DOB differences
 pairs2_full <- pairs2 %>%
   filter(Weight >= 0.85 & abs(dob.1 - dob.2) <= 30) %>% 
-  select(pair, ssn_new.1:dob.1, ssn_new.2:dob.2, mid.2, Weight)
+  select(pair, ssn_new.1:dob.1, ssn_new.2:dob.2, id_mcaid.2, Weight)
 
 ##### END OF MATCHING #####
 
@@ -289,41 +215,42 @@ pairs_final <- pairs_final %>% distinct()
 
 # Join back to Medicaid and PHA data (keep full data from all existing datasets)
 pha_mcaid_merge <- pairs_final %>%
-  # Get the Medicaid SSN back to numeric for joining with full Medicaid data
-  mutate(ssn_new.2 = as.numeric(ssn_new.2)) %>%
-  full_join(., mcaid_join, by = c("mid.2" = "id")) %>%
+  select(id_mcaid.2, ssn_new.1, lname_new.1, fname_new.1, dob.1) %>%
+  full_join(., mcaid_join, by = c("id_mcaid.2" = "id_mcaid")) %>%
   full_join(., pha_longitudinal, by = c("ssn_new.1" = "ssn_id_m6", 
                                         "lname_new.1" = "lname_new_m6",
                                         "fname_new.1" = "fname_new_m6", 
                                         "dob.1" = "dob_m6"))
-
 
 # Rename core variables
 # (m for Medicaid, h for housing where there is ambiguity)
 pha_mcaid_merge <- pha_mcaid_merge %>%
   rename(startdate_m = from_date, enddate_m = to_date,
          startdate_h = startdate, enddate_h = enddate,
-         mid = mid.2, dual_elig_m = dual,
-         ssn_h = ssn_new.1, ssn_m = ssn_new.2,
+         id_mcaid = id_mcaid.2, dual_elig_m = dual, full_benefit_m = full_benefit,
+         cov_type_m = cov_type, mco_id_m = mco_id, 
+         ssn_h = ssn_new.y, ssn_m = ssn_new.x,
          lname_h = lname_new.1, lnamesuf_h = lnamesuf_new_m6, 
          fname_h = fname_new.1, mname_h = mname_new_m6,
-         dob_h = dob.1, dob_m = dobnew, agegrp_h = agegrp, adult_h = adult,
+         dob_h = dob.y, dob_m = dob.x, agegrp_h = agegrp, adult_h = adult,
          senior_h = senior, gender_h = gender_new_m6, 
-         gender2_h = gender2, gender_m = gender_mx,
-         race_h = race_new, race_m = race_mx, 
-         hisp_h = r_hisp_new, hisp_m = latino,
+         gender2_h = gender2, gender_m = gender_me,
+         race_h = race_new, race_m = race_me, 
+         hisp_h = r_hisp_new, hisp_m = race_latino,
+         lang_m = lang_max, 
          disability_h = disability, disability2_h = disability2,
          citizen_h = citizen, hh_id_new_h = hh_id_new,
          hh_ssn_h = hh_ssn_id_m6, hh_lname_h = hh_lname_m6, 
          hh_lnamesuf_h = hh_lnamesuf_m6, hh_fname_h = hh_fname_m6,
          hh_mname_h = hh_mname_m6, hh_dob_h = hh_dob_m6,
          unit_add_h = unit_add_new, unit_apt_h = unit_apt_new,
-         unit_apt2_h = unit_apt2_new, unit_city_h = unit_city_new,
-         unit_state_h = unit_state_new, unit_zip_h = unit_zip_new,
-         unit_add_m = add1_new, unit_city_m = city_new,
-         unit_state_m = state_new, unit_zip_m = zip_new,
-         unit_concat_h = unit_concat, lon_h = lon, lat_h = lat, 
-         add_geocoded_h = add_geocoded)
+         unit_city_h = unit_city_new, unit_state_h = unit_state_new, 
+         unit_zip_h = unit_zip_new,
+         unit_add_m = geo_add1_clean, unit_apt_m = geo_add2_clean, 
+         unit_city_m = geo_city_clean, unit_state_m = geo_state_clean, 
+         unit_zip_m = geo_zip_clean, unit_zip_centroid_m = geo_zip_centroid, 
+         unit_street_centroid_m = geo_street_centroid, unit_tract_m = geo_tractce10, 
+         unit_concat_h = unit_concat, kc_area_h = kc_area)
 
 # Select useful columns
 pha_mcaid_merge <- pha_mcaid_merge %>%
@@ -341,13 +268,12 @@ pha_mcaid_merge <- pha_mcaid_merge %>%
       agency_new, major_prog, prog_type, subsidy_type, operator_type, 
       vouch_type_final, agency_prog_concat,
       # Housing address info
-      unit_add_h:unit_zip_h, unit_concat_h, kc_area,
-      add_geocoded_h, lon_h, lat_h,
+      unit_add_h, unit_apt_h, unit_city_h, unit_state_h, unit_zip_h, unit_concat_h, 
+      kc_area_h,
       # Property/portfolio info
       property_id, property_name, property_type, portfolio, portfolio_final,
       # Housing unit info
-      unit_id, unit_type, unit_year, access_unit, access_req, access_rec, 
-      bed_cnt, move_in_date,
+      unit_id, unit_type, unit_year, access_unit, access_req, access_rec, bed_cnt, 
       # Port info
       port_in, port_out_kcha, port_out_sha, cost_pha,
       # Housing personal asset/income info
@@ -362,24 +288,14 @@ pha_mcaid_merge <- pha_mcaid_merge %>%
       incasset_id, subsidy_id, vouch_num, cert_id, increment, sha_source,
       kcha_source, eop_source,
       # Name, SSN, and demog variables from Medicaid data
-      mid, ssn_m, lname_m, fname_m, mname_m, dob_m, gender_m, race_m, hisp_m, 
-      dual_elig_m,
+      id_mcaid, ssn_m, lname_m, fname_m, mname_m, dob_m, gender_m, race_m, hisp_m, 
+      lang_m, dual_elig_m, full_benefit_m, cov_type_m, mco_id_m, 
       # Medicaid address info
-      unit_add_m, unit_city_m, unit_state_m, unit_zip_m,
+      unit_add_m, unit_apt_m, unit_city_m, unit_state_m, unit_zip_m,
+      unit_zip_centroid_m, unit_street_centroid_m, unit_tract_m, 
       # Date info
-      startdate_h, enddate_h, period:time_prog, startdate_m, enddate_m)
-
-
-pha_mcaid_merge <- pha_mcaid_merge %>%
-  # Set up coverage times to look for overlap
-  mutate(
-    # Make sure dates are in the correct format
-    startdate_h = as.Date(startdate_h, origin="1970-01-01", format = "%Y-%m-%d"),
-    enddate_h = as.Date(enddate_h, origin="1970-01-01", format = "%Y-%m-%d"),
-    startdate_m = as.Date(startdate_m, origin="1970-01-01", format = "%Y-%m-%d"),
-    enddate_m = as.Date(enddate_m, origin="1970-01-01", format = "%Y-%m-%d")
-  )
-
+      startdate_h, enddate_h, period, start_housing, start_pha, start_prog, 
+      time_housing, time_pha, time_prog, startdate_m, enddate_m)
 
 
 #### Set up new variables ####
@@ -390,24 +306,24 @@ pha_mcaid_merge <- pha_mcaid_merge %>%
 pha_mcaid_merge <- pha_mcaid_merge %>%
   mutate(
     ssn_c = case_when(!is.na(ssn_m) ~ as.character(ssn_m),
-                      !is.na(ssn_h) ~ ssn_h),
+                      !is.na(ssn_h) ~ as.character(ssn_h)),
     dob_c = as.Date(ifelse(is.na(dob_m), dob_h, dob_m), origin = "1970-01-01"),
     race_c = case_when(!is.na(race_m) ~ race_m,
                             !is.na(race_h) ~ race_h),
     hisp_c = case_when(!is.na(hisp_m) ~ hisp_m,
-                       !is.na(hisp_h) ~ hisp_h),
+                       !is.na(hisp_h) ~ as.integer(hisp_h)),
     gender_c = case_when(!is.na(gender_m) ~ gender_m,
                        !is.na(gender_h) ~ gender_h)
     )
 
 
 # Make new unique ID to anonymize data
-pha_mcaid_merge$pid2 <- group_indices(pha_mcaid_merge, mid, ssn_c, lname_h, fname_h, dob_c)
+pha_mcaid_merge$pid2 <- group_indices(pha_mcaid_merge, id_mcaid, ssn_c, lname_h, fname_h, dob_c)
 
 
 #### Save point ####
-saveRDS(pha_mcaid_merge, file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
-#pha_mcaid_merge <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_mcaid_merge.Rda"))
+saveRDS(pha_mcaid_merge, file = file.path(housing_path, "pha_mcaid_01_merged.Rda"))
+#pha_mcaid_merge <- readRDS(file = file.path(housing_path, "pha_mcaid_01_merged.Rda"))
 
 # Remove temporary data
 rm(list = ls(pattern = "pairs"))
@@ -419,13 +335,13 @@ rm(mcaid_dates)
 rm(mcaid_demog)
 rm(mcaid_join)
 rm(mcaid_merge)
+rm(pha_longitudinal)
 gc()
 
 
 ##### Calculate overlapping periods #####
 ### Set up intervals in each data set
 # This is horribly slow and ugly code. Would like to make it more efficient.
-
 temp <- pha_mcaid_merge %>%
   mutate(overlap_type = case_when(
     # First ID the non-matches
@@ -468,36 +384,34 @@ temp <- pha_mcaid_merge %>%
 
 
 ### Expand out rows to separate out overlaps
-temp_ext <- temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)]
+temp_ext <- setDT(temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)])
 
-
-temp_ext <- temp_ext %>% 
-  group_by(pid2, startdate_h, enddate_h, startdate_m, enddate_m) %>% 
-  mutate(rownum_temp = row_number()) %>%
-  ungroup() %>%
-  arrange(pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, 
-          enddate_o, overlap_type, rownum_temp) %>%
-  mutate(
-    # Remove non-overlapping dates
-    startdate_h = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
-                                   (overlap_type == 7 & rownum_temp == 1), 
-                                 NA, startdate_h), origin = "1970-01-01"), 
-    enddate_h = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
+temp_ext[, rownum_temp := rowid(pid2, startdate_h, enddate_h, startdate_m, enddate_m)]
+setorder(temp_ext, pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, 
+         enddate_o, overlap_type, rownum_temp)
+temp_ext[, ':=' (
+  # Remove non-overlapping dates
+  startdate_h = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
                                  (overlap_type == 7 & rownum_temp == 1), 
-                               NA, enddate_h), origin = "1970-01-01"),
-    startdate_m = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
-                                   (overlap_type == 7 & rownum_temp == 2), 
-                                 NA, startdate_m), origin = "1970-01-01"), 
-    enddate_m = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
+                               NA, startdate_h), origin = "1970-01-01"), 
+  enddate_h = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
+                               (overlap_type == 7 & rownum_temp == 1), 
+                             NA, enddate_h), origin = "1970-01-01"),
+  startdate_m = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
                                  (overlap_type == 7 & rownum_temp == 2), 
-                               NA, enddate_m), origin = "1970-01-01")) %>%
-  distinct(pid2, startdate_h, enddate_h, startdate_m, enddate_m, startdate_o, 
-           enddate_o, overlap_type, rownum_temp, .keep_all = TRUE) %>%
-  # Remove first row if start dates are the same or housing is only one day
-  filter(!(overlap_type %in% c(2:5) & rownum_temp == 1 & 
-             (startdate_h == startdate_m | startdate_h == enddate_h))) %>%
-  # Remove third row if enddates are the same
-  filter(!(overlap_type %in% c(2:5) & rownum_temp == 3 & enddate_h == enddate_m))
+                               NA, startdate_m), origin = "1970-01-01"), 
+  enddate_m = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
+                               (overlap_type == 7 & rownum_temp == 2), 
+                             NA, enddate_m), origin = "1970-01-01")
+)]
+# Remove duplicate rows
+temp_ext <- unique(temp_ext)
+
+# Remove first row if start dates are the same or housing is only one day
+temp_ext <- temp_ext[!(overlap_type %in% c(2:5) & rownum_temp == 1 & 
+                         (startdate_h == startdate_m | startdate_h == enddate_h))]
+# Remove third row if enddates are the same
+temp_ext <- temp_ext[!(overlap_type %in% c(2:5) & rownum_temp == 3 & enddate_h == enddate_m)]
 
 
 ### Calculate finalized date columns
@@ -628,7 +542,9 @@ temp_ext <- temp_ext %>%
       TRUE ~ 0)
   ) %>%
   filter(drop == 0 | is.na(drop)) %>%
-  select(-drop)
+  select(-drop, -startdate_o, -enddate_o)
+
+temp_ext <- setDT(temp_ext)
 
 # Remove first temp file, keep the other for later code
 rm(temp)
@@ -645,8 +561,8 @@ gc()
 # Choose variables to keep in the final data
 
 # Jointlist = variables to keep across all rows
-jointlist <- c("pid2", "mid", "ssn_c", "lname_h", "fname_h", "mname_h",
-               "dob_c", "race_c", "hisp_c", "gender_c")
+jointlist <- c("pid2", "id_mcaid", "ssn_c", "lname_h", "fname_h", "mname_h",
+               "dob_c", "race_c", "hisp_c", "gender_c", "lang_m")
 
 houselist <- c(
   # ID, name, and demog variables
@@ -662,14 +578,14 @@ houselist <- c(
   "agency_new",  "major_prog", "prog_type", "subsidy_type", "operator_type",
   "vouch_type_final", "agency_prog_concat",
   # Address info
-  "unit_add_h", "unit_apt_h", "unit_apt2_h", "unit_city_h", "unit_state_h", 
-  "unit_zip_h", "unit_concat_h", "kc_area", "lon_h", "lat_h", "add_geocoded_h",
+  "unit_add_h", "unit_apt_h", "unit_city_h", "unit_state_h", 
+  "unit_zip_h", "unit_concat_h", "kc_area_h",
   # Property/portfolio info
   "property_id", "property_name", "property_type", "portfolio", 
   "portfolio_final",
   # Unit info
   "unit_id", "unit_type", "unit_year", "access_unit", "access_req", 
-  "access_rec", "bed_cnt", "move_in_date",
+  "access_rec", "bed_cnt",
   # Dates
   "startdate_h", "enddate_h", "period", "start_housing", 
   "start_pha", "start_prog", "time_housing", "time_pha", "time_prog",
@@ -693,82 +609,71 @@ medlist <- c(
   "ssn_m", "lname_m", "fname_m", "mname_m", "dob_m", 
   "gender_m", "race_m", "hisp_m",
   # Coverage type
-  "dual_elig_m",
+  "dual_elig_m", "full_benefit_m", "cov_type_m", "mco_id_m", 
   # Address info
-  "unit_add_m", "unit_city_m", "unit_state_m", "unit_zip_m",
+  "unit_add_m", "unit_apt_m", "unit_city_m", "unit_state_m", "unit_zip_m",
+  "unit_zip_centroid_m", "unit_street_centroid_m", "unit_tract_m",
   # Dates
   "startdate_m", "enddate_m")
 
 
+# Make pha_mcaid_merge a DT to try and speed things up
+pha_mcaid_merge <- setDT(pha_mcaid_merge)
+
 # Just the PHA demographics and merging variables
-pha_mcaid_merge_part1 <- pha_mcaid_merge %>%
-  select(jointlist, houselist) %>%
-  distinct()
-temp_ext_h <- temp_ext %>% filter(enroll_type == "h")
-merge1 <- left_join(temp_ext_h, pha_mcaid_merge_part1,
-                    by = c("pid2", "startdate_h", "enddate_h"))
+pha_mcaid_merge_part1 <- pha_mcaid_merge[, c(jointlist, houselist), with = FALSE]
+pha_mcaid_merge_part1 <- unique(pha_mcaid_merge_part1)
+
+temp_ext_h <- temp_ext[enroll_type == "h"]
+merge1 <- merge(temp_ext_h, pha_mcaid_merge_part1,
+                by = c("pid2", "startdate_h", "enddate_h"))
 
 
 # Just the Mediciad demographics and merging variables
-pha_mcaid_merge_part2 <- pha_mcaid_merge %>%
-  select(jointlist, medlist) %>%
-  distinct()
-temp_ext_m <- temp_ext %>% filter(enroll_type == "m")
-merge2 <- left_join(temp_ext_m, pha_mcaid_merge_part2, 
-                    by = c("pid2", "startdate_m", "enddate_m"))
+pha_mcaid_merge_part2 <- pha_mcaid_merge[, c(jointlist, medlist), with = FALSE]
+pha_mcaid_merge_part2 <- unique(pha_mcaid_merge_part2)
+
+temp_ext_m <- temp_ext[enroll_type == "m"]
+merge2 <- merge(temp_ext_m, pha_mcaid_merge_part2,
+                by = c("pid2", "startdate_m", "enddate_m"))
+
 # Deal with duplicate dates
-merge2 <- merge2 %>%
-  arrange(pid2, startdate_c, enddate_c, startdate_h, enddate_h, 
-          startdate_m, enddate_m, mid, ssn_c, lname_h, fname_h, mname_h, dob_c,
-          race_c, hisp_c, gender_c, lname_m, fname_m, mname_m, unit_add_m,
-          unit_zip_m) %>%
-  group_by(pid2, startdate_c, enddate_c) %>%
-  slice(1) %>%
-  ungroup()
-gc()
+setorder(merge2, pid2, startdate_c, enddate_c, startdate_h, enddate_h, 
+         startdate_m, enddate_m, id_mcaid, ssn_c, lname_h, fname_h, mname_h, dob_c,
+         race_c, hisp_c, gender_c, lname_m, fname_m, mname_m, unit_add_m,
+         unit_zip_m)
+merge2 <- merge2[merge2[, .I[1], by = .(pid2, startdate_c, enddate_c)]$V1]
 
 
 # All variables
-pha_mcaid_merge_part3 <- pha_mcaid_merge %>%
-  select(jointlist, houselist, medlist) %>%
-  distinct()
-temp_ext_b <- temp_ext %>% filter(enroll_type == "b")
-merge3 <- left_join(temp_ext_b, pha_mcaid_merge_part3, 
-                    by = c("pid2", "startdate_h", "enddate_h", 
-                           "startdate_m", "enddate_m"))
+pha_mcaid_merge_part3 <- pha_mcaid_merge[, c(jointlist, houselist, medlist), with = FALSE]
+pha_mcaid_merge_part3 <- unique(pha_mcaid_merge_part3)
+
+temp_ext_b <- temp_ext[enroll_type == "b"]
+merge3 <- merge(temp_ext_b, pha_mcaid_merge_part3,
+                by = c("pid2", "startdate_h", "enddate_h", "startdate_m", "enddate_m"))
 
 
-# Remove joined frames after checking that rowcounts of <name>_part<n> 
-# and merge<n> are the same (or almost the same)
-rm(list = ls(pattern = "pha_mcaid_merge_"))
-gc()
+# Check that rowcounts of merge_<n> and temp_ext_<name> are the same (or almost the same)
+
 
 # Join into a single data frame
-pha_mcaid_join <- bind_rows(merge1, merge2, merge3) %>%
-  arrange(pid2, startdate_c, enddate_c)
+pha_mcaid_join <- rbindlist(list(merge1, merge2, merge3), fill = T)
+setorder(pha_mcaid_join, pid2, startdate_c, enddate_c)
 
 # Make single ZIP var now that times are aligned
-pha_mcaid_join <- pha_mcaid_join %>%
-  mutate(zip_c = case_when(
-    !is.na(unit_zip_h) ~ as.integer(unit_zip_h),
-    !is.na(unit_zip_m) ~ as.integer(unit_zip_m)
-    )
-  )
-
-### NB. This produces leads to 2 more rows than in the original temp_ext file
-  # Seems to be because of duplicates in the pha_mcaid_merge_part1 file. 
-  # Need to further investigate this issue
+pha_mcaid_join[, zip_c := ifelse(!is.na(unit_zip_h), unit_zip_h, 
+                                 ifelse(!is.na(unit_zip_m), unit_zip_h, 
+                                        NA_character_))]
 
 # Remove some temp data frames
 rm(list = ls(pattern = "pha_mcaid_merge_"))
 rm(list = ls(pattern = "merge[0-9]"))
 rm(list = ls(pattern = "list$"))
 rm(list = ls(pattern = "temp_ext"))
-rm(pha_longitudinal)
 rm(pha_mcaid_merge)
 gc()
 
 
 #### Save point ####
-saveRDS(pha_mcaid_join, file = paste0(housing_path, 
-                                      "/OrganizedData/pha_mcaid_join.Rda"))
+saveRDS(pha_mcaid_join, file = file.path(housing_path, "pha_mcaid_02_consolidated.Rda"))
