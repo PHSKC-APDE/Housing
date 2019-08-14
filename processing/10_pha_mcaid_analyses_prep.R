@@ -203,7 +203,7 @@ pha_mcaid_demo <- pha_mcaid_final %>%
     ),
     dual_elig_num = case_when(
       dual_elig_m == "Y" ~ 1,
-      dual_elig_m == "N" ~ 2,
+      dual_elig_m == "N" ~ 0,
       is.na(dual_elig_m) ~ 99
     ),
     enroll_type_num = case_when(
