@@ -1,5 +1,5 @@
 code,agegrp,agency_new,r_agency,dual_elig_m,r_dual,enroll_type,r_enroll,gender_c,length_grp,operator_type,portfolio_final,race_c,subsidy_type,voucher_type_final
-0,,Non-PHA,,,,,,,Non-PHA,Non-PHA,Non-PHA,,Non-PHA,Non-PHA
+0,,Non-PHA,,Not dual eligible,,,,,Non-PHA,Non-PHA,Non-PHA,,Non-PHA,Non-PHA
 1,0-17,KCHA,,Dual eligible,,Housing only,,Female,<3 years,Non-PHA operated,Birch Creek,AI/AN,Hard unit,Agency tenant-based
 2,18-24,SHA,,Not dual eligible,,Medicaid only,,Male,3-<6 years,PHA operated,Family,Asian,Soft unit/tenant based,FUP
 3,25-44,,,,,Both,,Multiple,6+ years,,Greenbridge,Black,,General tenant-based
@@ -7,7 +7,7 @@ code,agegrp,agency_new,r_agency,dual_elig_m,r_dual,enroll_type,r_enroll,gender_c
 5,62-64,,,,,,,,,,Highrises/villages,Multiple,,Mod rehab
 6,65+,,,,,,,,,,Lake City Court,NH/PI,,Other (TI/DV)
 7,,,,,,,,,,,Mixed,White,,Partner project-based
-8,Children aged 3-6,,,,,,,,,,New Holly,Other,,PHA operated
+8,Children aged 0-6,,,,,,,,,,New Holly,Other,,PHA operated
 9,,,,,,,,,,,Rainier Vista,,,VASH
 10,,,,,,,,,,,Scattered sites/special,,,
 11,,,,,,,,,,,Senior housing,,,
