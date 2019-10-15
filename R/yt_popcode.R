@@ -134,42 +134,42 @@ yt_popcode <- function(df, year = 12, year_pre = "pt", year_suf = NULL,
   # Use base R vs mutate (ugly but faster)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "N", 1)
+                              coded$pt_tmp >= pt_cut & ((coded$dual_tmp == "N" | coded$dual_tmp == 0) | coded$dual_tmp == 0), 1)
   coded$pop_code <- replace(coded$pop_code,
                             coded$ss_tmp == 1 & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "N", 2)
+                              coded$pt_tmp >= pt_cut & ((coded$dual_tmp == "N" | coded$dual_tmp == 0) | coded$dual_tmp == 0), 2)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               coded$agency_tmp == "SHA" & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "N", 3)
+                              coded$pt_tmp >= pt_cut & ((coded$dual_tmp == "N" | coded$dual_tmp == 0) | coded$dual_tmp == 0), 3)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               coded$agency_tmp == "KCHA" & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "N", 4)
+                              coded$pt_tmp >= pt_cut & (coded$dual_tmp == "N" | coded$dual_tmp == 0), 4)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               (is.na(coded$agency_tmp) | coded$agency_tmp == "Non-PHA") & 
                               coded$enroll_tmp == "m" & 
-                              coded$dual_tmp == "N", 5)
+                              (coded$dual_tmp == "N" | coded$dual_tmp == 0), 5)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "Y", 6)
+                              coded$pt_tmp >= pt_cut & (coded$dual_tmp == "Y" | coded$dual_tmp == 1), 6)
   coded$pop_code <- replace(coded$pop_code,
                             coded$ss_tmp == 1 & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "Y", 7)
+                              coded$pt_tmp >= pt_cut & (coded$dual_tmp == "Y" | coded$dual_tmp == 1), 7)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               coded$agency_tmp == "SHA" & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "Y", 8)
+                              coded$pt_tmp >= pt_cut & (coded$dual_tmp == "Y" | coded$dual_tmp == 1), 8)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               coded$agency_tmp == "KCHA" & coded$enroll_tmp == "b" & 
-                              coded$pt_tmp >= pt_cut & coded$dual_tmp == "Y", 9)
+                              coded$pt_tmp >= pt_cut & (coded$dual_tmp == "Y" | coded$dual_tmp == 1), 9)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 0 & coded$ss_tmp == 0 & 
                               (is.na(coded$agency_tmp) | coded$agency_tmp == "Non-PHA") & 
                               coded$enroll_tmp == "m" & 
-                              coded$dual_tmp == "Y", 10)
+                              (coded$dual_tmp == "Y" | coded$dual_tmp == 1), 10)
   coded$pop_code <- replace(coded$pop_code,
                             coded$yt_tmp == 1 & coded$enroll_tmp == "b" & 
                               coded$pt_tmp >= pt_cut & is.na(coded$dual_tmp), 11)

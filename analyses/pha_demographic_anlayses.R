@@ -15,16 +15,25 @@ options(max.print = 700, scipen = 100, digits = 5)
 
 library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
+library(odbc) # Connect to SQL
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(pastecs) # Used for summary statistics
 
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData"
+
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+
 
 #### Bring in data ####
-pha_mcaid_final <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_mcaid_final.Rda"))
+pha_mcaid_final <- readRDS(file = paste0(housing_path, "/pha_mcaid_03_final.Rda"))
 # Or use SQL data and select only needed variables
+pha_mcaid_final <- dbGetQuery(
+  db_apde51,
+  SELECT pid2, startdate_c, enddate_c, enroll_type, hhold_id_new, agency_new, 
+  dob_c, race_c, hisp_c, gender_c)
+
 
 # Or just bring in PHA data without Medicaid matching
 # pha_longitudinal <- readRDS(file = paste0(housing_path, "/OrganizedData/pha_longitudinal.Rda"))
@@ -54,6 +63,9 @@ pha_mcaid_demogs <- pha_mcaid_final %>%
     dec17_h = ifelse(startdate_c <= as.Date("2017-12-31", origin = "1970-01-01") &
                        enddate_c >= as.Date("2017-12-31", origin = "1970-01-01") &
                        enroll_type %in% c("b", "h"), 1, 0),
+    dec18_h = ifelse(startdate_c <= as.Date("2018-12-31", origin = "1970-01-01") &
+                       enddate_c >= as.Date("2018-12-31", origin = "1970-01-01") &
+                       enroll_type %in% c("b", "h"), 1, 0),
     # Enrolled in Medicaid (will be NA if never enrolled in Medicaid)
     dec12_m = ifelse(startdate_c <= as.Date("2012-12-31", origin = "1970-01-01") &
                        enddate_c >= as.Date("2012-12-31", origin = "1970-01-01") &
@@ -72,6 +84,9 @@ pha_mcaid_demogs <- pha_mcaid_final %>%
                        enroll_type %in% c("b", "m"), 1, 0),
     dec17_m = ifelse(startdate_c <= as.Date("2017-12-31", origin = "1970-01-01") &
                        enddate_c >= as.Date("2017-12-31", origin = "1970-01-01") &
+                       enroll_type %in% c("b", "m"), 1, 0),
+    dec18_m = ifelse(startdate_c <= as.Date("2018-12-31", origin = "1970-01-01") &
+                       enddate_c >= as.Date("2018-12-31", origin = "1970-01-01") &
                        enroll_type %in% c("b", "m"), 1, 0)
   )
 
@@ -92,7 +107,7 @@ eoy_pop_f <- function(df, year, housing = T) {
   return(output)
 }
 
-eoy_pop <- as.data.frame(rbindlist(lapply(seq(12,17), 
+eoy_pop <- as.data.frame(rbindlist(lapply(seq(12,18), 
                                           eoy_pop_f, 
                                           df = pha_mcaid_demogs, 
                                           housing = T)))
@@ -106,28 +121,13 @@ i2014 <- interval(start = "2014-01-01", end = "2014-12-31")
 i2015 <- interval(start = "2015-01-01", end = "2015-12-31")
 i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
 i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
-
+i2018 <- interval(start = "2018-01-01", end = "2018-12-31")
 
 
 
 #### Save point ####
 #saveRDS(pha_mcaid_demogs, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_mcaid_demogs.Rda")
 #pha_mcaid_demogs <- readRDS(file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/pha_mcaid_demogs.Rda")
-
-
-
-#### Optional: Output to Excel for use in Tableau ####
-# # Warning: makes huge file and takes a long time
-# temp <- pha_mcaid_demogs %>%
-#   # Strip out identifying variables
-#   select(pid, gender_new_m6, race_h, disability, adult, senior, agency_new, major_prog:property_id, unit_zip_h, startdate_h:age16)
-# 
-# write.xlsx(temp, file = "//phdata01/DROF_DATA/DOH DATA/Housing/OrganizedData/Summaries/pha_mcaid_demogs_2017-08-09.xlsx")
-
-#### End of optional section ####
-
-
-
 
 
 
@@ -139,36 +139,36 @@ i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
 # Dual eligibility
 dual_subs_kcha <- counts(pha_elig_final,group_var = c("agency_new", "subsidy_type", "enroll_type", "dual_elig_m"), 
                         period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0),
-                        yearmax = 2017)
+                        yearmax = 2018)
 dual_race_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type", "dual_elig_m"), 
                          period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0),
-                         yearmax = 2017)
+                         yearmax = 2018)
 dual_age_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type", "dual_elig_m"), 
                         period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0),
-                        yearmax = 2017)
+                        yearmax = 2018)
 dual_disability_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type", "dual_elig_m"), 
                         period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0),
-                        yearmax = 2017)
+                        yearmax = 2018)
 dual_gender_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type", "dual_elig_m"), 
                            period = "month", agency = "kcha", unit = pid2, filter = quo(port_out_kcha == 0),
-                           yearmax = 2017)
+                           yearmax = 2018)
 
 
 dual_subs_sha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type", "dual_elig_m"), 
                            period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0),
-                        yearmax = 2017)
+                        yearmax = 2018)
 dual_race_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type", "dual_elig_m"), 
                         period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0),
-                        yearmax = 2017)
+                        yearmax = 2018)
 dual_age_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type", "dual_elig_m"), 
                         period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0),
-                       yearmax = 2017)
+                       yearmax = 2018)
 dual_disability_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type", "dual_elig_m"), 
                        period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0),
-                       yearmax = 2017)
+                       yearmax = 2018)
 dual_gender_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type", "dual_elig_m"), 
                            period = "month", agency = "sha", unit = pid2, filter = quo(port_out_sha == 0),
-                          yearmax = 2017)
+                          yearmax = 2018)
 
 # Bring files together
 dual_subs <- bind_rows(dual_subs_kcha, dual_subs_sha) %>% mutate(category = "Subsidy type", group = subsidy_type)
@@ -203,231 +203,231 @@ gc()
 # Monthly
 subs_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                              period = "month", agency = "kcha", unit = hh_id_new_h,
-                             filter = quo(port_out_kcha == 0), yearmax = 2017)
+                             filter = quo(port_out_kcha == 0), yearmax = 2018)
 vouch_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                 period = "month", agency = "kcha", unit = hh_id_new_h,
-                              filter = quo(port_out_kcha == 0), yearmax = 2017)
+                              filter = quo(port_out_kcha == 0), yearmax = 2018)
 portfolio_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                   period = "month", agency = "kcha", unit = hh_id_new_h,
-                                  filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                  filter = quo(port_out_kcha == 0), yearmax = 2018)
 race_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                              period = "month", agency = "kcha", unit = hh_id_new_h,
-                             filter = quo(port_out_kcha == 0), yearmax = 2017)
+                             filter = quo(port_out_kcha == 0), yearmax = 2018)
 agegrp_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                period = "month", agency = "kcha", unit = hh_id_new_h,
-                               filter = quo(port_out_kcha == 0), yearmax = 2017)
+                               filter = quo(port_out_kcha == 0), yearmax = 2018)
 disability_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                    period = "month", agency = "kcha", unit = hh_id_new_h,
-                                   filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                   filter = quo(port_out_kcha == 0), yearmax = 2018)
 gender_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                period = "month", agency = "kcha", unit = hh_id_new_h,
-                               filter = quo(port_out_kcha == 0), yearmax = 2017)
+                               filter = quo(port_out_kcha == 0), yearmax = 2018)
 zip_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                             period = "month", agency = "kcha", unit = hh_id_new_h,
-                            filter = quo(port_out_kcha == 0), yearmax = 2017)
+                            filter = quo(port_out_kcha == 0), yearmax = 2018)
 los_count_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                             period = "month", agency = "kcha", unit = hh_id_new_h,
-                            filter = quo(port_out_kcha == 0), yearmax = 2017)
+                            filter = quo(port_out_kcha == 0), yearmax = 2018)
 
 subs_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                               period = "month", agency = "kcha", unit = pid2,
-                              filter = quo(port_out_kcha == 0), yearmax = 2017)
+                              filter = quo(port_out_kcha == 0), yearmax = 2018)
 vouch_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                  period = "month", agency = "kcha", unit = pid2,
-                               filter = quo(port_out_kcha == 0), yearmax = 2017)
+                               filter = quo(port_out_kcha == 0), yearmax = 2018)
 portfolio_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                    period = "month", agency = "kcha", unit = pid2,
-                                   filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                   filter = quo(port_out_kcha == 0), yearmax = 2018)
 race_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                               period = "month", agency = "kcha", unit = pid2,
-                              filter = quo(port_out_kcha == 0), yearmax = 2017)
+                              filter = quo(port_out_kcha == 0), yearmax = 2018)
 agegrp_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                 period = "month", agency = "kcha", unit = pid2,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 disability_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                     period = "month", agency = "kcha", unit = pid2,
-                                    filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                    filter = quo(port_out_kcha == 0), yearmax = 2018)
 gender_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                 period = "month", agency = "kcha", unit = pid2,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 zip_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                              period = "month", agency = "kcha", unit = pid2,
-                             filter = quo(port_out_kcha == 0), yearmax = 2017)
+                             filter = quo(port_out_kcha == 0), yearmax = 2018)
 los_count_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                              period = "month", agency = "kcha", unit = pid2,
-                             filter = quo(port_out_kcha == 0), yearmax = 2017)
+                             filter = quo(port_out_kcha == 0), yearmax = 2018)
 
 
 # Yearly
 subs_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                                 period = "year", agency = "kcha", unit = hh_id_new_h,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 vouch_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                  period = "year", agency = "kcha", unit = hh_id_new_h,
-                                 filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                 filter = quo(port_out_kcha == 0), yearmax = 2018)
 portfolio_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                      period = "year", agency = "kcha", unit = hh_id_new_h,
-                                     filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                     filter = quo(port_out_kcha == 0), yearmax = 2018)
 race_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                                 period = "year", agency = "kcha", unit = hh_id_new_h,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 agegrp_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                   period = "year", agency = "kcha", unit = hh_id_new_h,
-                                  filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                  filter = quo(port_out_kcha == 0), yearmax = 2018)
 disability_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                       period = "year", agency = "kcha", unit = hh_id_new_h,
-                                      filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                      filter = quo(port_out_kcha == 0), yearmax = 2018)
 gender_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                   period = "year", agency = "kcha", unit = hh_id_new_h,
-                                  filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                  filter = quo(port_out_kcha == 0), yearmax = 2018)
 zip_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                                period = "year", agency = "kcha", unit = hh_id_new_h,
-                               filter = quo(port_out_kcha == 0), yearmax = 2017)
+                               filter = quo(port_out_kcha == 0), yearmax = 2018)
 los_count_yr_hh_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                                period = "year", agency = "kcha", unit = hh_id_new_h,
-                               filter = quo(port_out_kcha == 0), yearmax = 2017)
+                               filter = quo(port_out_kcha == 0), yearmax = 2018)
 
 subs_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                                  period = "year", agency = "kcha", unit = pid2,
-                                 filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                 filter = quo(port_out_kcha == 0), yearmax = 2018)
 vouch_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                   period = "year", agency = "kcha", unit = pid2,
-                                  filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                  filter = quo(port_out_kcha == 0), yearmax = 2018)
 portfolio_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                       period = "year", agency = "kcha", unit = pid2,
-                                      filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                      filter = quo(port_out_kcha == 0), yearmax = 2018)
 race_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                                  period = "year", agency = "kcha", unit = pid2,
-                                 filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                 filter = quo(port_out_kcha == 0), yearmax = 2018)
 agegrp_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                     period = "year", agency = "kcha", unit = pid2,
-                                   filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                   filter = quo(port_out_kcha == 0), yearmax = 2018)
 disability_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                        period = "year", agency = "kcha", unit = pid2,
-                                       filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                       filter = quo(port_out_kcha == 0), yearmax = 2018)
 gender_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                    period = "year", agency = "kcha", unit = pid2,
-                                   filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                   filter = quo(port_out_kcha == 0), yearmax = 2018)
 zip_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                                 period = "year", agency = "kcha", unit = pid2,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 los_count_yr_ind_kcha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                                  period = "year", agency = "kcha", unit = pid2,
-                                filter = quo(port_out_kcha == 0), yearmax = 2017)
+                                filter = quo(port_out_kcha == 0), yearmax = 2018)
 
 #### SHA ####
 subs_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                             period = "month", agency = "sha", unit = hh_id_new_h,
-                            filter = quo(port_out_sha == 0), yearmax = 2017)
+                            filter = quo(port_out_sha == 0), yearmax = 2018)
 vouch_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                              period = "month", agency = "sha", unit = hh_id_new_h,
-                             filter = quo(port_out_sha == 0), yearmax = 2017)
+                             filter = quo(port_out_sha == 0), yearmax = 2018)
 portfolio_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                  period = "month", agency = "sha", unit = hh_id_new_h,
-                                 filter = quo(port_out_sha == 0), yearmax = 2017)
+                                 filter = quo(port_out_sha == 0), yearmax = 2018)
 race_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                             period = "month", agency = "sha", unit = hh_id_new_h,
-                            filter = quo(port_out_sha == 0), yearmax = 2017)
+                            filter = quo(port_out_sha == 0), yearmax = 2018)
 agegrp_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                period = "month", agency = "sha", unit = hh_id_new_h,
-                              filter = quo(port_out_sha == 0), yearmax = 2017)
+                              filter = quo(port_out_sha == 0), yearmax = 2018)
 disability_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                   period = "month", agency = "sha", unit = hh_id_new_h,
-                                  filter = quo(port_out_sha == 0), yearmax = 2017)
+                                  filter = quo(port_out_sha == 0), yearmax = 2018)
 gender_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                               period = "month", agency = "sha", unit = hh_id_new_h,
-                              filter = quo(port_out_sha == 0), yearmax = 2017)
+                              filter = quo(port_out_sha == 0), yearmax = 2018)
 zip_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                            period = "month", agency = "sha", unit = hh_id_new_h,
-                           filter = quo(port_out_sha == 0), yearmax = 2017)
+                           filter = quo(port_out_sha == 0), yearmax = 2018)
 los_count_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                             period = "month", agency = "sha", unit = hh_id_new_h,
-                           filter = quo(port_out_sha == 0), yearmax = 2017)
+                           filter = quo(port_out_sha == 0), yearmax = 2018)
 
 subs_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                              period = "month", agency = "sha", unit = pid2,
-                             filter = quo(port_out_sha == 0), yearmax = 2017)
+                             filter = quo(port_out_sha == 0), yearmax = 2018)
 vouch_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                               period = "month", agency = "sha", unit = pid2,
-                              filter = quo(port_out_sha == 0), yearmax = 2017)
+                              filter = quo(port_out_sha == 0), yearmax = 2018)
 portfolio_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                   period = "month", agency = "sha", unit = pid2,
-                                  filter = quo(port_out_sha == 0), yearmax = 2017)
+                                  filter = quo(port_out_sha == 0), yearmax = 2018)
 race_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                              period = "month", agency = "sha", unit = pid2,
-                             filter = quo(port_out_sha == 0), yearmax = 2017)
+                             filter = quo(port_out_sha == 0), yearmax = 2018)
 agegrp_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                 period = "month", agency = "sha", unit = pid2,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 disability_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                    period = "month", agency = "sha", unit = pid2,
-                                   filter = quo(port_out_sha == 0), yearmax = 2017)
+                                   filter = quo(port_out_sha == 0), yearmax = 2018)
 gender_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                period = "month", agency = "sha", unit = pid2,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 zip_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                             period = "month", agency = "sha", unit = pid2,
-                            filter = quo(port_out_sha == 0), yearmax = 2017)
+                            filter = quo(port_out_sha == 0), yearmax = 2018)
 los_count_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                              period = "month", agency = "sha", unit = pid2,
-                            filter = quo(port_out_sha == 0), yearmax = 2017)
+                            filter = quo(port_out_sha == 0), yearmax = 2018)
 
 # Yearly
 subs_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                                period = "year", agency = "sha", unit = hh_id_new_h,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 vouch_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                 period = "year", agency = "sha", unit = hh_id_new_h,
-                                filter = quo(port_out_sha == 0), yearmax = 2017)
+                                filter = quo(port_out_sha == 0), yearmax = 2018)
 portfolio_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                     period = "year", agency = "sha", unit = hh_id_new_h,
-                                    filter = quo(port_out_sha == 0), yearmax = 2017)
+                                    filter = quo(port_out_sha == 0), yearmax = 2018)
 race_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                                period = "year", agency = "sha", unit = hh_id_new_h,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 agegrp_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                   period = "year", agency = "sha", unit = hh_id_new_h,
-                                 filter = quo(port_out_sha == 0), yearmax = 2017)
+                                 filter = quo(port_out_sha == 0), yearmax = 2018)
 disability_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                      period = "year", agency = "sha", unit = hh_id_new_h,
-                                     filter = quo(port_out_sha == 0), yearmax = 2017)
+                                     filter = quo(port_out_sha == 0), yearmax = 2018)
 gender_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                  period = "year", agency = "sha", unit = hh_id_new_h,
-                                 filter = quo(port_out_sha == 0), yearmax = 2017)
+                                 filter = quo(port_out_sha == 0), yearmax = 2018)
 zip_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                               period = "year", agency = "sha", unit = hh_id_new_h,
-                              filter = quo(port_out_sha == 0), yearmax = 2017)
+                              filter = quo(port_out_sha == 0), yearmax = 2018)
 los_count_yr_hh_sha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                                period = "year", agency = "sha", unit = hh_id_new_h,
-                              filter = quo(port_out_sha == 0), yearmax = 2017)
+                              filter = quo(port_out_sha == 0), yearmax = 2018)
 
 subs_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "subsidy_type", "enroll_type"), 
                                 period = "year", agency = "sha", unit = pid2,
-                                filter = quo(port_out_sha == 0), yearmax = 2017)
+                                filter = quo(port_out_sha == 0), yearmax = 2018)
 vouch_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "vouch_type_final", "enroll_type"), 
                                  period = "year", agency = "sha", unit = pid2,
-                                 filter = quo(port_out_sha == 0), yearmax = 2017)
+                                 filter = quo(port_out_sha == 0), yearmax = 2018)
 portfolio_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "portfolio_final", "enroll_type"), 
                                      period = "year", agency = "sha", unit = pid2,
-                                     filter = quo(port_out_sha == 0), yearmax = 2017)
+                                     filter = quo(port_out_sha == 0), yearmax = 2018)
 race_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "race_h", "enroll_type"), 
                                 period = "year", agency = "sha", unit = pid2,
-                                filter = quo(port_out_sha == 0), yearmax = 2017)
+                                filter = quo(port_out_sha == 0), yearmax = 2018)
 agegrp_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "agegrp", "enroll_type"), 
                                    period = "year", agency = "sha", unit = pid2,
-                                  filter = quo(port_out_sha == 0), yearmax = 2017)
+                                  filter = quo(port_out_sha == 0), yearmax = 2018)
 disability_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "disability2_h", "enroll_type"), 
                                       period = "year", agency = "sha", unit = pid2,
-                                      filter = quo(port_out_sha == 0), yearmax = 2017)
+                                      filter = quo(port_out_sha == 0), yearmax = 2018)
 gender_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "gender2_h", "enroll_type"), 
                                   period = "year", agency = "sha", unit = pid2,
-                                  filter = quo(port_out_sha == 0), yearmax = 2017)
+                                  filter = quo(port_out_sha == 0), yearmax = 2018)
 zip_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "unit_zip_h", "kc_area", "enroll_type"), 
                                period = "year", agency = "sha", unit = pid2,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 los_count_yr_ind_sha <- counts(pha_elig_final, group_var = c("agency_new", "time_pha", "enroll_type"), 
                                 period = "year", agency = "sha", unit = pid2,
-                               filter = quo(port_out_sha == 0), yearmax = 2017)
+                               filter = quo(port_out_sha == 0), yearmax = 2018)
 
 
 #### Combine files ####

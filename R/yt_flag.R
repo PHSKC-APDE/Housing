@@ -106,9 +106,9 @@ yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL,
   ### Find people who were ever at YT or SS
   df <- df %>%
     group_by(!!unit) %>%
-    mutate_at(vars(yt, ss), funs(ever = sum(., na.rm = TRUE))) %>%
+    mutate_at(vars(yt, ss), list(ever = ~ sum(., na.rm = TRUE))) %>%
     ungroup() %>%
-    mutate_at(vars(yt_ever, ss_ever), funs(replace(., which(. > 0), 1)))
+    mutate_at(vars(yt_ever, ss_ever), list(~ replace(., which(. > 0), 1)))
   
   
   return(df)

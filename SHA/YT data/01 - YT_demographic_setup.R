@@ -23,17 +23,31 @@ options(max.print = 700, scipen = 100, digits = 5)
 library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
 library(tidyverse) # Used to manipulate data
+library(odbc) # Connect to SQL
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 #### Bring in combined PHA/Medicaid data with some demographics already run ####
-pha_mcaid_final <- readRDS(file = paste0(housing_path, 
-                                         "/OrganizedData/pha_mcaid_final.Rda"))
+# Currently using stage schema but eventually switch to final
+pha_mcaid_final <- dbGetQuery(
+  db_apde51,
+  "SELECT pid2, hh_id_new_h, startdate_c, enddate_c, enroll_type, dual_elig_m, 
+    full_benefit_m, id_mcaid, 
+    dob_c, race_c, hisp_c, ethn_c, gender_c, lang_m, 
+    agency_new, major_prog, prog_type, subsidy_type, operator_type, vouch_type_final, 
+    unit_add_h, property_id, property_name, portfolio_final, zip_c, 
+    start_housing, start_pha, hh_inc, 
+    age12, age13, age14, age15, age16, age17, age18,
+    length12, length13, length14, length15, length16, length17, length18, 
+    pt12, pt13, pt14, pt15, pt16, pt17, pt18 
+  FROM stage.mcaid_pha")
 
 
 #### Set up key variables ####
 ### Yesler Terrace and scattered sites indicators
-yt_mcaid_final <- yt_flag(pha_mcaid_final, unit = pid2)
+yt_mcaid_final <- yt_flag(pha_mcaid_final, unit = pid2, prop_id = property_id,
+                          prop_name = property_name, address = unit_add_h)
 
 ### Movements within data
 # Use simplified system for describing movement
@@ -79,8 +93,8 @@ yt_mcaid_final <- yt_mcaid_final %>%
 # Make groups of ages
 yt_mcaid_final <- yt_mcaid_final %>%
   mutate_at(
-    vars(age12, age13, age14, age15, age16, age17),
-    funs(grp = case_when(
+    vars(age12, age13, age14, age15, age16, age17, age18),
+    list(grp = ~ case_when(
       . < 18 ~ "<18",
       between(., 18, 24.99) ~ "18-24",
       between(., 25, 44.99) ~ "25-44",
@@ -97,13 +111,12 @@ yt_mcaid_final <- yt_mcaid_final %>%
 # Make groups of time in housing
 yt_mcaid_final <- yt_mcaid_final %>%
   mutate_at(
-    vars(length12, length13, length14, length15, length16, length17),
+    vars(length12, length13, length14, length15, length16, length17, length18),
     funs(grp = case_when(
       . < 3 ~ "<3 years",
       between(., 3, 5.99) ~ "3-<6 years",
       . >= 6 ~ "6+ years",
-      is.na(.) ~ "Unknown"
-    )
+      is.na(.) ~ "Unknown")
     )
   )
 
@@ -136,34 +149,26 @@ yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 14)
 yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 15)
 yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 16)
 yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 17)
+yt_mcaid_final <- hh_inc_f(yt_mcaid_final, 18)
 
 
 ### Set up income per capita
 yt_mcaid_final <- yt_mcaid_final %>%
-  group_by(hh_id_new_h, startdate_h) %>%
+  group_by(hh_id_new_h, startdate_c) %>%
   mutate(hh_size_new = n_distinct(pid2)) %>%
   ungroup() %>%
-  mutate_at(vars(starts_with("hh_inc_1")), funs(cap = . / hh_size_new))
+  mutate_at(vars(starts_with("hh_inc_1")), list(cap = ~ . / hh_size_new))
 
 
 
 ### Save point
-saveRDS(yt_mcaid_final, file = paste0(housing_path, 
-                                      "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
-
 #### Write to SQL for joining with claims ####
-dbRemoveTable(db.apde51, name = "housing_mcaid_yt")
-system.time(dbWriteTable(db.apde51, name = "housing_mcaid_yt", 
+dbRemoveTable(db_apde51, name = DBI::Id(schema = "stage", table = "mcaid_pha_yt"))
+system.time(dbWriteTable(db_apde51, name = DBI::Id(schema = "stage", table = "mcaid_pha_yt"), 
                          value = as.data.frame(yt_mcaid_final), overwrite = T,
                          field.types = c(
-                           startdate_h = "date", enddate_h = "date", 
-                           startdate_m = "date", enddate_m = "date", 
-                           startdate_o = "date", enddate_o = "date", 
                            startdate_c = "date", enddate_c = "date",
-                           dob_h = "date", dob_m = "date", dob_c = "date",
-                           hh_dob_h = "date",
-                           move_in_date = 'date', start_housing = "date", 
-                           start_pha = "date", start_prog = "date"))
+                           dob_c = "date", start_housing = "date", start_pha = "date"))
 )
 
 

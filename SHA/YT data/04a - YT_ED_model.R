@@ -33,8 +33,8 @@ library(ipw) # Used to make marginal structural models
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### Connect to the SQL server ####
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-db.claims51 <- dbConnect(odbc(), "PHClaims51")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+db_claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
 #### FUNCTIONS ####
@@ -140,15 +140,16 @@ plot_f <- function(df, labels, title, groups) {
 # Bring in combined PHA/Medicaid data with some demographics already run ####
 # Only bring in necessary columns
 system.time(
-  yt_mcaid_final <- dbGetQuery(db.apde51, 
-                               "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
-                               gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
-                               age12, age13, age14, age15, age16, age17,
+  yt_mcaid_final <- dbGetQuery(db_apde51, 
+                               "SELECT pid2, id_mcaid, startdate_c, enddate_c, dob_c, ethn_c,
+                               gender_c, pt12, pt13, pt14, pt15, pt16, pt17, pt18, 
+                               age12, age13, age14, age15, age16, age17, age18, 
                                agency_new, enroll_type, dual_elig_m, yt, yt_old,
                                yt_new, ss,  yt_ever, ss_ever, place, start_type, end_type,
-                               length12, length13, length14, length15, length16, length17, 
+                               length12, length13, length14, length15, 
+                               length16, length17, length18, 
                                hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
-                               hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
+                               hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap, hh_inc_18_cap
                                FROM housing_mcaid_yt")
   )
 
@@ -158,9 +159,10 @@ yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
 
 # ED visits (using broad definition)
 system.time(
-  ed <- dbGetQuery(db.claims51, 
-                   "SELECT id, tcn, from_date, to_date, ed, ed_emergent_nyu, ed_nonemergent_nyu
-                   FROM dbo.mcaid_claim_summary
+  ed <- dbGetQuery(db_claims51, 
+                   "SELECT id_mcaid, claim_header_id, first_service_date, last_service_date, 
+                    ed, ed_emergent_nyu, ed_nonemergent_nyu
+                   FROM final.mcaid_claim_header
                    WHERE ed = 1")
   )
 
@@ -168,7 +170,7 @@ system.time(
 #### SET UP DATA FOR ANALYSIS ####
 # Goal is to create cohort of people who spent time at YT or SS
 # Min of 30 continuous days at YT/SS in a year to be included
-yt_ss_30 <-  bind_rows(lapply(seq(12,17), yt_popcode, df = yt_ss, year_pre = "pt", 
+yt_ss_30 <-  bind_rows(lapply(seq(12,18), yt_popcode, df = yt_ss, year_pre = "pt", 
                            year_suf = NULL, agency = agency_new, 
                            enroll_type = enroll_type, dual = dual_elig_m, 
                            yt = yt, ss = ss, pt_cut = 30, min = F))
@@ -176,7 +178,7 @@ yt_ss_30 <- yt_ss_30 %>% filter(pop_code %in% c(1, 2))
 
 
 # Join to see if person was in old YT properties or not and make new category
-yt_old_cnt <- bind_rows(lapply(seq(12, 17), function(x) {
+yt_old_cnt <- bind_rows(lapply(seq(12, 18), function(x) {
   pt <- rlang::sym(paste0("pt", x))
   year_num = as.numeric(paste0(20, x))
   
@@ -196,14 +198,14 @@ yt_ss_30 <- left_join(yt_ss_30, yt_old_cnt, by = "pid2") %>%
 
 
 ### Join demographics and ED events now that only YT and SS people are kept
-yt_ss_ed <- left_join(yt_ss_30, ed, by = c("mid" = "id")) %>%
-  filter(ed == 1 & from_date >= startdate_c & from_date <= enddate_c &
-           agency_new == "SHA" & year(from_date) == year_code) %>%
-  mutate(ed_year = year(from_date))
+yt_ss_ed <- left_join(yt_ss_30, ed, by = c("id_mcaid")) %>%
+  filter(ed == 1 & first_service_date >= startdate_c & first_service_date <= enddate_c &
+           agency_new == "SHA" & year(first_service_date) == year_code) %>%
+  mutate(ed_year = year(first_service_date))
 
 
 # Count number of ED visits each person had during each period
-yt_ss_ed_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+yt_ss_ed_sum <- bind_rows(lapply(seq(12, 18), count_acute,
                                  df = yt_ss_ed,
                                  group_var = quos(pid2),
                                  age_var = NULL, len_var = NULL,
@@ -211,7 +213,7 @@ yt_ss_ed_sum <- bind_rows(lapply(seq(12, 17), count_acute,
                                  unit = pid2, person = F,
                                  birth = NULL))
 
-yt_ss_ed_avoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+yt_ss_ed_avoid_sum <- bind_rows(lapply(seq(12, 18), count_acute,
                                  df = yt_ss_ed,
                                  group_var = quos(pid2),
                                  age_var = NULL, len_var = NULL,
@@ -219,7 +221,7 @@ yt_ss_ed_avoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
                                  unit = pid2, person = F,
                                  birth = NULL))
 
-yt_ss_ed_unavoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
+yt_ss_ed_unavoid_sum <- bind_rows(lapply(seq(12, 18), count_acute,
                                        df = yt_ss_ed,
                                        group_var = quos(pid2),
                                        age_var = NULL, len_var = NULL,
@@ -229,7 +231,7 @@ yt_ss_ed_unavoid_sum <- bind_rows(lapply(seq(12, 17), count_acute,
 
 
 # Combine person-time for each year
-yt_ss_30 <- bind_rows(lapply(seq(12,17), function(x) {
+yt_ss_30 <- bind_rows(lapply(seq(12,18), function(x) {
   ptx <- rlang::sym(paste0("pt", x))
   year <- paste0(20, x)
   
@@ -254,7 +256,8 @@ yt_ss_30 <- yt_ss_30 %>%
     !is.na(age14) ~ age14 - 2,
     !is.na(age15) ~ age15 - 3,
     !is.na(age16) ~ age16 - 4,
-    !is.na(age17) ~ age17 - 5
+    !is.na(age17) ~ age17 - 5,
+    !is.na(age18) ~ age18 - 6
   ))
 
 # Set up length12 for everyone even if missing (may make negative #s)
@@ -265,15 +268,16 @@ yt_ss_30 <- yt_ss_30 %>%
     !is.na(length14) ~ length14 - 2,
     !is.na(length15) ~ length15 - 3,
     !is.na(length16) ~ length16 - 4,
-    !is.na(length17) ~ length17 - 5
+    !is.na(length17) ~ length17 - 5,
+    !is.na(length18) ~ length18 - 5
   ))
 
 
 # Only keep relevant columns (no need to keep SS since YT = 0 == SS)
 # Only need age and length from baseline (2012)
 yt_ss_30 <- yt_ss_30 %>%
-  select(pid2, mid, year_code, yt, yt_orig, ethn_c, gender_c, age12,
-         length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+  select(pid2, id_mcaid, year_code, yt, yt_orig, ethn_c, gender_c, age12,
+         length12, hh_inc_12_cap:hh_inc_18_cap, pt) %>%
   rename(year = year_code) %>%
   distinct()
 
@@ -297,8 +301,8 @@ yt_ss_ed_join <- left_join(yt_ss_ed_join, yt_ss_ed_unavoid_sum,
 
 
 ### Need to reshape household income vars in a single column
-yt_ss_ed_join <- melt(yt_ss_ed_join,
-              id.vars = c("year", "mid", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
+yt_ss_ed_join <- reshape2::melt(yt_ss_ed_join,
+              id.vars = c("year", "id_mcaid", "pid2", "yt", "yt_orig", "ethn_c", "gender_c", 
                           "age12", "length12", "pt", 
                           "ed_count", "ed_avoid_count", "ed_unavoid_count"),
               variable.name = "inc_yr", value.name = "inc")
@@ -319,7 +323,7 @@ yt_ss_ed_join <- yt_ss_ed_join %>%
   group_by(pid2) %>%
   mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
                            (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
-         cens_r = ifelse((is.na(lead(year, 1)) & year < 2017) | 
+         cens_r = ifelse((is.na(lead(year, 1)) & year < 2018) | 
                            (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0),
          # Take first non-missing hh_inc
          inc_min = inc[which(!is.na(inc))[1]]
@@ -352,7 +356,7 @@ yt_ed <- yt_ss_ed_join %>%
   ) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
              is.na(age12) | is.na(length12) | is.na(inc)) &
-           year <= 2017) %>%
+           year <= 2018) %>%
   # Set up cumulative sum for time in YT since redevelopment
   mutate(yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
   # Make lagged variables
@@ -397,14 +401,14 @@ yt_orig_ed <- yt_ss_ed_join %>%
   ) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
              is.na(age12) | is.na(length12) | is.na(inc)) &
-           year <= 2017)
+           year <= 2018)
 yt_orig_ed <- as.data.frame(yt_orig_ed)
 
 
 
 # Make matrix of all possible years
 all_years <- yt_ed %>% distinct(pid2)
-all_years <- data.frame(pid2 = rep(all_years$pid2, each = 6), year = rep(seq(2012, 2017), times = length(all_years)))
+all_years <- data.frame(pid2 = rep(all_years$pid2, each = 7), year = rep(seq(2012, 2018), times = length(all_years)))
 # yt_ed_all_yr <- left_join(all_years, distinct(yt_ed, pid2, ethn_c, gender_c, age12, inc_min), by = c("pid2"))
 # yt_ed_all_yr <- left_join(yt_ed_all_yr, select(yt_ed, pid2, year, yt, yt_orig, length12, pt, ed_count, inc, rate, pt_log), by = c("pid2", "year")) %>%
 #   # Remake year_0
@@ -493,7 +497,7 @@ yt_ed_sum_f <- function(ed_type = c("all", "avoid", "unavoid")) {
   }
   
   output <- yt_ss_ed_join %>%
-    filter(year < 2018) %>%
+    filter(year < 2019) %>%
     group_by(yt, year) %>%
     summarise(ed_count = sum(!!ed, na.rm = T),
               pt = sum(pt, na.rm = T)) %>%
@@ -535,7 +539,7 @@ ggplot(data = yt_ed_sum_all, aes(x = year)) +
   # ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
   ylab("Rate (per 1,000 person-years)") +
-  geom_label_repel(aes(y = rate, label=ifelse(year %in% c(2012, 2017), round(rate, 0), ''))) +
+  geom_label_repel(aes(y = rate, label=ifelse(year %in% c(2012, 2018), round(rate, 0), ''))) +
   # expand_limits(y=0) +
   theme(plot.title = element_text(size = 20),
         axis.text = element_text(size = 12),
@@ -611,12 +615,12 @@ ed_plot + facet_grid(yt ~ .)
 #### CAUSES OF ED VISITS ####
 
 ### Pull in top causes of ED visits by year and group
-yt_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
+yt_causes_prim <- bind_rows(lapply(seq(2012, 2018), function(x) {
   from <- paste0(x, "-01-01")
   to <- paste0(x, "-12-31")
   
   ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
-                         server = db.claims51,
+                         server = db_claims51,
                          from_date = from, to_date = to,
                          top = 20,
                          primary_dx = T, catch_all = F,
@@ -630,7 +634,7 @@ yt_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
     select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
   
   ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
-                           server = db.claims51,
+                           server = db_claims51,
                            from_date = from, to_date = to,
                            top = 20,
                            primary_dx = T, catch_all = F,
@@ -648,12 +652,12 @@ yt_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
 }))
 
 
-yt_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
+yt_causes_all <- bind_rows(lapply(seq(2012, 2018), function(x) {
   from <- paste0(x, "-01-01")
   to <- paste0(x, "-12-31")
   
   ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
-                         server = db.claims51,
+                         server = db_claims51,
                          from_date = from, to_date = to,
                          top = 20,
                          primary_dx = F, catch_all = F,
@@ -667,7 +671,7 @@ yt_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
     select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
   
   ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 1), cohort_id = mid,
-                         server = db.claims51,
+                         server = db_claims51,
                          from_date = from, to_date = to,
                          top = 20,
                          primary_dx = F, catch_all = F,
@@ -686,12 +690,12 @@ yt_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
 
 
 
-ss_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
+ss_causes_prim <- bind_rows(lapply(seq(2012, 2018), function(x) {
   from <- paste0(x, "-01-01")
   to <- paste0(x, "-12-31")
   
   ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
-                         server = db.claims51,
+                         server = db_claims51,
                          from_date = from, to_date = to,
                          top = 20,
                          primary_dx = T, catch_all = F,
@@ -705,7 +709,7 @@ ss_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
     select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
   
   ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
-                           server = db.claims51,
+                           server = db_claims51,
                            from_date = from, to_date = to,
                            top = 20,
                            primary_dx = T, catch_all = F,
@@ -723,12 +727,12 @@ ss_causes_prim <- bind_rows(lapply(seq(2012, 2017), function(x) {
 }))
 
 
-ss_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
+ss_causes_all <- bind_rows(lapply(seq(2012, 2018), function(x) {
   from <- paste0(x, "-01-01")
   to <- paste0(x, "-12-31")
   
   ed_all <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
-                         server = db.claims51,
+                         server = db_claims51,
                          from_date = from, to_date = to,
                          top = 20,
                          primary_dx = F, catch_all = F,
@@ -742,7 +746,7 @@ ss_causes_all <- bind_rows(lapply(seq(2012, 2017), function(x) {
     select(yt, year, ed_type, dx_level, ccs_final_description, ccs_final_plain_lang, claim_cnt)
   
   ed_avoid <- top_causes_f(cohort = filter(yt_ss_ed, yt == 0), cohort_id = mid,
-                           server = db.claims51,
+                           server = db_claims51,
                            from_date = from, to_date = to,
                            top = 20,
                            primary_dx = F, catch_all = F,
@@ -1414,7 +1418,7 @@ summary(glm(ed_count ~ yt + as.factor(ethn_c) + hisp_c + gender_c + age12 + leng
 
 
 # Set up IPT weights for each year
-w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
+w_year <- bind_rows(lapply(seq(2012, 2018), function(x) {
   # Run weights up until and including that year
   weight <- ipwtm(exposure = yt, 
                  family = "binomial",
@@ -1453,7 +1457,7 @@ w_year <- bind_rows(lapply(seq(2012, 2017), function(x) {
     result$weight_lc <- 1
   }
   
-  if (x < 2017) {
+  if (x < 2018) {
     weight_rc <- ipwtm(exposure = cens_r,
                        family = "binomial",
                        link = "logit",
