@@ -186,6 +186,8 @@ popcount <- function(df,
   
   for (i in 1:length(timestart)) {
     
+    message(glue::glue("Working on {timestart[i]} to {timeend[i]}"))
+    
     df_temp <- df
     
     # Pull out heads of households if that is the level of analysis
@@ -295,11 +297,13 @@ popcount <- function(df,
     
     # Find the row with the most person-time in each group
     # (ties will be broken by whatever other ordering exists)
-    
+    pt <- df_temp %>%
+      group_by(!!unit, !!!(group_var)) %>%
+      summarise(pt_ind = sum(overlap_amount))
+
     # Join back to a single df
-    pop <- left_join(df_temp, ever, by = sapply(group_var, quo_name)) %>%
-      arrange((!!unit), (!!agency), (!!enroll), desc(pt_days))
-    
+    pop <- left_join(df_temp, pt, by = c(quo_name(unit), sapply(group_var, quo_name))) %>%
+      arrange((!!unit), (!!agency), (!!enroll), desc(pt_ind))
     
     # Use data table approach to take first row in group
     # From https://stackoverflow.com/questions/34753050/data-table-select-first-n-rows-within-group
@@ -373,22 +377,24 @@ popcount <- function(df,
   
   
   if(numeric == F) {
-    if (wc == FALSE) {
-      phacount <- phacount %>%
-        mutate(
-          agegrp_h = case_when(
-            agegrp_h == 1 ~ "<18 years",
-            agegrp_h == 2 ~ "18 to <25 years",
-            agegrp_h == 3 ~ "25 to <45 years",
-            agegrp_h == 4 ~ "45 to <62 years",
-            agegrp_h == 5 ~ "62 to <65 years",
-            agegrp_h == 6 ~ "65+ years",
-            agegrp_h == 99 ~ NA_character_
+    if ("agegrp_h" %in% names(phacount)) {
+      if (wc == FALSE) {
+        phacount <- phacount %>%
+          mutate(
+            agegrp_h = case_when(
+              agegrp_h == 1 ~ "<18 years",
+              agegrp_h == 2 ~ "18 to <25 years",
+              agegrp_h == 3 ~ "25 to <45 years",
+              agegrp_h == 4 ~ "45 to <62 years",
+              agegrp_h == 5 ~ "62 to <65 years",
+              agegrp_h == 6 ~ "65+ years",
+              agegrp_h == 99 ~ NA_character_
+            )
           )
-        )
-    } else if (wc == TRUE) {
-      phacount <- phacount %>%
-        mutate(agegrp_h == paste0("Children aged ", wc_min, "-", wc_max))
+      } else if (wc == TRUE) {
+        phacount <- phacount %>%
+          mutate(agegrp_h == paste0("Children aged ", wc_min, "-", wc_max))
+      }
     }
     
     
@@ -416,7 +422,7 @@ popcount <- function(df,
         )
     }
     
-    if("time_housing" %in% names(phacount)) {
+    if("time_prog" %in% names(phacount)) {
       phacount <- phacount %>%
         mutate(
           time_prog = case_when(
@@ -430,4 +436,4 @@ popcount <- function(df,
   }
   
   return(phacount)
-  }
+}
