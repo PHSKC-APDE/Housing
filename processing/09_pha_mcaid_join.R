@@ -663,7 +663,7 @@ setorder(pha_mcaid_join, pid2, startdate_c, enddate_c)
 
 # Make single ZIP var now that times are aligned
 pha_mcaid_join[, zip_c := ifelse(!is.na(unit_zip_h), unit_zip_h, 
-                                 ifelse(!is.na(unit_zip_m), unit_zip_h, 
+                                 ifelse(!is.na(unit_zip_m), unit_zip_m, 
                                         NA_character_))]
 
 # Remove some temp data frames

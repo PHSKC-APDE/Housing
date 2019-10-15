@@ -17,7 +17,7 @@
 #' been matched to Medicaid data.
 #' @param prop_id A named variable that specifies the property IDs used in 
 #' housing data. Default is property_id.
-#' @param prop_id A named variable that specifies the property name used in 
+#' @param prop_name A named variable that specifies the property name used in 
 #' housing data. Default is property_name.
 #' @param address A named varaible that specifies the unit address. 
 #' Default is unit_add_h.

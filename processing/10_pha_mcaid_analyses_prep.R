@@ -34,8 +34,7 @@ library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 
 ##### Connect to the servers #####
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-db.claims51 <- dbConnect(odbc(), "PHClaims51")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 
 ##### Bring in data #####
@@ -67,7 +66,7 @@ pt_temp_h[, ':=' (
   pt18_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2018) / ddays(1)) + 1
 )]
 
-pha_mcaid_final <- pha_mcaid_join[pt_temp_h, on = c("pid2", "startdate_h", "enddate_h")]
+pha_mcaid_final <- merge(pha_mcaid_join, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"), all.x = T)
 rm(pt_temp_h)
 
 
@@ -122,7 +121,7 @@ pha_mcaid_final[, ':=' (
 
 
 ### Gender
-pha_mcaid_final[, gender_c := recode(gender_c, "1" = "Female", 
+pha_mcaid_final[, gender_c := dplyr::recode(gender_c, "1" = "Female", 
                                      "2" = "Male", "3" = "Multiple",
                                      .default = "Unknown", .missing = "Unknown")]
 
@@ -160,13 +159,12 @@ saveRDS(pha_mcaid_final, file = file.path(housing_path, "pha_mcaid_03_final.Rda"
 
 #### Write to SQL for joining with claims ####
 # Write full data set here and stripped down numeric data below
-system.time(dbWriteTable(db.apde51, 
+system.time(dbWriteTable(db_apde51, 
                          name = DBI::Id(schema = "stage", table = "mcaid_pha"), 
                          value = as.data.frame(pha_mcaid_final), overwrite = T,
                          field.types = c(
                            startdate_h = "date", enddate_h = "date", 
                            startdate_m = "date", enddate_m = "date", 
-                           startdate_o = "date", enddate_o = "date", 
                            startdate_c = "date", enddate_c = "date",
                            dob_h = "date", dob_m = "date", dob_c = "date", 
                            hh_dob_h = "date",
@@ -323,13 +321,11 @@ pha_mcaid_demo <- pha_mcaid_demo %>%
 
 
 #### Save point ####
-saveRDS(pha_mcaid_demo, file = paste0(housing_path, 
-                                      "/Organized_data/pha_mcaid_04_demo.Rda"))
+saveRDS(pha_mcaid_demo, file = file.path(housing_path, "pha_mcaid_04_demo.Rda"))
 
 
 #### Write to SQL for joining with claims ####
-dbRemoveTable(db.apde51, name = "housing_mcaid_demo")
-system.time(dbWriteTable(db.apde51, 
+system.time(dbWriteTable(db_apde51, 
                          DBI::Id(schema = "stage", table = "mcaid_pha_demo"), 
                          value = as.data.frame(pha_mcaid_demo), overwrite = T,
                          field.types = c(startdate_c = "date",
