@@ -34,8 +34,7 @@ mtw50058_num,sha_old,sha_new_ph,sha_new_hcv,sha_prog_port_codes,kcha_modified,kc
 03k5,,racenativehawaiianotherpacificislanderindicator3k5,,,,,r_nhpi
 03m,ethnicity3m,ethnicity3m,ethnicity3m,,h3m,,r_hisp
 03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,,h3n,,ssn
-03n,,ssn,ssn,,,,hh_ssn
-03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,hhold_size
+03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,hh_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,list_date
 04b,,zipcodebeforeadmission4b,,,box04b,,list_zip
@@ -148,14 +147,17 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,developmentname,,property_name
 ,,,,,Development.Name,,property_name
 ,,,,,Development Name,,property_name
+,,,,,DevelopmentName,,property_name
 ,,projectname,projectname,ProjectName,Property.Name,,property_name
 ,,,,projectname,,,property_name
 ,,projecttype,projecttype,,Property.Type,,property_type
 ,,,,,Property Type,,property_type
 ,,,,,projecttype,,property_type
+,,,,,PropertyType,,property_type
 ,,portfolio,portfolio,Portfolio.Type,Portfolio.Name,,portfolio
 ,,,,portfoliotype,portfolioname,,portfolio
 ,,,,,Portfolio Name,,portfolio
+,,,,,PortfolioName,,portfolio
 ,,,purpose,,,,spec_purp_type
 ,,,shadesiredprogramtypegrouping,,,,prog_group
 ,,shadesiredportfoliogrouping,,,,,portfolio_group
@@ -179,18 +181,25 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,fhh
 ,,,,,Address,,dev_add
 ,,,,,Address.with.Apt,,dev_add_apt
 ,,,,,Address with Apt,,dev_add_apt
+,,,,,AddresswithApt,,dev_add_apt
 ,,,,,City..State.ZIP,,dev_city
 ,,,,,"City, State ZIP",,dev_city
+,,,,,CityStateZIP,,dev_city
 ,,,,,Unit.Number,,dev_unit
 ,,,,,Unit Number,,dev_unit
+,,,,,UnitNumber,,dev_unit
 ,,,,,Owner.Display.Name,,dev_owner
 ,,,,,Owner Display Name,,dev_owner
+,,,,,OwnerDisplayName,,dev_owner
 ,,,,,Landlord.Display.Name,,dev_landlord
 ,,,,,Landlord Display Name,,dev_landlord
+,,,,,LandlordDisplayName,,dev_landlord
 ,,,,,Acc...Reported.to.HUD,,dev_unit_report
 ,,,,,Acc - Reported to HUD,,dev_unit_report
+,,,,,AccReportedtoHUD,,dev_unit_report
 ,,,,,Unit.Program.Type,,dev_unit_type
 ,,,,,Unit Program Type,,dev_unit_type
+,,,,,UnitProgramType,,dev_unit_type
 ,,,,,Bedrooms,,bed_cnt
 ,,,,,,MTW Rent Calculation Profile,add_yr_eop
 ,,originalmoveindate,,,,,move_in_date

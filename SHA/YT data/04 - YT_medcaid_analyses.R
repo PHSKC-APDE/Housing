@@ -24,12 +24,12 @@ library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
-library(medicaid) # Used to aggregate data
+library(claims) # Used to aggregate data
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
 
 #### Connect to the SQL servers ####
-db.apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db.claims51 <- dbConnect(odbc(), "PHClaims51")
 
 
@@ -233,7 +233,7 @@ yt_chronic_f <- function(df_chronic = chronic, df_pop = yt_coded_min,
 ### Bring in linked housing/Medicaid elig data with YT already designated
 # Only bring in necessary columns
 system.time(
-yt_mcaid_final <- dbGetQuery(db.apde51, 
+yt_mcaid_final <- dbGetQuery(db_apde51, 
                              "SELECT pid2, mid, startdate_c, enddate_c, dob_c, ethn_c,
                              gender_c, pt12, pt13, pt14, pt15, pt16, pt17,
                              age12_grp, age13_grp, age14_grp, age15_grp,
@@ -244,7 +244,7 @@ yt_mcaid_final <- dbGetQuery(db.apde51,
                              length15_grp, length16_grp, length17_grp, 
                              hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
                              hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap
-                             FROM housing_mcaid_yt")
+                             FROM stage.mcaid_pha_yt")
 )
 
 
@@ -313,17 +313,22 @@ yt_coded17_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 17, year_su
                          agency = agency_new, enroll_type = enroll_type, 
                          dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
                          min = T)
+yt_coded18_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 18, year_suf = NULL, 
+                             agency = agency_new, enroll_type = enroll_type, 
+                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
+                             min = T)
 
 
 # Bind together
 yt_coded_min <- bind_rows(yt_coded12_min, yt_coded13_min, yt_coded14_min,
-                          yt_coded15_min, yt_coded16_min, yt_coded17_min)
+                          yt_coded15_min, yt_coded16_min, yt_coded17_min, 
+                          yt_coded18_min)
 rm(list = ls(pattern = "yt_coded1"))
 gc()
 
 
 # Need to count up person time by YT and SS (only keep SHA)
-yt_pop_enroll <- bind_rows(lapply(seq(12, 17), function(year) {
+yt_pop_enroll <- bind_rows(lapply(seq(12, 18), function(year) {
   
   ptx <- rlang::sym(paste0("pt", year)) 
   lengthx <- rlang::sym(paste0("length", year, "_grp"))

@@ -26,27 +26,15 @@
 #### Set up global parameter and call in libraries ####
 options(max.print = 600, tibble.print_max = 50, scipen = 999)
 
-<<<<<<< HEAD
-library(housing) # contains many useful functions for cleaning
-library(odbc) # Used to connect to SQL server
-library(openxlsx) # Used to import/export Excel files
-library(data.table) # Used to read in csv files more efficiently
-library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
-
-source(file = paste0(getwd(), "/processing/metadata/set_data_env.r"))
-METADATA <- RJSONIO::fromJSON(paste0(getwd(), "/processing/metadata/metadata.json"))
-=======
-
 if(!require(housing)){
   devtools::install_github("PHSKC-APDE/Housing")
   require(housing) # contains many useful functions for cleaning
 }
 
-
-require(odbc) # Used to connect to SQL server
-
+if(!require(odbc)){
+  install.packages("odbc", repos='http://cran.us.r-project.org')
+  require(odbc) # Used to connect to SQL server
+}
 
 if(!require(openxlsx)){
   install.packages("openxlsx", repos='http://cran.us.r-project.org')
@@ -62,7 +50,6 @@ if(!require(tidyverse)){
   install.packages("tidyverse")
   require(tidyverse) # Used to manipulate data
 }
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
 
 if(!require(RJSONIO)){
   install.packages("RJSONIO", repos='http://cran.us.r-project.org')
@@ -106,127 +93,65 @@ if (sql == TRUE) {
 
 #### BRING IN DATA ####
 # Some SSNs have temporary IDs in them so should be read in as characters
-<<<<<<< HEAD
-kcha_p1_2004_2015 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
+kcha_p1_2004_2015 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
-kcha_p2_2004_2015 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
+kcha_p2_2004_2015 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
-kcha_p3_2004_2015 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
+kcha_p3_2004_2015 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fn), 
                            na.strings = c("NA", "", "NULL", "N/A", "."), 
                            stringsAsFactors = F)
 
-kcha_p1_2016_2016 <- fread(file = file.path(kcha_path, panel_1_2016_2016_fname),
+kcha_p1_2016_2016 <- fread(file = file.path(kcha_path, panel_1_2016_2016_fn),
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n08")))
-kcha_p2_2016_2016 <- fread(file = file.path(kcha_path, panel_2_2016_2016_fname), 
+kcha_p2_2016_2016 <- fread(file = file.path(kcha_path, panel_2_2016_2016_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
-=======
-kcha_2004_2015_p1 <- fread(file = file.path(kcha_path, panel_1_2004_2015_fname), 
-                           na.strings = c("NA", "", "NULL", "N/A", "."),  
-                           stringsAsFactors = F,
-                           colClasses = list(character = c("h3n06", "h3n07", 
-                                                         "h3n08", "h3n09")))
-kcha_2004_2015_p2 <- fread(file = file.path(kcha_path, panel_2_2004_2015_fname), 
-                           na.strings = c("NA", "", "NULL", "N/A", "."),  
-                           stringsAsFactors = F,
-                           colClasses = list(character = c("h3n10", "h3n11", 
-                                                           "h3g12", "h3n12")))
-kcha_2004_2015_p3 <- fread(file = file.path(kcha_path, panel_3_2004_2015_fname), 
-                           na.strings = c("NA", "", "NULL", "N/A", "."),  
-                           stringsAsFactors = F)
-
-kcha_2016_p1 <- fread(file = file.path(kcha_path, panel_1_2016_fname),
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
-                      stringsAsFactors = F,
-                      colClasses = list(character = c("h3n03", "h3n04", "h3n05",
-                                                      "h3n06", "h3n09")))
-kcha_2016_p2 <- fread(file = file.path(kcha_path, panel_2_2016_fname), 
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
-                      stringsAsFactors = F,
-                      colClasses = list(character = c("h3n11", "h3g12")))
-kcha_2016_p3 <- fread(file = file.path(kcha_path, panel_3_2016_fname), 
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
-                      stringsAsFactors = F,
-                      colClasses = list(character = c("h19a9a", "h19b09")))
-
-
-kcha_2017_p1 <- fread(file = file.path(kcha_path, panel_1_2017_fname), 
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
-                      stringsAsFactors = FALSE)
-
-kcha_2017_p2 <- fread(file = file.path(kcha_path, panel_2_2017_fname), 
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
-                      stringsAsFactors = F,
-                      colClasses = 
-                        list(character = c("h3b12", "h3c12", "h3d12", "h3e12", 
-                                           "h3g12", "h3h12", "h3i12", "h3j12", 
-                                           "h3k12a", "h3k12b", "h3k12c", 
-                                           "h3k12d", "h3k12e", "h3n12", 
-                                           "h3b13", "h3c13", "h3d13", "h3e13", 
-                                           "h3g13", "h3h13", "h3i13", "h3j13", 
-                                           "h3k13a", "h3k13b", "h3k13c", 
-                                           "h3k13d", "h3k13e", "h3n13", 
-                                           "h3b14", "h3c14", "h3d14", "h3e14", 
-                                           "h3g14", "h3h14", "h3i14", "h3j14", 
-                                           "h3k14a", "h3k14b", "h3k14c", 
-                                           "h3k14d", "h3k14e", "h3n14"
-                                           )))
-kcha_2017_p3 <- fread(file = file.path(kcha_path, panel_3_2017_fname), 
-                      na.strings = c("NA", "", "NULL", "N/A", "."),  
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
                       stringsAsFactors = F,
                       colClasses = list(character = c("h3n10", "h3n12")))
-kcha_p3_2016_2016 <- fread(file = file.path(kcha_path, panel_3_2016_2016_fname), 
+kcha_p3_2016_2016 <- fread(file = file.path(kcha_path, panel_3_2016_2016_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
 
 
-kcha_p1_2017_2017 <- fread(file = file.path(kcha_path, panel_1_2017_2017_fname), 
+kcha_p1_2017_2017 <- fread(file = file.path(kcha_path, panel_1_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
-kcha_p2_2017_2017 <- fread(file = file.path(kcha_path, panel_2_2017_2017_fname), 
+kcha_p2_2017_2017 <- fread(file = file.path(kcha_path, panel_2_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
-kcha_p3_2017_2017 <- fread(file = file.path(kcha_path, panel_3_2017_2017_fname), 
+kcha_p3_2017_2017 <- fread(file = file.path(kcha_path, panel_3_2017_2017_fn), 
                       na.strings = c("NA", "", "NULL", "N/A", "."), 
                       stringsAsFactors = F)
 
 ### Add 2018 data if available
 if (add_2018 == TRUE) {
-  kcha_p1_2018_2018 <- fread(file = file.path(kcha_path, panel_1_2018_2018_fname),
+  kcha_p1_2018_2018 <- fread(file = file.path(kcha_path, panel_1_2018_2018_fn),
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2018_2018 <- fread(file = file.path(kcha_path, panel_2_2018_2018_fname), 
+  kcha_p2_2018_2018 <- fread(file = file.path(kcha_path, panel_2_2018_2018_fn), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2018_2018 <- fread(file = file.path(kcha_path, panel_3_2018_2018_fname), 
+  kcha_p3_2018_2018 <- fread(file = file.path(kcha_path, panel_3_2018_2018_fn), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
 }
 
 
 # Some of the KCHA end of participation data is missing from the original extract
-<<<<<<< HEAD
-kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
-                  na.strings = c("NA", "", "NULL", "N/A", "."), 
-                  stringsAsFactors = F)
-
-=======
 if (UW == TRUE) {
-  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
+  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fn),
                   na.strings = c("NA", "", "NULL", "N/A", "."),  
                   stringsAsFactors = F) %>% 
     mutate(HOH.Birthdate = as.Date(HOH.Birthdate, origin = "1899-12-30"), 
            Effective.Date = as.Date(Effective.Date, origin = "1899-12-30"))
 } else {
-  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fname),
-                    na.strings = c("NA", "", "NULL", "N/A", "."),  
-                    stringsAsFactors = F)
+  kcha_eop <- fread(file = file.path(kcha_path, kcha_eop_fn),
+                  na.strings = c("NA", "", "NULL", "N/A", "."), 
+                  stringsAsFactors = F)
 }
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
 
 # Bring in variable name mapping table
 fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
@@ -434,13 +359,8 @@ kcha_2017_2017_full <- kcha_2017_2017_full %>% mutate(kcha_source = "kcha2017")
 kcha_2018_2018_full <- kcha_2018_2018_full %>% mutate(kcha_source = "kcha2018")
 
 ### Append latest extract
-<<<<<<< HEAD
 kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_2016_full, kcha_2017_2017_full,
                   kcha_2018_2018_full)
-=======
-kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_full, kcha_2017_full)# %>%
-  #sample_n(1000)
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
 
 
 
@@ -593,10 +513,7 @@ kcha <- kcha %>%
 
 #### ADD MISSING END OF PARTICIPATION (EOP) CERTS ####
 # Rename EOP fields to match KCHA
-<<<<<<< HEAD
 # NB. No longer using names from the fields csv so that the bind_rows command works
-=======
-# NB. No longer using names from the fields csv
 if (UW == TRUE) {
   kcha_eop <- kcha_eop %>%
     rename(householdid = `Household.ID`, vouch_num = `Voucher.Number`,
@@ -604,7 +521,6 @@ if (UW == TRUE) {
            hh_lname = `HOH.Full.Name`, program_type = `Program.Type`,
            h2a = `HUD-50058.2a.Type.of.Action`, h2b = `Effective.Date`)
 } else {
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
 kcha_eop <- kcha_eop %>%
   rename(householdid = `Household ID`, vouch_num = `Voucher Number`,
          hh_ssn = `HOH SSN`, hh_dob = `HOH Birthdate`, 
@@ -847,19 +763,15 @@ gc()
 
 # Add number of household members at that time
 # Use summarise and join because mutate crashes things
-hhold_size <- kcha_long %>%
+hh_size <- kcha_long %>%
   group_by(hh_id_temp) %>%
-  summarise(hhold_size = n_distinct(mbr_num)) %>%
+  summarise(hh_size = n_distinct(mbr_num)) %>%
   ungroup()
 
-kcha_long <- left_join(kcha_long, hhold_size, by = "hh_id_temp")
+kcha_long <- left_join(kcha_long, hh_size, by = "hh_id_temp")
 
 
-<<<<<<< HEAD
 #### RENAME VARIABLES ####
-=======
-#### Rename variables ####
->>>>>>> 244d6ac856de0a23b5fa76469555c65095796241
 kcha_long <- setnames(kcha_long, fields$common_name[match(names(kcha_long), fields$kcha_modified)])
 
 
@@ -944,8 +856,10 @@ rm(list = ls(pattern = "p[1|2|3]_"))
 rm(list = c("fields", "reshape_f", "kcha_path"))
 rm(hhold_size)
 rm(list = c("kcha_portfolio_codes", "kcha_portfolio_codes_fn"))
+rm(kcha_eop_fn)
 rm(kcha)
 rm(METADATA)
-rm(script)
 rm(set_data_envr)
+rm(add_2018)
+rm(sql)
 gc()

@@ -29,10 +29,13 @@ library(housing) # contains many useful functions for analyses
 library(openxlsx) # Used to import/export Excel files
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
+library(data.table) # Used to manipulate data
 library(pastecs) # Used for summary statistics
-library(medicaid) # helpful counting functions
+library(claims) # helpful counting functions
+library(odbc) # Connect to SQL
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 
 #### BRING IN DATA ###
@@ -41,8 +44,7 @@ demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/P
                        header = TRUE, stringsAsFactors = FALSE)
 
 ### Bring in combined PHA/Medicaid data with some demographics already run ####
-yt_mcaid_final <- readRDS(file = paste0(housing_path, 
-                                       "/OrganizedData/SHA cleaning/yt_mcaid_final.Rds"))
+yt_mcaid_final <- DBI::dbReadTable(db_apde51, DBI::Id(schema = "stage", table = "mcaid_pha_yt"))
 
 # Retain only people living at YT or SS
 yt_ss <- yt_mcaid_final %>% filter(yt == 1 | ss == 1)
@@ -97,8 +99,9 @@ yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
   unit2 <- enquo(unit)
   origin <- "1970-01-01"
   
-  result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2017,
-                     period = period, unit = !!unit2) %>%
+  result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2018,
+                     period = period, unit = !!unit2,
+                     numeric = F) %>%
     mutate(date = ifelse(
       period == "year", year(date),
       ifelse(period == "quarter", quarter(date, with_year = T),
@@ -169,7 +172,7 @@ age_summ_f <- function(df, year = 12, cutoff = 0, long = F,
 
 
 
-#### 1) Demographics of people in YT/SS at any point in the year, 2012–2017 ####
+#### 1) Demographics of people in YT/SS at any point in the year, 2012–2018 ####
 ### Annual counts
 yt_demogs_f(df = yt_ss, group = quos(yt), unit = pid2)
 yt_demogs_f(df = yt_ss, group = quos(yt), unit = hh_id_new_h)
@@ -190,8 +193,7 @@ gender <- yt_demogs_f(df = yt_ss, group = quos(yt, gender_c), unit = pid2) %>%
   mutate(category = "Gender", group = gender_c, data = percent)
 ethn <- yt_demogs_f(df = yt_ss, group = quos(yt, ethn_c), unit = pid2) %>%
   mutate(category = "Race/ethnicity", group = ethn_c, data = percent)
-age <- bind_rows(lapply(seq(12,17), age_summ_f, df = yt_ss, cutoff = 0, 
-                             pt_suf = "_h", long = T))
+age <- bind_rows(lapply(seq(12,18), age_summ_f, df = yt_ss, cutoff = 0, long = T))
 
 summ_stat_ever <- bind_rows(total, gender, ethn, age) %>%
   select(date, yt, category, group, data) %>%
@@ -206,21 +208,21 @@ gc()
 # Monthly household
 count_hh_mth <- yt_demogs_f(df = yt_ss, 
                             group = quos(yt, enroll_type, dual_elig_m, gender_c, 
-                                         agegrp_h, ethn, time_housing), 
+                                         agegrp_h, ethn_c, time_housing), 
                             unit = hh_id_new_h,
                             period = "month")
 
 # Monthly individual
 count_pid_mth <- yt_demogs_f(df = yt_ss, 
                             group = quos(yt, enroll_type, dual_elig_m, gender_c, 
-                                         agegrp_h, ethn, time_housing), 
+                                         agegrp_h, ethn_c, time_housing), 
                             unit = pid2,
                             period = "month")
 
 # Annual household
 count_hh_yr <- yt_demogs_f(df = yt_ss, 
                             group = quos(yt, enroll_type, dual_elig_m, gender_c, 
-                                         agegrp_h, ethn, time_housing), 
+                                         agegrp_h, ethn_c, time_housing), 
                             unit = hh_id_new_h,
                             period = "year") %>%
   mutate(date = as.character(date))
@@ -228,7 +230,7 @@ count_hh_yr <- yt_demogs_f(df = yt_ss,
 # Annual individual
 count_pid_yr <- yt_demogs_f(df = yt_ss, 
                              group = quos(yt, enroll_type, dual_elig_m, gender_c, 
-                                          agegrp_h, ethn, time_housing), 
+                                          agegrp_h, ethn_c, time_housing), 
                              unit = pid2,
                              period = "year") %>%
   mutate(date = as.character(date))
@@ -264,7 +266,7 @@ tabloop_age <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
 
 tabloop_ethn <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
                          fixed = list_var(yt, unit, date, period, enroll_type, dual_elig_m),
-                         loop = list_var(ethn)) %>%
+                         loop = list_var(ethn_c)) %>%
   filter(pt_days_sum > 0)
 
 tabloop_time <- tabloop_f(yt_counts, sum = list_var(pop, pt_days),
@@ -293,7 +295,7 @@ writeData(wb_output, sheet = "yt_demogs", x = yt_counts_final)
 
 # Export workbook
 saveWorkbook(wb_output, file = paste0(housing_path, 
-                                      "/OrganizedData/Summaries/YT/YT enrollment count_", 
+                                      "/Organized_data/Summaries/YT/YT enrollment count_", 
                                       Sys.Date(), ".xlsx"),
              overwrite = T)
 
@@ -303,55 +305,31 @@ rm(summ_stat)
 gc()
 
 
-#### 2) Demographics of people in YT/SS enrolled 30+ days on Medicaid, 2012–2017 ####
-# Assign people to a location for each calendar year
-# NB. lapply is causing R to freeze, runnning spearately for now
-yt_coded12_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 12, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded13_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 13, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded14_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 14, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded15_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 15, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded16_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 16, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-yt_coded17_min <- yt_popcode(yt_mcaid_final, year_pre = "pt", year = 17, year_suf = NULL, 
-                             agency = agency_new, enroll_type = enroll_type, 
-                             dual = dual_elig_m, yt = yt, ss = ss, pt_cut = 30, 
-                             min = T)
-
-
-# Bind together
-yt_coded_min <- bind_rows(yt_coded12_min, yt_coded13_min, yt_coded14_min,
-                          yt_coded15_min, yt_coded16_min, yt_coded17_min)
-rm(list = ls(pattern = "yt_coded1"))
-gc()
-
+#### 2) Demographics of people in YT/SS enrolled 30+ days on Medicaid, 2012–2018 ####
+yt_coded_min <- bind_rows(lapply(seq(12,18), yt_popcode, df = yt_ss, year_pre = "pt",
+                                 year_suf = NULL, agency = agency_new,
+                                 enroll_type = enroll_type, dual = dual_elig_m,
+                                 yt = yt, ss = ss, pt_cut = 30, min = T))
 
 ### Create summary stats for Tableau
-total <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ],
-                     group = quos(yt), unit = pid2) %>%
-  mutate(category = "Number of residents",
-         group = "Total",
-         data = pop)
+
+total <- bind_rows(lapply(seq(2012, 2018), function(x) {
+  df_tmp <- yt_coded_min %>% filter(pop_code %in% c(1, 2) & year_code == x)
+  print(nrow(df_tmp))
+  output <- yt_demogs_f(df = df_tmp,
+                        group = quos(yt), unit = pid2) %>%
+    filter(date == x) %>%
+    mutate(category = "Number of residents",
+           group = "Total",
+           data = pop)
+  }))
 gender <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ], 
                       group = quos(yt, gender_c), unit = pid2) %>%
   mutate(category = "Gender", group = gender_c, data = percent)
 ethn <- yt_demogs_f(df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ], 
                     group = quos(yt, ethn_c), unit = pid2) %>%
   mutate(category = "Race/ethnicity", group = ethn_c, data = percent)
-age <- bind_rows(lapply(seq(12,17), age_summ_f, 
+age <- bind_rows(lapply(seq(12,18), age_summ_f, 
                         df = yt_coded_min[yt_coded_min$pop_code %in% c(1, 2), ],
                         cutoff = 0, long = T))
 
@@ -368,7 +346,7 @@ summ_stat <- bind_rows(summ_stat_ever, summ_stat_mcaid)
 
 # Export workbook
 write.xlsx(summ_stat, file = paste0(housing_path, 
-                                      "/OrganizedData/Summaries/YT/YT summary enrollment_", 
+                                      "/Organized_data/Summaries/YT/YT summary enrollment_", 
                                       Sys.Date(), ".xlsx"),
              overwrite = T)
 
@@ -601,4 +579,66 @@ rm(temp)
 
 
 
+
+
+
+
+#### 4) Demogs for journal article ####
+yt_coded_min <- bind_rows(lapply(seq(12,18), yt_popcode, df = yt_ss, year_pre = "pt",
+                                 year_suf = NULL, agency = agency_new,
+                                 enroll_type = enroll_type, dual = dual_elig_m,
+                                 yt = yt, ss = ss, pt_cut = 30, min = T))
+
+
+yt_coded_min <- yt_coded_min %>%
+  mutate(age12_full = interval(dob_c, "2012-12-31")/dyears(1),
+         age18_full = interval(dob_c, "2018-12-31")/dyears(1),
+         female = case_when(
+           gender_c == "Female" ~ 1,
+           gender_c == "Male" ~ 0),
+         ethn_c = ifelse(ethn_c == "", NA_character_, ethn_c))
+
+### 2012
+yt_coded_min %>% filter(year_code == 2012 & pop_code %in% c(1, 2)) %>%
+  group_by(yt) %>% 
+  summarise(count = n(),
+            count_chk = n_distinct(pid2),
+            age_mean = mean(age12_full, na.rm = T),
+            age_med = median(age12_full, na.rm = T),
+            female = mean(female, na.rm = T) * 100)
+
+ethn_c_tot_12 <- yt_coded_min %>% 
+  filter(year_code == 2012 & pop_code %in% c(1, 2) & !is.na(ethn_c)) %>%
+  group_by(yt) %>%
+  summarise(denominator = n())
+
+yt_coded_min %>% 
+  filter(year_code == 2012 & pop_code %in% c(1, 2) & !is.na(ethn_c)) %>%
+  group_by(yt, ethn_c) %>%
+  summarise(numerator = n()) %>%
+  ungroup() %>%
+  left_join(., ethn_c_tot_12, by = "yt") %>%
+  mutate(pct = round(numerator / denominator * 100, 1))
+
+### 2018
+yt_coded_min %>% filter(year_code == 2018 & pop_code %in% c(1, 2)) %>%
+  group_by(yt) %>% 
+  summarise(count = n(),
+            count_chk = n_distinct(pid2),
+            age_mean = mean(age12_full, na.rm = T),
+            age_med = median(age12_full, na.rm = T),
+            female = mean(female, na.rm = T) * 100)
+
+ethn_c_tot_18 <- yt_coded_min %>% 
+  filter(year_code == 2018 & pop_code %in% c(1, 2) & !is.na(ethn_c)) %>%
+  group_by(yt) %>%
+  summarise(denominator = n())
+
+yt_coded_min %>% 
+  filter(year_code == 2018 & pop_code %in% c(1, 2) & !is.na(ethn_c)) %>%
+  group_by(yt, ethn_c) %>%
+  summarise(numerator = n()) %>%
+  ungroup() %>%
+  left_join(., ethn_c_tot_18, by = "yt") %>%
+  mutate(pct = round(numerator / denominator * 100, 1))
 

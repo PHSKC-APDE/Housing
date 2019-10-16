@@ -20,28 +20,51 @@
 #' @export
 
 los <- function(df){
-  # Any time in SHA or KCHA
-  df <- overlap(df, pid, period)
-  df <- df %>%
-    mutate(
-      selector = 1:nrow(.) - cumul_overlap(overlap), 
-      start_housing = startdate[selector]) %>%
-    select(-overlap, -selector)
-  
-  # Time in PHA
-  df <- overlap(df, pid, period, agency_new)
-  df <- df %>%
-    mutate(
-      selector = 1:nrow(.) - cumul_overlap(overlap), 
-      start_pha = startdate[selector]) %>%
-    select(-overlap, -selector)
-  
-  # Time in program
-  df <- overlap(df, pid, period, agency_new, subsidy_type)
-  df <- df %>%
-    mutate(
-      selector = 1:nrow(.) - cumul_overlap(overlap), 
-      start_prog = startdate[selector]) %>%
-    select(-overlap, -selector)
-  return(df)
+   if(is.data.table(df)) {
+    # Any time in SHA or KCHA
+    df <- overlap(df, pid, period)
+    df[, selector := 1:nrow(df) - cumul_overlap(overlap)]
+    df[, start_housing := startdate[selector]]
+    df[, ':=' (overlap = NULL, selector = NULL)]
+    
+    # Time in PHA
+    df <- overlap(df, pid, period, agency_new)
+    df[, selector := 1:nrow(df) - cumul_overlap(overlap)]
+    df[, start_pha := startdate[selector]]
+    df[, ':=' (overlap = NULL, selector = NULL)]
+    
+    # Time in program
+    df <- overlap(df, pid, period, agency_new, subsidy_type)
+    df[, selector := 1:nrow(df) - cumul_overlap(overlap)]
+    df[, start_prog := startdate[selector]]
+    df[, ':=' (overlap = NULL, selector = NULL)]
+    
+    return(df)
+    
+  } else {
+    # Any time in SHA or KCHA
+    df <- overlap(df, pid, period)
+    df <- df %>%
+      mutate(
+        selector = 1:nrow(.) - cumul_overlap(overlap), 
+        start_housing = startdate[selector]) %>%
+      select(-overlap, -selector)
+
+    # Time in PHA
+    df <- overlap(df, pid, period, agency_new)
+    df <- df %>%
+      mutate(
+        selector = 1:nrow(.) - cumul_overlap(overlap), 
+        start_pha = startdate[selector]) %>%
+      select(-overlap, -selector)
+    
+    # Time in program
+    df <- overlap(df, pid, period, agency_new, subsidy_type)
+    df <- df %>%
+      mutate(
+        selector = 1:nrow(.) - cumul_overlap(overlap), 
+        start_prog = startdate[selector]) %>%
+      select(-overlap, -selector)
+    return(df)
+  }
 }

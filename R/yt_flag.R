@@ -17,7 +17,7 @@
 #' been matched to Medicaid data.
 #' @param prop_id A named variable that specifies the property IDs used in 
 #' housing data. Default is property_id.
-#' @param prop_id A named variable that specifies the property name used in 
+#' @param prop_name A named variable that specifies the property name used in 
 #' housing data. Default is property_name.
 #' @param address A named varaible that specifies the unit address. 
 #' Default is unit_add_h.
@@ -106,9 +106,9 @@ yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL,
   ### Find people who were ever at YT or SS
   df <- df %>%
     group_by(!!unit) %>%
-    mutate_at(vars(yt, ss), funs(ever = sum(., na.rm = TRUE))) %>%
+    mutate_at(vars(yt, ss), list(ever = ~ sum(., na.rm = TRUE))) %>%
     ungroup() %>%
-    mutate_at(vars(yt_ever, ss_ever), funs(replace(., which(. > 0), 1)))
+    mutate_at(vars(yt_ever, ss_ever), list(~ replace(., which(. > 0), 1)))
   
   
   return(df)

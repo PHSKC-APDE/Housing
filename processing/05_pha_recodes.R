@@ -28,12 +28,9 @@
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
-
 local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
 METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
 set_data_envr(METADATA,"combined")
@@ -50,9 +47,13 @@ pha_clean <- readRDS(file = paste0(housing_path, pha_clean_fn))
 # Note: Because of typos and other errors, this process will overestimate 
 # the number of people with multiple races
 pha_recoded <- pha_clean %>%
-  mutate_at(vars(r_white:r_nhpi), 
-            funs(new = car::recode(., "'Y' = 1; '1' = 1; 'N' = 0; '0' = 0; 'NULL' = NA; else = NA"))
-            ) %>%
+    mutate_at(vars(r_white:r_nhpi),
+              funs(new = as.numeric(case_when(
+                . %in% c("Y", "1") ~ 1,
+                . %in% c("N", "0") ~ 0,
+                TRUE ~  NA_real_))
+                )
+              ) %>%
   # Make r_hisp new for now, need to check recode eventually
   mutate(r_hisp_new = ifelse(r_hisp == 2 & !is.na(r_hisp), 0, r_hisp),
          # Propogate collapsed race code from SHA HCV data
@@ -134,10 +135,11 @@ pha_recoded <- pha_recoded %>%
 
 ### Fill in missing gender information (won't work if all are missing, also
 # will not fill in any initial NAs)
-pha_recoded <- pha_recoded %>%
-  group_by(pid) %>%
-  mutate_at(vars(gender_new_m6), funs(zoo::na.locf(., na.rm = F))) %>%
-  ungroup()
+pha_recoded <- setDT(pha_recoded)
+pha_recoded[, gender_new_m6 := fill(.SD), by = "pid", .SDcols = "gender_new_m6"]
+pha_recoded[, gender_new_m6 := fill(.SD, .direction = "up"), by = "pid", .SDcols = "gender_new_m6"]
+pha_recoded <- setDF(pha_recoded)
+
 
 
 #### Add other recodes later ####
@@ -147,8 +149,9 @@ if (UW == TRUE) {
   rm(pha_clean)
   gc()
 } else {
-saveRDS(pha_recoded, file = paste0(housing_path, 
-                                   pha_recoded_fn))
+saveRDS(pha_recoded, file = file.path(housing_path, pha_recoded_fn))
+
+
 #### Clean up ####
 rm(pha_clean)
 gc()
