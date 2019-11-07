@@ -1,5 +1,5 @@
 schema: stage
-table: mcaid_mcare_elig_timevar
+table: mcaid_mcare_pha_elig_timevar
 vars:
     id_apde: INT
     from_date: DATE
