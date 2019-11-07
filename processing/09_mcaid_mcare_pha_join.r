@@ -860,9 +860,9 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   )
   
   if(problems >1){
-    message(glue::glue("WARNING ... MCAID_MCARE_ELIG_TIMEVAR FAILED AT LEAST ONE QA TEST", "\n",
-                       "Summary of problems in MCAID_MCARE_ELIG_TIMEVAR: ", "\n", 
+    message(glue::glue("WARNING ... MCAID_MCARE_PHA_ELIG_TIMEVAR OR ELIG_DEMO FAILED AT LEAST ONE QA TEST", "\n",
+                       "Summary of problems in new tables: ", "\n", 
                        problems))
-  }else{message("Staged MCAID_MCARE_ELIG_TIMEVAR passed all QA tests")}
+  }else{message("Staged MCAID_MCARE_PHA_ELIG_TIMEVAR & ELIG_DEMO passed all QA tests")}
   
 # the end ----  
