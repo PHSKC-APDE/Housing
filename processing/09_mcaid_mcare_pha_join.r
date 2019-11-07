@@ -53,9 +53,9 @@ library(data.table) # Used to manipulate data
 
 kc.zips.url <- "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv"
 
-yaml.elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/danny/processing/09_mcaid_mcare_pha_elig_demo.yaml"
+yaml.elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/09_mcaid_mcare_pha_elig_demo.yaml"
 
-yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/danny/processing/09_mcaid_mcare_pha_elig_timevar.yaml"
+yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/09_mcaid_mcare_pha_elig_timevar.yaml"
 
 ##### Connect to the servers #####
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
