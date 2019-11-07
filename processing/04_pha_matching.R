@@ -14,7 +14,7 @@
 # 06a - Geocode addresses
 # 07 - Consolidate data rows
 # 08 - Add in final data elements and set up analyses
-# 09 - Join with Medicaid eligibility data
+# 09 - Join with Medicaid-Medicare eligibility & time varying data
 # 10 - Set up joint housing/Medicaid analyses
 #
 #
