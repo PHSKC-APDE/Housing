@@ -25,7 +25,7 @@ vars:
     pha_subsidy: VARCHAR(30)
     pha_voucher: VARCHAR(30)
     pha_operator: VARCHAR(30)
-    pha_porfolio: VARCHAR(100)
+    pha_portfolio: VARCHAR(100)
     geo_add1: VARCHAR(255)
     geo_add2: VARCHAR(255)
     geo_city: VARCHAR(255)
