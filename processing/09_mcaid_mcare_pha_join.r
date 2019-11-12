@@ -521,7 +521,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       #-- create time stamp ----
       timevar[, last_run := Sys.time()]  
       
-      # -- clean up ----
+      #-- normalize pha variables ----
+      setnames(timevar,
+               c("agency_new", "operator_type", "portfolio_final", "subsidy_type", "vouch_type_final"),
+               c("pha_agency", "pha_subsidy", "pha_voucher", "pha_type", "pha_portfolio"))
+
+      #-- clean up ----
       rm(linked, pha, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo)
       
 ##### Write elig_demo to SQL ----

@@ -21,11 +21,11 @@ vars:
     full_benefit: TINYINT
     cov_type: CHAR(3)
     mco_id: INT
-    agency_new: VARCHAR(4)
-    subsidy_type: VARCHAR(30)
-    vouch_type_final: VARCHAR(30)
-    operator_type: VARCHAR(30)
-    portfolio_final: VARCHAR(100)
+    pha_agency: VARCHAR(4)
+    pha_subsidy: VARCHAR(30)
+    pha_voucher: VARCHAR(30)
+    pha_operator: VARCHAR(30)
+    pha_porfolio: VARCHAR(100)
     geo_add1: VARCHAR(255)
     geo_add2: VARCHAR(255)
     geo_city: VARCHAR(255)
