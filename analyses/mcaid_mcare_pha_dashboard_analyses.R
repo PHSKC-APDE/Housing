@@ -45,9 +45,9 @@ mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid
 # Convert to data table for faster results
 mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
 mcaid_mcare_pha_elig_calyear[, ':=' (
-  dob = as.Date(from_date, origin = "1970-01-01"),
-  death_dt = as.Date(to_date, origin = "1970-01-01"),
-  start_housing = as.Date(to_date, origin = "1970-01-01")
+  dob = as.Date(dob, origin = "1970-01-01"),
+  death_dt = as.Date(death_dt, origin = "1970-01-01"),
+  start_housing = as.Date(start_housing, origin = "1970-01-01")
 )]
 
 
@@ -180,7 +180,7 @@ acute_query_f <- function(type = c("ed", "hosp", "inj")) {
            age_yr = floor(interval(start = dob, end = first_service_date) / years(1)),
            adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
            senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
-           age_group = case_when(
+           agegrp = case_when(
              age_yr < 18 ~ "<18",
              between(age_yr, 18, 24.99) ~ "18-24",
              between(age_yr, 25, 44.99) ~ "24-44",
@@ -220,16 +220,16 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F) {
   }
   
   sql_query <- glue_sql(
-    "SELECT a.*, ISNULL(b.condition, 0) AS condition 
+    "SELECT DISTINCT a.*, ISNULL(b.condition, 0) AS condition 
     FROM
       (SELECT year, id_apde, enroll_type, pha_agency, apde_dual,
-        full_benefit, age_group, gender_me, race_eth_me, time_housing, 
+        full_benefit, agegrp, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
         FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
-        WHERE [year] = {year} AND enroll_type <> 'h') a
+        WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1) a
     LEFT JOIN
       (SELECT id_apde, 1 AS condition 
-        FROM PHClaims.stage.mcaid_mcare_claim_ccw 
+        FROM PHClaims.final.mcaid_mcare_claim_ccw 
         WHERE {where_sql} AND from_date <= {paste0(year, '-12-31')} AND 
         to_date >= {paste0(year, '-01-01')}) b
     ON a.id_apde = b.id_apde",
@@ -254,14 +254,19 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F) {
              enroll_type == "hme" ~ "Housing and Medicare",
              enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
            pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
-                                 pha_operator)) %>%
+                                 pha_operator),
+           pha_portfolio = case_when(
+             pha_operator == "NON-PHA OPERATED" ~ NA_character_,
+             pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
+             pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
+             TRUE ~ pha_portfolio)) %>%
     rename(agency = pha_agency, dual = apde_dual,
            gender = gender_me, ethn = race_eth_me,
            length = time_housing, subsidy = pha_subsidy,
            voucher = pha_voucher, operator = pha_operator,
            portfolio = pha_portfolio, zip = geo_zip) %>%
     group_by(year, enroll_type, agency, dual, full_benefit, 
-             age_group, gender, ethn, length, 
+             agegrp, gender, ethn, length, 
              subsidy, voucher, operator, portfolio, zip) %>%
     summarise(count := sum(condition)) %>%
     ungroup()
@@ -302,12 +307,12 @@ eventcount_acute_persons_f <- function(df_events = acute, df_pop = chronic_pop,
   output <- output %>% mutate(condition = if_else(is.na(condition), 0, 1))
   
   output <- output %>%
-    group_by(year, agency_num, enroll_type_num, dual_elig_num, age_group,
+    group_by(year, agency_num, enroll_type_num, dual_elig_num, agegrp,
              gender_num, ethn_num, voucher_num, subsidy_num, operator_num,
              portfolio_num, length, zip_c) %>%
     summarise(count := sum(condition)) %>%
     ungroup() %>%
-    select(year, agency_num, enroll_type_num, dual_elig_num, age_group, 
+    select(year, agency_num, enroll_type_num, dual_elig_num, agegrp, 
            gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
            portfolio_num, length, zip_c,
            count) %>%
@@ -332,12 +337,12 @@ eventcount_acute_persons_f <- function(df_events = acute, df_pop = chronic_pop,
 pop_enroll_all_mm <- bind_rows(lapply(seq_along(years), function(x) {
   sql_query <- glue_sql(
     "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
-    age_group, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
     pha_portfolio, time_housing, geo_zip, SUM(pt_days) AS pt_days, 
     SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
     FROM stage.mcaid_mcare_pha_elig_calyear 
     WHERE [year] = {years[x]} 
-    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, age_group, 
+    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
     gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
     pha_portfolio, time_housing, geo_zip",
     .con = db_apde51)
@@ -352,12 +357,12 @@ pop_enroll_all_mm <- bind_rows(lapply(seq_along(years), function(x) {
 pop_enroll_all_mm_wc <- bind_rows(lapply(seq_along(years), function(x) {
   sql_query <- glue_sql(
     "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
-    age_group, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
     pha_portfolio, time_housing, geo_zip, SUM(pt_days) AS pt_days, 
     SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
     FROM stage.mcaid_mcare_pha_elig_calyear 
     WHERE [year] = {years[x]} AND age_wc IS NOT NULL 
-    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, age_group, 
+    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
     gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
     pha_portfolio, time_housing, geo_zip",
     .con = db_apde51)
@@ -386,139 +391,148 @@ pop_enroll_all_mm <- pop_enroll_all_mm %>%
            enroll_type == "hme" ~ "Housing and Medicare",
            enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
          pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
-                               pha_operator)
-         )
+                               pha_operator),
+         pha_portfolio = case_when(
+           pha_operator == "NON-PHA OPERATED" ~ NA_character_,
+           pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
+           pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
+           TRUE ~ pha_portfolio)) %>% 
+  rename(agency = pha_agency, dual = apde_dual,
+         gender = gender_me, ethn = race_eth_me,
+         length = time_housing, subsidy = pha_subsidy,
+         voucher = pha_voucher, operator = pha_operator,
+         portfolio = pha_portfolio, zip = geo_zip)
 
 
 #### Collapse into bivariate totals ####
 # Use tab_loop_f from medicaid package to summarise
 tabloop_age <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, age_group),
-                         loop = list_var(gender_me, race_eth_me, pha_voucher, pha_subsidy, 
-                                         pha_operator, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, agegrp),
+                         loop = list_var(gender, ethn, voucher, subsidy, 
+                                         operator, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "age_group") %>%
-  rename(group1 = age_group, category2 = group_cat, group2 = group)
+  mutate(category1 = "agegrp") %>%
+  rename(group1 = agegrp, category2 = group_cat, group2 = group)
 
 tabloop_gender <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, gender_me),
-                         loop = list_var(age_group, race_eth_me, pha_voucher, pha_subsidy, 
-                                         pha_operator, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, gender),
+                         loop = list_var(agegrp, ethn, voucher, subsidy, 
+                                         operator, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "gender_me") %>%
-  rename(group1 = gender_me, category2 = group_cat, group2 = group)
+  mutate(category1 = "gender") %>%
+  rename(group1 = gender, category2 = group_cat, group2 = group)
 
 tabloop_ethn <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, race_eth_me),
-                         loop = list_var(age_group, gender_me, pha_voucher, pha_subsidy, 
-                                         pha_operator, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, ethn),
+                         loop = list_var(agegrp, gender, voucher, subsidy, 
+                                         operator, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "race_eth_me") %>%
-  rename(group1 = race_eth_me, category2 = group_cat, group2 = group)
+  mutate(category1 = "ethn") %>%
+  rename(group1 = ethn, category2 = group_cat, group2 = group)
 
 tabloop_voucher <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, pha_voucher),
-                         loop = list_var(age_group, gender_me, race_eth_me, pha_subsidy, 
-                                         pha_operator, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, voucher),
+                         loop = list_var(agegrp, gender, ethn, subsidy, 
+                                         operator, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "pha_voucher") %>%
-  rename(group1 = pha_voucher, category2 = group_cat, group2 = group)
+  mutate(category1 = "voucher") %>%
+  rename(group1 = voucher, category2 = group_cat, group2 = group)
 
 tabloop_subsidy <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, pha_subsidy),
-                         loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, 
-                                         pha_operator, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, subsidy),
+                         loop = list_var(agegrp, gender, ethn, voucher, 
+                                         operator, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "pha_subsidy") %>%
-  rename(group1 = pha_subsidy, category2 = group_cat, group2 = group)
+  mutate(category1 = "subsidy") %>%
+  rename(group1 = subsidy, category2 = group_cat, group2 = group)
 
 tabloop_operator <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                         fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, pha_operator),
-                         loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, 
-                                         pha_subsidy, pha_portfolio, time_housing, geo_zip)) %>%
+                         fixed = list_var(wc_flag, year, agency, enroll_type, dual, operator),
+                         loop = list_var(agegrp, gender, ethn, voucher, 
+                                         subsidy, portfolio, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "pha_operator") %>%
-  rename(group1 = pha_operator, category2 = group_cat, group2 = group)
+  mutate(category1 = "operator") %>%
+  rename(group1 = operator, category2 = group_cat, group2 = group)
 
 tabloop_portfolio <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                              fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, pha_portfolio),
-                              loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, 
-                                              pha_subsidy, pha_operator, time_housing, geo_zip)) %>%
+                              fixed = list_var(wc_flag, year, agency, enroll_type, dual, portfolio),
+                              loop = list_var(agegrp, gender, ethn, voucher, 
+                                              subsidy, operator, length, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "pha_portfolio") %>%
-  rename(group1 = pha_portfolio, category2 = group_cat, group2 = group)
+  mutate(category1 = "portfolio") %>%
+  rename(group1 = portfolio, category2 = group_cat, group2 = group)
 
 tabloop_length <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                              fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, time_housing),
-                              loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, 
-                                              pha_subsidy, pha_operator, pha_portfolio, geo_zip)) %>%
+                              fixed = list_var(wc_flag, year, agency, enroll_type, dual, length),
+                              loop = list_var(agegrp, gender, ethn, voucher, 
+                                              subsidy, operator, portfolio, zip)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "time_housing") %>%
-  rename(group1 = time_housing, category2 = group_cat, group2 = group)
+  mutate(category1 = "length") %>%
+  rename(group1 = length, category2 = group_cat, group2 = group)
 
 tabloop_zip <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                            fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual, geo_zip),
-                            loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, 
-                                            pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
+                            fixed = list_var(wc_flag, year, agency, enroll_type, dual, zip),
+                            loop = list_var(agegrp, gender, ethn, voucher, 
+                                            subsidy, operator, portfolio, length)) %>%
   filter(pt_days_sum > 0) %>%
-  mutate(category1 = "geo_zip",
-         geo_zip = as.character(geo_zip)) %>%
-  rename(group1 = geo_zip, category2 = group_cat, group2 = group)
+  mutate(category1 = "zip",
+         zip = as.character(zip)) %>%
+  rename(group1 = zip, category2 = group_cat, group2 = group)
 gc()
 
 
 # Make totals
 tabloop_age_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                             fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                             loop = list_var(age_group)) %>%
+                             fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                             loop = list_var(agegrp)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_gender_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                loop = list_var(gender_me)) %>%
+                                fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                loop = list_var(gender)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_ethn_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                              fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                              loop = list_var(race_eth_me)) %>%
+                              fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                              loop = list_var(ethn)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_voucher_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                 fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                 loop = list_var(pha_voucher)) %>%
+                                 fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                 loop = list_var(voucher)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_subsidy_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                 fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                 loop = list_var(pha_subsidy)) %>%
+                                 fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                 loop = list_var(subsidy)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_operator_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                  fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                  loop = list_var(pha_operator)) %>%
+                                  fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                  loop = list_var(operator)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_portfolio_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                   fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                   loop = list_var(pha_portfolio)) %>%
+                                   fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                   loop = list_var(portfolio)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_length_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                                fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                                loop = list_var(time_housing)) %>%
+                                fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                                loop = list_var(length)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
 tabloop_zip_tot <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
-                             fixed = list_var(wc_flag, year, pha_agency, enroll_type, apde_dual),
-                             loop = list_var(geo_zip)) %>%
+                             fixed = list_var(wc_flag, year, agency, enroll_type, dual),
+                             loop = list_var(zip)) %>%
   mutate(category2 = "total", group2 = "total") %>%
   rename(category1 = group_cat, group1 = group)
 
@@ -534,10 +548,9 @@ pop_enroll_combine_bivar <- bind_rows(tabloop_age, tabloop_gender, tabloop_ethn,
                                       tabloop_portfolio_tot,  tabloop_length_tot, 
                                       tabloop_zip_tot) %>%
   filter(pt_days_sum > 0) %>%
-  select(year, pha_agency, enroll_type, apde_dual, category1, group1, 
+  select(year, agency, enroll_type, dual, category1, group1, 
          category2, group2, pop_ever_sum, pop_sum, pt_days_sum, wc_flag) %>%
-  rename(agency = pha_agency, dual = apde_dual, 
-         pop_ever = pop_ever_sum, pop = pop_sum, pt_days = pt_days_sum) 
+  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt_days = pt_days_sum) 
   
 
 # Add suppression and data source
@@ -562,14 +575,14 @@ pop_enroll_combine_bivar_suppressed <- pop_enroll_combine_bivar %>%
 
 #### Temp way to populate existing Medicaid-only data ####
 # Will only work once then need to change code
-pop_enroll_all_md <- dbGetQuery(db_extractstore51, "SELECT * FROM APDE_WIP.mcaid_pha_enrollment")
-
-# Add indicator of dataset
-pop_enroll_all_md <- pop_enroll_all_md %>% mutate(source = "Medicaid only")
+# Only needed until the combined mcaid_mcare_pha table is remade with dual flag
+pop_enroll_all_md <- dbGetQuery(db_extractstore51, 
+"SELECT * FROM APDE_WIP.mcaid_pha_enrollment WHERE source = 'Medicaid only'")
 
 
 ### Combine data
-pop_enroll_combine_bivar_suppressed <- bind_rows(pop_enroll_combine_bivar_suppressed, pop_enroll_all_md)
+pop_enroll_combine_bivar_suppressed <- bind_rows(pop_enroll_combine_bivar_suppressed, 
+                                                 pop_enroll_all_md)
 
 
 #### Write to SQL ####
@@ -598,7 +611,7 @@ pha_mcaid_hosp <- acute_query_f(type = "hosp")
 # Run for total number of hospitalizations
 hosp_cnt <- pha_mcaid_hosp %>%
   group_by(year, enroll_type, agency, dual, full_benefit, 
-           age_group, gender_me, race_eth_me, time_housing, 
+           agegrp, gender_me, race_eth_me, time_housing, 
            pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip) %>%
   summarise(count = sum(inpatient)) %>%
   mutate(indicator = "Hospitalizations")
@@ -611,7 +624,7 @@ pha_mcaid_ed <- acute_query_f(type = "ed")
 # Run for total number of ED visits
 ed_cnt <- pha_mcaid_ed %>%
   group_by(year, enroll_type, agency, dual, full_benefit, 
-           age_group, gender_me, race_eth_me, time_housing, 
+           agegrp, gender_me, race_eth_me, time_housing, 
            pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip) %>%
   summarise(count = sum(ed)) %>%
   mutate(indicator = "ED visits")
@@ -631,10 +644,40 @@ asthma_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f,
   mutate(indicator = "Persons with asthma")
 
 
+### Cancer - breast
+cancer_breast_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                                condition = "ccw_cancer_breast", cvd = F)) %>%
+  mutate(indicator = "Persons with cancer: breast")
+
+
+### Cancer - colorectal
+cancer_colorectal_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                                           condition = "ccw_cancer_colorectal", cvd = F)) %>%
+  mutate(indicator = "Persons with cancer: colorectal")
+
+
+### CHF
+chf_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                             condition = "ccw_heart_failure", cvd = F)) %>%
+  mutate(indicator = "Persons with cardiovascular disease: congestive heart failure")
+
+
+# COPD
+copd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                             condition = "ccw_copd", cvd = F)) %>%
+  mutate(indicator = "Persons with chronic obstructive pulmonary disease")
+
+
 ### CVD
 cvd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
                              condition = "", cvd = T)) %>%
   mutate(indicator = "Persons with cardiovascular disease: any type")
+
+
+### Depression
+depression_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                             condition = "ccw_depression", cvd = F)) %>%
+  mutate(indicator = "Persons with depression")
 
 
 ### Diabetes
@@ -649,9 +692,29 @@ hypertension_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f,
   mutate(indicator = "Persons with cardiovascular disease: hypertension")
 
 
+### IHD
+ihd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                                      condition = "ccw_ischemic_heart_dis", cvd = F)) %>%
+  mutate(indicator = "Persons with cardiovascular disease: ischemic heart disease")
+
+
+### Kidney disease
+kidney_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                             condition = "ccw_chr_kidney_dis", cvd = F)) %>%
+  mutate(indicator = "Persons with kidney disease")
+
+
+### Myocardial infarction
+mi_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
+                                condition = "ccw_mi", cvd = F)) %>%
+  mutate(indicator = "Persons with cardiovascular disease: myocardial infarction")
+
+
 #### COMBINE DATA ####
-health_events <- bind_rows(alzheimer_pers, asthma_pers, cvd_pers, diabetes_pers, 
-                           ed_cnt, hosp_cnt,  hypertension_pers)
+health_events <- bind_rows(alzheimer_pers, asthma_pers, cancer_breast_pers,
+                           cancer_colorectal_pers, chf_pers, copd_pers, cvd_pers, 
+                           depression_pers, diabetes_pers, hypertension_pers, 
+                           ihd_pers, kidney_pers, mi_pers)
 
 
 rm(list = ls(pattern = "_cnt$"))
@@ -663,138 +726,55 @@ rm(list = ls(pattern = "_pers$"))
 # Use tab_loop_f from medicaid package to summarise
 # Remove rows with zero count to save memory
 # Also don't loop over ZIP because not using data (and memory intensive)
-tabloop_age <- tabloop_f(health_events, sum = list_var(count),
-                         fixed = list_var(indicator, year, agency, enroll_type, dual, age_group),
-                         loop = list_var(gender_me, race_eth_me, pha_voucher, pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "age_group") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = age_group, category2 = group_cat, group2 = group)
 
-tabloop_gender <- tabloop_f(health_events, sum = list_var(count),
-                            fixed = list_var(indicator, year, agency, enroll_type, dual, gender_me),
-                            loop = list_var(age_group, race_eth_me, pha_voucher, pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "gender_me") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = gender_me, category2 = group_cat, group2 = group)
+# This is using a horrible mix of quosures and lists for now.
+# The tabloop function will be rewritten some day to make this easier.
+fixed_list <- list_var(indicator, year, agency, enroll_type, dual)
+loop_list <- c("agegrp", "gender", "ethn", "voucher", "subsidy", "operator", "portfolio", "length")
 
-tabloop_ethn <- tabloop_f(health_events, sum = list_var(count),
-                          fixed = list_var(indicator, year, agency, enroll_type, dual, race_eth_me),
-                          loop = list_var(age_group, gender_me, pha_voucher, pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "race_eth_me") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = race_eth_me, category2 = group_cat, group2 = group)
 
-tabloop_voucher <- tabloop_f(health_events, sum = list_var(count),
-                             fixed = list_var(indicator, year, agency, enroll_type, dual, pha_voucher),
-                             loop = list_var(age_group, gender_me, race_eth_me, pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "pha_voucher") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = pha_voucher, category2 = group_cat, group2 = group)
+health_events_bivariate <- bind_rows(lapply(loop_list, function(x) {
+  
+  # Set up quosure for each loop var
+  loop_quo <- rlang::as_quosure(rlang::sym(x), env = environment()) 
+  
+  ### Make new versions of each list to feed to tabloop
+  # This is super clunky but should work
+  fixed_list_new <- rlang::new_quosures(c(fixed_list, loop_quo))
+  loop_list_new <- loop_list[!loop_list %in% x]
+  loop_list_new <- rlang::as_quosures(rlang::syms(loop_list_new), env = environment())
+  
+  ### Run tabloop
+  output <- tabloop_f(health_events, sum = list_var(count),
+                      fixed = fixed_list_new, loop = loop_list_new) %>%
+    mutate(category1 = rlang::quo_name(x)) %>%
+    filter(count_sum > 0) %>%
+    rename(group1 = !!x, category2 = group_cat, group2 = group)
 
-tabloop_subsidy <- tabloop_f(health_events, sum = list_var(count),
-                             fixed = list_var(indicator, year, agency, enroll_type, dual, pha_subsidy),
-                             loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, pha_operator, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "pha_subsidy") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = pha_subsidy, category2 = group_cat, group2 = group)
+  return(output)
+}))
 
-tabloop_operator <- tabloop_f(health_events, sum = list_var(count),
-                              fixed = list_var(indicator, year, agency, enroll_type, dual, pha_operator),
-                              loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, pha_subsidy, pha_portfolio, time_housing)) %>%
-  mutate(category1 = "pha_operator") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = pha_operator, category2 = group_cat, group2 = group)
 
-tabloop_portfolio <- tabloop_f(health_events, sum = list_var(count),
-                               fixed = list_var(indicator, year, agency, enroll_type, dual, pha_portfolio),
-                               loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, pha_subsidy, pha_operator, time_housing)) %>%
-  mutate(category1 = "pha_portfolio") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = pha_portfolio, category2 = group_cat, group2 = group)
-
-tabloop_length <- tabloop_f(health_events, sum = list_var(count),
-                            fixed = list_var(indicator, year, agency, enroll_type, dual, time_housing),
-                            loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, pha_subsidy, pha_operator, pha_portfolio)) %>%
-  mutate(category1 = "time_housing") %>%
-  filter(count_sum > 0) %>%
-  rename(group1 = time_housing, category2 = group_cat, group2 = group)
-
-# Not using these data right now (also too memory intensive to run)
-# tabloop_zip <- tabloop_f(health_events, sum = list_var(count),
-#                          fixed = list_var(indicator, year, agency, enroll_type, dual, geo_zip),
-#                          loop = list_var(age_group, gender_me, race_eth_me, pha_voucher, pha_subsidy, pha_operator, pha_portfolio, time_housing)) %>%
-#   mutate(category1 = "zip", geo_zip = as.character(zip)) %>%
-#   filter(count_sum > 0) %>%
-#   rename(group1 = zip, category2 = group_cat, group2 = group)
-# gc()
-
+# Make this a set of quosures for expediency's sake
+loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfolio, length, zip)
 
 ### Make total columns for univariate analyses
-tabloop_age_tot <- tabloop_f(health_events, sum = list_var(count),
-                             fixed = list_var(indicator, year, agency, enroll_type, dual),
-                             loop = list_var(age_group)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_gender_tot <- tabloop_f(health_events, sum = list_var(count),
-                                fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                loop = list_var(gender_me)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_ethn_tot <- tabloop_f(health_events, sum = list_var(count),
-                              fixed = list_var(indicator, year, agency, enroll_type, dual),
-                              loop = list_var(race_eth_me)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_voucher_tot <- tabloop_f(health_events, sum = list_var(count),
-                                 fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                 loop = list_var(pha_voucher)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_subsidy_tot <- tabloop_f(health_events, sum = list_var(count),
-                                 fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                 loop = list_var(pha_subsidy)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_operator_tot <- tabloop_f(health_events, sum = list_var(count),
-                                  fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                  loop = list_var(pha_operator)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_portfolio_tot <- tabloop_f(health_events, sum = list_var(count),
-                                   fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                   loop = list_var(pha_portfolio)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_length_tot <- tabloop_f(health_events, sum = list_var(count),
-                                fixed = list_var(indicator, year, agency, enroll_type, dual),
-                                loop = list_var(time_housing)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
-tabloop_zip_tot <- tabloop_f(health_events, sum = list_var(count),
-                             fixed = list_var(indicator, year, agency, enroll_type, dual),
-                             loop = list_var(geo_zip)) %>%
-  mutate(category2 = "total", group2 = "total") %>%
-  rename(category1 = group_cat, group1 = group)
-
+health_events_totals <- bind_rows(lapply(loop_list, function(x) {
+  output <- health_events %>%
+    group_by(indicator, year, agency, enroll_type, dual, !!x) %>%
+    summarise(count_sum = sum(count)) %>%
+    ungroup() %>%
+    mutate(
+      category1 = quo_name(x), group1 = !!x,
+      category2 = "total", group2 = "total") %>%
+    select(-(!!x))
+  
+  return(output)
+}))
 
 
 #### Combine into one data frame ####
-health_events_combined <- bind_rows(tabloop_age, tabloop_gender, tabloop_ethn,
-                                    tabloop_voucher, tabloop_subsidy,
-                                    tabloop_operator, tabloop_portfolio, 
-                                    tabloop_length, #tabloop_zip,
-                                    tabloop_age_tot, tabloop_gender_tot, tabloop_ethn_tot,
-                                    tabloop_voucher_tot, tabloop_subsidy_tot,
-                                    tabloop_operator_tot, tabloop_portfolio_tot, 
-                                    tabloop_length_tot, tabloop_zip_tot) %>%
+health_events_combined <- bind_rows(health_events_bivariate, health_events_totals) %>%
   filter(count_sum > 0) %>%
   # Filter out impossible combinations
   filter(!(enroll_type == "Housing only" | (indicator == "Injuries" & year < 2016))) %>%
@@ -812,9 +792,8 @@ health_events_combined <- bind_rows(tabloop_age, tabloop_gender, tabloop_ethn,
 
 # Add suppression
 health_events_combined <- health_events_combined %>%
-  mutate(
-    suppressed = if_else(between(count, 1, 10), 1, 0),
-    count_supp = if_else(between(count, 1, 10), NA_real_, count)) 
+  mutate(suppressed = if_else(between(count, 1, 10), 1, 0),
+         count_supp = if_else(between(count, 1, 10), NA_real_, count)) 
 
 
 
@@ -824,14 +803,9 @@ health_events_combined_pop <- left_join(health_events_combined, pop_enroll_combi
                                                "dual", "category1", "group1",
                                                "category2", "group2")) %>%
   # Filter out rows with no population
-  # NB. There are 23 rows with count > 0 and no pop (total count = 30)
-  # All obscure ZIPs
   filter(!is.na(pop_ever))
 
 
-# ci_lb function
-# ci_lb_f <- function()
-# 
 # test <- health_events_combined_pop %>%
 #   sample_n(100) %>%
 #   mutate(
@@ -864,27 +838,36 @@ health_events_combined_pop <- health_events_combined_pop %>%
     rate = case_when(
       acute == 1 ~ count / denominator * 1000,
       acute == 0 & pop == 0 ~ NA_real_,
-      acute == 0 ~ count / pop * 1000
-    ),
+      acute == 0 ~ count / pop * 1000)) %>%
+  rowwise() %>%
+  mutate(
     # Use exact 95% CI for Poisson
     ci_lb = case_when(
-      acute == 1 ~ qgamma((1 - 0.95)/2, count) / denominator * 1000,
+      acute == 1 ~ poisson.test(count, conf.level = 0.95)$conf.int[1] / denominator * 1000,
       acute == 0 & (pop == 0 | pop - count <= 0) ~ NA_real_,
-      acute == 0 ~ qbeta((1 - 0.95)/2, count, pop - count + 1) * 1000
-    ),
+      acute == 0 ~ prop.test(count, pop, correct = F)$conf.int[1] * 1000),
     ci_ub = case_when(
-      acute == 1 ~ qgamma(1 - (1 - 0.95)/2, count + 1) / denominator * 1000,
+      acute == 1 ~ poisson.test(count, conf.level = 0.95)$conf.int[2] / denominator * 1000,
       acute == 0 & (pop == 0 | pop - count <= 0) ~ NA_real_,
-      acute == 0 ~ qbeta(1 - (1 - 0.95)/2, count + 1, pop - count) * 1000
-    )
-  )
+      acute == 0 ~ prop.test(count, pop, correct = F)$conf.int[2] * 1000)) %>%
+  ungroup()
+
 
 
 ### Create portfolio specific comparisons and join back to main data
+test <- health_events_combined_pop %>%
+  filter((agency == "KCHA") & category1 == "portfolio" & year == 2012 &
+           dual == "Not dual eligible" & category2 == "total") %>%
+  arrange(indicator, group1) %>%
+  group_by(year, indicator, agency, enroll_type, dual, group1) %>%
+  summarise(count_tot = sum(count), pop_tot = sum(pop), pt_tot = sum(pt_days)) %>%
+  ungroup() %>%
+  arrange(indicator, group1)
+
 rest_pha <- health_events_combined_pop %>%
   filter((agency == "KCHA" | agency == "SHA") & category1 == "portfolio" & 
            dual == "Not dual eligible" & category2 == "total") %>%
-  group_by(year, indicator, agency) %>%
+  group_by(year, acute, enroll_type, dual, indicator, agency) %>%
   mutate(count_tot = sum(count), pop_tot = sum(pop), pt_tot = sum(pt_days)) %>%
   ungroup() %>%
   mutate(
@@ -895,27 +878,25 @@ rest_pha <- health_events_combined_pop %>%
     rest_pha_rate = case_when(
       acute == 1 ~ rest_count / rest_denominator * 1000,
       acute == 0 & pop == 0 ~ NA_real_,
-      acute == 0 ~ rest_count / rest_pop * 1000
-    ),
-    # Use exact 95% CI for Poisson
+      acute == 0 ~ rest_count / rest_pop * 1000)) %>%
+  rowwise() %>%
+  mutate(
     rest_ci_lb = case_when(
-      acute == 1 ~ qgamma((1 - 0.95)/2, rest_count) / rest_denominator * 1000,
+      acute == 1 ~ poisson.test(rest_count, conf.level = 0.95)$conf.int[1] / rest_denominator * 1000,
       acute == 0 & (rest_pop == 0 | rest_pop - rest_count <= 0) ~ NA_real_,
-      acute == 0 ~ qbeta((1 - 0.95)/2, rest_count, rest_pop - rest_count + 1) * 1000
-    ),
+      acute == 0 ~ prop.test(rest_count, rest_pop, correct = F)$conf.int[1] * 1000),
     rest_ci_ub = case_when(
-      acute == 1 ~ qgamma(1 - (1 - 0.95)/2, rest_count + 1) / rest_denominator * 1000,
+      acute == 1 ~ poisson.test(rest_count, conf.level = 0.95)$conf.int[2] / rest_denominator * 1000,
       acute == 0 & (rest_pop == 0 | rest_pop - rest_count <= 0) ~ NA_real_,
-      acute == 0 ~ qbeta(1 - (1 - 0.95)/2, rest_count + 1, rest_pop - rest_count) * 1000
-    )
-  ) %>%
-  select(year, indicator, agency, category1, group1, category2, group2,
+      acute == 0 ~ prop.test(rest_count, rest_pop, correct = F)$conf.int[2] * 1000)) %>%
+  ungroup() %>%
+  select(year, acute, indicator, agency, category1, group1, category2, group2,
          rest_count, rest_denominator, rest_pop, rest_pt,
          rest_pha_rate, rest_ci_lb, rest_ci_ub)
 
 
 health_events_combined_pop <- left_join(health_events_combined_pop, rest_pha,
-                                        by = c("year", "indicator", "agency", 
+                                        by = c("year", "acute", "indicator", "agency", 
                                                "category1", "group1", "category2", "group2"))
 
 
