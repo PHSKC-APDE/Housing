@@ -547,7 +547,7 @@ pop_health_bivariate <- bind_rows(lapply(loop_list, function(x) {
 # Make this a set of quosures for expediency's sake
 loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfolio, length, zip)
 
-pop_health_total <- bind_rows(lapply(loop_list, function(x) {
+pop_health_univariate <- bind_rows(lapply(loop_list, function(x) {
   output <- pop_enroll_all_mm %>%
     group_by(year, wc_flag, agency, !!x) %>%
     summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
@@ -561,16 +561,36 @@ pop_health_total <- bind_rows(lapply(loop_list, function(x) {
   return(output)
 }))
 
+
+# Make overall columns for each agency
+pop_health_total <- pop_enroll_all_mm %>%
+  group_by(year, wc_flag, agency) %>%
+  summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
+            pt_days_sum = sum(pt_days, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(
+    category1 = "overall", group1 = "overall",
+    category2 = "total", group2 = "total")
+
 rm(fixed_list, loop_list)
 
 
 #### Combine into one ####
-pop_health_combine <- bind_rows(pop_health_bivariate, pop_health_total) %>%
+pop_health_combine <- bind_rows(pop_health_bivariate, pop_health_univariate, pop_health_total) %>%
   filter(pt_days_sum > 0) %>%
   select(year, wc_flag, agency, category1, group1, category2, group2, 
          pop_ever_sum, pop_sum, pt_days_sum) %>%
   rename(pop_ever = pop_ever_sum, pop = pop_sum, pt_days = pt_days_sum) 
 
+
+# Add suppression flags and data source
+# Keep all vars for now because pop is neede for rest_pha calcs
+pop_health_combine <- pop_health_combine %>%
+  mutate_at(vars(pop_ever, pop),
+            list(supp_flag = ~ if_else(between(., 1, 10), 1, 0))) %>%
+  mutate_at(vars(pop_ever, pop),
+            list(supp = ~ if_else(between(., 1, 10), NA_real_, .))) %>%
+  mutate(source = "Medicaid and Medicare")
 
 
 #### CLEAN UP ####
@@ -741,7 +761,7 @@ health_events_bivariate <- bind_rows(lapply(loop_list, function(x) {
 loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfolio, length, zip)
 
 ### Make total columns for univariate analyses
-health_events_totals <- bind_rows(lapply(loop_list, function(x) {
+health_events_univariate <- bind_rows(lapply(loop_list, function(x) {
   output <- health_events %>%
     group_by(indicator, year, agency, !!x) %>%
     # group_by(indicator, year, agency, enroll_type, dual, !!x) %>% # Medicaid-only version
@@ -758,8 +778,18 @@ health_events_totals <- bind_rows(lapply(loop_list, function(x) {
 rm(fixed_list, loop_list)
 
 
+### Make overall 
+health_events_total <- health_events %>%
+  group_by(indicator, year, agency) %>%
+  summarise(count_sum = sum(count)) %>%
+  ungroup() %>%
+  mutate(
+    category1 = "overall", group1 = "overall",
+    category2 = "total", group2 = "total")
+
+
 #### Combine into one data frame ####
-health_events_combined <- bind_rows(health_events_bivariate, health_events_totals) %>%
+health_events_combined <- bind_rows(health_events_bivariate, health_events_univariate, health_events_total) %>%
   # Filter out impossible combinations
   filter(!(indicator == "Injuries" & year < 2016)) %>%
   rename(count = count_sum) %>%
@@ -799,7 +829,7 @@ health_events_combined_pop <- health_events_combined_pop %>%
     denominator = ifelse(year %in% c(2012, 2016), pt_days / 366, pt_days / 365),
     rate = case_when(
       acute == 1 ~ count / denominator * 1000,
-      acute == 0 & pop == 0 ~ NA_real_,
+      acute == 0 & (is.na(pop) | pop == 0) ~ NA_real_,
       acute == 0 ~ count / pop * 1000)) %>%
   mutate(chronic_cols = map2(count, pop, ~ if (.y < 1) {NA} else {prop.test(.x, n = .y, correct = F)})) %>%
   mutate(ci_lb_chronic = map_dbl(chronic_cols, function(x) {if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[1]]}}),
@@ -809,8 +839,8 @@ health_events_combined_pop <- health_events_combined_pop %>%
                              {tibble(ci_lb_acute = .[["conf.int"]][[1]],
                                      ci_ub_acute = .[["conf.int"]][[2]])})) %>%
   unnest() %>%
-  mutate(ci_lb = ifelse(acute == 1, ci_lb_acute * 1000, ci_lb_chronic * 1000),
-         ci_ub = ifelse(acute == 1, ci_ub_acute * 1000, ci_ub_chronic * 1000)) %>%
+  mutate(ci_lb = ifelse(acute == 1, ci_lb_acute, ci_lb_chronic) * 1000,
+         ci_ub = ifelse(acute == 1, ci_ub_acute, ci_ub_chronic) * 1000) %>%
   select(-ci_lb_acute, -ci_ub_acute, -ci_lb_chronic, -ci_ub_chronic)
 
 
@@ -876,15 +906,17 @@ health_events_combined_suppressed <- health_events_combined_pop %>%
 
 
 #### TEMP - BRING IN EXISTING DATA AND JOIN ####
-# Will only work once then need to change code
-health_events_md <- dbGetQuery(db_extractstore50, "SELECT * FROM APDE.mcaid_pha_events")
-
-# Add indicator of dataset
-health_events_md <- health_events_md %>% mutate(source = "Medicaid only")
+health_events_md <- dbGetQuery(
+  db_extractstore50, "SELECT * FROM APDE.mcaid_mcare_pha_events WHERE source = 'Medicaid only'")
 
 
 ### Combine data
-health_events_combined_suppressed <- bind_rows(health_events_combined_suppressed, health_events_md)
+health_events_combined_suppressed <- bind_rows(health_events_combined_suppressed, health_events_md) %>%
+  select(indicator, acute, wc_flag, year, agency, enroll_type, dual, 
+         category1, group1, category2, group2, count, denominator, pt_days, 
+         pop_ever, pop, rate, ci_lb, ci_ub, 
+         rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, 
+         rest_ci_ub,count_supp, pop_ever_supp, pop_supp, source)
 
 
 
