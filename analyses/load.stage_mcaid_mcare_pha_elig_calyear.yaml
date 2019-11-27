@@ -1,0 +1,66 @@
+schema: stage
+table: mcaid_mcare_pha_elig_calyear
+index_type: ccs
+index_name: idx_ccs_stage_mcaid_mcare_pha_elig_calyear
+vars:
+    year: INT
+    id_apde: INT
+    mcaid: INT
+    mcare: INT
+    pha: INT
+    enroll_type: CHAR(3)
+    apde_dual: INT
+    geo_kc: INT
+    part_a: INT
+    part_b: INT
+    part_c: INT
+    partial: INT
+    buy_in: INT
+    tpl: INT
+    bsp_group_name: INT
+    full_benefit: INT
+    cov_type: INT
+    mco_id: INT
+    pha_agency: VARCHAR(255)
+    pha_subsidy: VARCHAR(255)
+    pha_voucher: VARCHAR(255)
+    pha_operator: VARCHAR(255)
+    pha_portfolio: VARCHAR(255)
+    geo_zip: VARCHAR(255)
+    geo_zip_centroid: INT
+    geo_street_centroid: INT
+    geo_county_code: VARCHAR(255)
+    geo_tract_code: VARCHAR(255)
+    geo_hra_code: VARCHAR(255)
+    geo_school_code: VARCHAR(255)
+    pt: NUMERIC
+    pt_tot: NUMERIC
+    dob: DATE
+    death_dt: DATE
+    start_housing: DATE    
+    geo_kc_ever: TINYINT
+    gender_me: VARCHAR(10)
+    gender_recent: VARCHAR(10)    
+    gender_female: TINYINT
+    gender_male: TINYINT
+    race_me: VARCHAR(10)
+    race_eth_me: VARCHAR(10)
+    race_recent: VARCHAR(10)
+    race_eth_recent: VARCHAR(10)
+    race_aian: TINYINT
+    race_asian: TINYINT
+    race_asian_pi: TINYINT
+    race_black: TINYINT
+    race_latino: TINYINT
+    race_nhpi: TINYINT
+    race_white: TINYINT
+    race_other: TINYINT
+    race_unk: TINYINT
+    age_yr: NUMERIC
+    adult: INT
+    senior: INT
+    agegrp: VARCHAR(255)
+    age_wc: VARCHAR(255)
+    time_housing_yr: NUMERIC
+    time_housing: VARCHAR(255)
+    last_run: DATETIME
