@@ -1,19 +1,19 @@
-#' Counting population and person-time in the joint PHA/Medicaid data
+#' Counting population and person-time in the joint PHA/Medicaid/Medicare data
 #' 
-#' \code{popcount} summarizes population data in the joint PHA/Medicaid data.
+#' \code{popcount} summarizes population data in the joint PHA/Medicaid/Medicare data.
 #' 
 #' This function takes the date range supplied by \code{\link{time_range}} and
 #' counts individuals enrolled and person time by group.
 #' The function works for PHA data regardless of whether or not it has also
-#' been matched to Medicaid data.
+#' been matched to Medicaid/Medicare data.
 #' 
 #' @param df A data frame
 #' @param group_var A set of variables to group counts by. Default is PH agency.
 #' Must be set as a quosure (use quos(<group1>, <group2>))
 #' @param agency A named variable that specifies the agency a person is in for 
-#' that period of time (usually KCHA, SHA, or NA/Medicaid only). Used to 
+#' that period of time (usually KCHA, SHA, or NA/Medicaid/Medicare only). Used to 
 #' allocate individuals who moved between multiple agencies/enrollment types 
-#' in the period. Default is agency_new.
+#' in the period. Default is pha_agency.
 #' @param enroll A named variable that specifies the type of enrollment a person
 #' is in for that period of time (field should contain the following codes: 
 #' "m" = Medicaid only, "b" = housing and Medicaid, or "h" = housing only).
@@ -74,13 +74,15 @@ popcount <- function(df,
   
   # Warn about missing unit of analysis
   if (missing(unit)) {
-    print("Attempting to use default unit of analysis (individuals (pid/pid2)). 
-          Possible options: pid, pid2, hhold_id_new")
+    print("Attempting to use default unit of analysis (individuals (pid/id_apde)). 
+          Possible options: pid, id_apde, hhold_id_new")
   }
   
   # Set up quosures and other variables
   if(!missing(agency)) {
     agency <- enquo(agency)
+  } else if("pha_agency" %in% names(df)) {
+    agency <- quo(agency_new)
   } else if("agency_new" %in% names(df)) {
     agency <- quo(agency_new)
   } else if("agency" %in% names(df)) {
@@ -285,12 +287,12 @@ popcount <- function(df,
       ungroup()
     
     # Allocate an individual to a PHA/program based on rules:
-    # 1) Medicaid only and PHA only = Medicaid row with most time
-    #   (rationale is we can look at the health data for Medicaid portion at least)
-    # 2) Medicaid only and PHA/Medicaid = PHA group with most person-time where
-    #    person was enrolled in both housing and Medicaid
+    # 1) Medicaid only/Medicare only and PHA only = Medicaid/Medicare row with most time
+    #   (rationale is we can look at the health data for this portion at least)
+    # 2) Medicaid/Medicare only and PHA + Medicaid/Medicare = PHA group with most 
+    #    person-time where person was enrolled in both housing and Medicaid/Medicare
     # 3) Multiple PHAs = PHA group with most person-time for EACH PHA where
-    #    person was enrolled in both housing and Medicaid
+    #    person was enrolled in both housing and Medicaid/Medicare
     # 4) PHA only = group with most person-time (for one or more PHAs)
     # Note that this only allocates individuals, not person-time, which should
     # be allocated to each group in which it is accrued

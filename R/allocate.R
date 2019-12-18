@@ -178,7 +178,7 @@ allocate <- function(df,
   # (ties will be broken by whatever other ordering exists)
   pt <- df %>%
     group_by(!!unit, !!enroll, !!agency, !!!(group_var)) %>%
-    summarise(pt = sum(overlap_amount))
+    summarise(pt_allocate = sum(overlap_amount))
   
   # Also make a record of total time person was enrolled somewhere
   pt_tot <- df %>%
@@ -189,12 +189,12 @@ allocate <- function(df,
   if (length(group_var) == 0) {
     pop <- left_join(df, pt, by = c(quo_name(unit), quo_name(enroll), quo_name(agency))) %>%
       left_join(., pt_tot, by = c(quo_name(unit))) %>%
-      arrange((!!unit), (!!enroll), (!!agency), desc(pt))
+      arrange((!!unit), (!!enroll), (!!agency), desc(pt_allocate), desc(overlap_amount))
   } else {
     pop <- left_join(df, pt, by = c(quo_name(unit), quo_name(enroll), 
                                     quo_name(agency), sapply(group_var, quo_name))) %>%
       left_join(., pt_tot, by = c(quo_name(unit))) %>%
-      arrange((!!unit), (!!enroll), (!!agency), desc(pt))
+      arrange((!!unit), (!!enroll), (!!agency), desc(pt_allocate), desc(overlap_amount))
   }
 
   
@@ -233,6 +233,8 @@ allocate <- function(df,
                (agency_count == 4 & agency_sum %in% c(4, 8, 12)) |
                agency_sum == 0, ]
   
+  # Add a column to indicate that the person was allocated to this group
+  pop[, pop := 1L]
 
   # Remove junk columns or columns with no meaning
   pop <- pop %>%
