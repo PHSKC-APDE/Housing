@@ -1,0 +1,77 @@
+---
+title: "Managed care organization (MCO) affiliation"
+author: "Alastair Matheson (Assessment, Policy Development, and Evaluation Unit)"
+date: "12/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, odbc, glue, claims, knitr, kableExtra)
+
+db_apde <- dbConnect(odbc(), "PH_APDEStore51")
+```
+
+
+```{r data, echo=FALSE}
+
+# Use the claims_elig function to bring in a cohort for 2018
+
+pha_2018 <- claims_elig(conn = db_apde, source = "mcaid_mcare_pha", 
+                        from_date = "2018-01-01", to_date = "2018-12-31",
+                        show_query = F)
+
+mco <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/phclaims/ref/tables_data/ref.mco.csv"), 
+                   header = TRUE, stringsAsFactors = FALSE)
+
+
+pha_2018 <- pha_2018 %>%
+  mutate(pha_agency = ifelse(is.na(pha_agency), "Non-PHA", pha_agency)) %>%
+  left_join(., mco, by = c("mco_id" = "product_identifier"))
+
+```
+
+
+## 2018 data
+The table below shows the MCOs PHA and non-PHA Medicaid members were affiliated with in 2018. 
+Note that this only includes people who were enrolled in Medicaid for a majority of their time in housing.
+
+People with missing MCO are almost all enrolled in a fee-for-service plan.
+
+
+```{r mco, echo=FALSE}
+sort_order <- data.frame("sort_order" = c(1:6, 15:20, 8:13, 7, 21, 14))
+
+totals <- pha_2018 %>% 
+  filter(mcaid == 1) %>%
+  mutate(mco = "Total") %>%
+  group_by(pha_agency, mco) %>%
+  summarise(Enrolled = n()) %>%
+  mutate(Percent = "")
+
+pha_2018 %>% 
+  filter(mcaid == 1) %>%
+  group_by(pha_agency, mco) %>%
+  summarise(Enrolled = n()) %>%
+  group_by(pha_agency) %>%
+  mutate(total = sum(Enrolled), 
+         Percent = paste0(round(Enrolled / total * 100, 1), "%")) %>%
+  ungroup() %>%
+  bind_rows(., totals) %>%
+  bind_cols(., sort_order) %>%
+  arrange(sort_order) %>%
+  select(-total, -sort_order, -pha_agency) %>%
+  rename(MCO = mco) %>%
+  kable(., format.args = list(big.mark = ",")) %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = F) %>%
+  pack_rows("KCHA", 1, 7) %>%
+  pack_rows("SHA", 8, 14) %>%
+  pack_rows("Non-PHA", 15, 21) %>%
+  add_indent(c(1:6, 8:13, 15:20)) 
+
+
+
+
+
+```
+
