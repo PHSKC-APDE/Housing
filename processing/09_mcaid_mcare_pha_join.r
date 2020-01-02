@@ -83,7 +83,14 @@ db_claims51 <- dbConnect(odbc(), "PHClaims51")
   ### Joint Medicaid-Medicare elig_timevar ----
   timevar.mm <- setDT(odbc::dbGetQuery(db_claims51, "SELECT * FROM [PHClaims].[final].[mcaid_mcare_elig_timevar]"))
   timevar.mm[, c("contiguous", "last_run", "cov_time_day") := NULL]
+
+
+##### Clean / prep mm data -----
+  # fix dates
+  elig.mm[, dob := as.Date(dob)]
+  timevar.mm[, `:=` (from_date = as.Date(from_date), to_date = as.Date(to_date))]
   
+    
 ##### Clean / prep housing data -----
 # merge on id_apde
 pha <- merge(pha, xwalk, by = "pid", all.x = TRUE, all.y = FALSE)
@@ -160,8 +167,8 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   ### Combine the data for linked IDs ----
       # some data is assumed to be more reliable in one dataset compared to the other
       linked <- merge(x = elig.mm.linked, y = elig.pha.linked, by = "id_apde")
-      setnames(linked, names(linked), gsub(".x$", ".elig.mm", names(linked))) # clean up suffixes to eliminate confusion
-      setnames(linked, names(linked), gsub(".y$", ".elig.pha", names(linked))) # clean up suffixes to eliminate confusion
+      setnames(linked, names(linked), gsub("\\.x$", ".elig.mm", names(linked))) # clean up suffixes to eliminate confusion
+      setnames(linked, names(linked), gsub("\\.y$", ".elig.pha", names(linked))) # clean up suffixes to eliminate confusion
       
       # loop for vars that default to Mcaid-Mcare data
       for(i in c("dob", "gender_me", "gender_female", "gender_male", "gender_recent", "race_eth_recent", "race_recent",
@@ -261,6 +268,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                from_date_o, to_date_o, overlap_type, repnum) %>%
         arrange(id_apde, from_date.elig.pha, from_date.elig.mm, from_date_o, 
                 to_date.elig.pha, to_date.elig.mm, to_date_o)
+      
+      # Check no unexpected overlap types
+      temp %>% group_by(overlap_type) %>% summarise(count = n())
+      if (nrow(dplyr::filter(temp, overlap_type == 8)) > 0) {
+        warning("Unexpected overlap types, check temp data table")
+      }
       
       #-- Expand out rows to separate out overlaps ----
       temp_ext <- temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)]
@@ -525,6 +538,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       setnames(timevar,
                c("agency_new", "subsidy_type", "vouch_type_final", "operator_type", "portfolio_final"),
                c("pha_agency", "pha_subsidy", "pha_voucher", "pha_operator", "pha_portfolio"))
+      
+      timevar[is.na(pha_agency), pha_agency := "Non-PHA"]
+      timevar[pha_agency == "Non-PHA", pha_subsidy := "Non-PHA"]
+      timevar[pha_agency == "Non-PHA", pha_voucher := "Non-PHA"]
+      timevar[pha_agency == "Non-PHA", pha_operator := "Non-PHA"]
+      timevar[pha_agency == "Non-PHA", pha_portfolio := "Non-PHA"]
 
       #-- clean up ----
       rm(linked, pha, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo)
@@ -533,17 +552,13 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   ### Write to SQL ----
   # Pull YAML from GitHub
   table_config <- yaml::yaml.load(RCurl::getURL(yaml.elig))
-  
-  # Create table ID
-  tbl_id <- DBI::Id(schema = table_config$schema, 
-                    table = table_config$table)  
-  
+
   # Ensure columns are in same order in R & SQL
   setcolorder(elig, names(table_config$vars))
   
   # Write table to SQL
   dbWriteTable(db_apde51, 
-               tbl_id, 
+               DBI::Id(schema = table_config$schema, table = table_config$table), 
                value = as.data.frame(elig),
                overwrite = T, append = F, 
                field.types = unlist(table_config$vars))
@@ -696,17 +711,13 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   ### Write to SQL ----
   # Pull YAML from GitHub
   table_config <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
-  
-  # Create table ID
-  tbl_id <- DBI::Id(schema = table_config$schema, 
-                    table = table_config$table)  
-  
+
   # Ensure columns are in same order in R & SQL
   setcolorder(timevar, names(table_config$vars))
   
   # Write table to SQL
   dbWriteTable(db_apde51, 
-               tbl_id, 
+               DBI::Id(schema = table_config$schema, table = table_config$table), 
                value = as.data.frame(timevar),
                overwrite = T, append = F, 
                field.types = unlist(table_config$vars))
