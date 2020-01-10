@@ -1,0 +1,198 @@
+---
+title: "Asthma among public housing residents"
+author: "Alastair Matheson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{makecell}
+  - \usepackage{multirow}
+output: 
+  powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(knitr.kable.NA = '')
+
+# Function to format cell
+bold_cell <- function(x) {
+  cell_spec(x, "latex", bold = ifelse(as.numeric(str_replace(x, "<", "")) < 0.05, T, F))
+}
+
+```
+
+
+
+## CCW asthma by age group
+```{r ccw_age}
+ccw_asthma_age_g + facet_wrap( ~ year_text, ncol = 1)
+
+```
+
+
+
+## Asthma and AMR regression
+
+The tables below shows output from some basic binomial regressions looking at 1-year asthma and asthma medication ratio (AMR).
+
+For both asthma and AMR, three regressions were run:
+1) Comparing PHA vs. non-PHA (adjusting for age, race/ethnicity, and gender)
+2) Comparing KCHA vs. SHA among hard unit residents (adjusting for age, race/ethnicity, gender, length of time in housing, and operator type)
+3) Comparing KCHA vs. SHA among soft unit residents (adjusting for age, race/ethnicity, gender, length of time in housing, and voucher type)
+
+Note that the term 'have asthma' is used below. This should be understood to mean met the HEDIS definition for asthma, which means that 
+the person must have sought care for this condition and received an asthma diagnosis.
+
+When interpreting results, differential access to healthcare as a driver of differences should be kept in mind (even though everyone included 
+was enrolled in Medicaid for at least 11 months in 2017).
+
+
+
+## Asthma comparing PHA/non-PHA
+After adjusting for age, gender, and race/ethnicity, non-dual PHA residents on Medicaid were 48% (95% CI: 39-58%) more likely 
+to meet the definition of asthma than non-PHA Medicaid recipients.
+
+For Medicaid recipients overall:
+- Age, gender, and race/ethnicity were all significant overall.
+- The odds of having asthma increased with age (those aged 51-64 were 48% (95% CI: 36-60%) more likely to have asthma than those aged 5-11).
+- Males were 18% less likely to have an asthma diagnosis than females (95% CI: 14-22%)
+
+```{r table.asthma.pha.non, echo = F}
+out1 <- model_output_overall %>% 
+  filter(model == "Asthma comparing PHA/non-PHA") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T, escape = F,
+        caption = paste0("Asthma comparing PHA and non-PHA (n = ", nobs(asthma_overall), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out1 <- gsub("(_)", "\\\\\\1", out1)
+out1
+
+```
+
+\newpage
+
+## AMR comparing PHA/non-PHA
+After adjusting for age, gender, and race/ethnicity, PHA residents with asthma were as likely to manage their asthma as non-PHA Medicaid
+recipients.
+
+For Medicaid recipients overall:
+- Those who identified as American Indian/Alaskan Native were least likely to manage their asthma.
+- Asthma was most likely to be managed among younger children (5-11 years), though this was only significant when compared with youth
+aged 12-18 and adults aged 19-30.
+Males were slightly less likely to manage their astham (~10%, 95% CI: 0-18%, p = 0.05)
+
+
+```{r table.amr.pha.non, echo = F}
+out2 <- model_output_overall %>% 
+  filter(model == "AMR comparing PHA/non-PHA") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T,  escape = F,
+        caption = paste0("AMR comparing PHA and non-PHA (n = ", nobs(amr_overall), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out2 <- gsub("(_)", "\\\\\\1", out2)
+out2
+
+```
+
+\newpage
+
+## Asthma in PHA hard units
+After adjusting for age, gender, race/ethnicity, length of time in housing, and operator type, there was no significant difference 
+in the odds of having asthma between SHA and KCHA residents in hard units.
+
+
+```{r table.asthma.hard, echo = F}
+out3 <- model_output_overall %>% 
+  filter(model == "Asthma in PHA hard units") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T,  escape = F,
+        caption = paste0("Asthma in PHA hard units (n = ", nobs(asthma_pha_hard), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out3 <- gsub("(_)", "\\\\\\1", out3)
+out3
+
+```
+
+\newpage
+
+## AMR in PHA hard units
+After adjusting for age, gender, race/ethnicity, length of time in housing, and operator type, there was no significant difference 
+in asthma management between SHA and KCHA residents in hard units.
+
+```{r table.amr.hard, echo = F}
+out4 <- model_output_overall %>% 
+  filter(model == "AMR in PHA hard units") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T, escape = F,
+        caption = paste0("AMR in PHA hard units (n = ", nobs(amr_pha_hard), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out4 <- gsub("(_)", "\\\\\\1", out4)
+out4
+```
+
+
+\newpage
+
+## Asthma in PHA soft units
+After adjusting for age, gender, race/ethnicity, length of time in housing, and voucher type, there was no significant difference 
+in the odds of having asthma between SHA and KCHA residents in soft units.
+
+```{r table.asthma.soft, echo = F}
+out5 <- model_output_overall %>% 
+  filter(model == "Asthma in PHA soft units") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T, escape = F,
+        caption = paste0("Asthma in PHA soft units (n = ", nobs(asthma_pha_soft), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out5 <- gsub("(_)", "\\\\\\1", out5)
+out5
+```
+
+\newpage
+
+## AMR in PHA soft units
+After adjusting for age, gender, race/ethnicity, length of time in housing, and voucher type, there was no significant difference 
+in asthma management between SHA and KCHA residents in soft units.
+
+
+```{r table.amr.soft, echo = F}
+out6 <- model_output_overall %>% 
+  filter(model == "AMR in PHA soft units") %>%
+  select(-model) %>%
+  mutate(p = case_when(!is.na(p) ~ bold_cell(p)),
+         chi2 = case_when(!is.na(chi2) ~ bold_cell(chi2))) %>%
+  kable(format = "latex", booktabs = T, escape = F,
+        caption = paste0("AMR in PHA soft units (n = ", nobs(amr_pha_soft), ")")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "chi2 column shows the output of the Wald test for the entire group") %>%
+  kable_styling(latex_options = "hold_position")
+
+out6 <- gsub("(_)", "\\\\\\1", out6)
+out6
+```
