@@ -9,8 +9,7 @@ vars:
     mcare: INT
     pha: INT
     mcaid_mcare_pha: INT
-    enroll_type: CHAR(3)
-    
+    enroll_type: VARCHAR(3)    
     dob: DATE
     death_dt: DATE
     age_yr: NUMERIC

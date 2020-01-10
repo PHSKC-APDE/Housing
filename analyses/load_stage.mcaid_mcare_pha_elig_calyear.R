@@ -23,7 +23,6 @@ library(claims) # Used to aggregate data
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
 db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
-db_extractstore50 <- dbConnect(odbc(), "PHExtractStore50")
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
@@ -173,4 +172,7 @@ add_index_f(db_apde51, table_config = table_config_stage, drop_index = T)
 
 #### CLEAN UP ####
 # Remove stage table
-
+rm(housing_path, years)
+rm(table_config_stage)
+rm(mcaid_mcare_pha_elig_demo, mcaid_mcare_pha_elig_timevar)
+rm(mcaid_mcare_pha_elig_calyear, allocated, pt_rows)

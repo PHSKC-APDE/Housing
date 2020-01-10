@@ -338,7 +338,7 @@ pop_enroll_all_mm <- bind_rows(lapply(seq_along(years), function(x) {
   sql_query <- glue_sql(
     "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
     agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip, SUM(pt_days) AS pt_days, 
+    pha_portfolio, time_housing, geo_zip, SUM(pt) AS pt, 
     SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
     FROM stage.mcaid_mcare_pha_elig_calyear 
     WHERE [year] = {years[x]} 
@@ -347,8 +347,7 @@ pop_enroll_all_mm <- bind_rows(lapply(seq_along(years), function(x) {
     pha_portfolio, time_housing, geo_zip",
     .con = db_apde51)
   
-  pop <- dbGetQuery(db_apde51, sql_query) %>%
-    mutate(wc_flag = 0L)
+  pop <- dbGetQuery(db_apde51, sql_query) %>% mutate(wc_flag = 0L)
   return(pop)
 }))
 
@@ -358,7 +357,7 @@ pop_enroll_all_mm_wc <- bind_rows(lapply(seq_along(years), function(x) {
   sql_query <- glue_sql(
     "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
     agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip, SUM(pt_days) AS pt_days, 
+    pha_portfolio, time_housing, geo_zip, SUM(pt) AS pt, 
     SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
     FROM stage.mcaid_mcare_pha_elig_calyear 
     WHERE [year] = {years[x]} AND age_wc IS NOT NULL 
@@ -425,11 +424,11 @@ pop_enroll_bivariate <- bind_rows(lapply(loop_list, function(x) {
   loop_list_new <- rlang::as_quosures(rlang::syms(loop_list_new), env = environment())
   
   ### Run tabloop
-  output <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
+  output <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt),
                       fixed = fixed_list_new, loop = loop_list_new) %>%
     mutate(category1 = rlang::quo_name(x)) %>%
     # Remove rows with zero count to save memory
-    filter(pt_days_sum > 0) %>%
+    filter(pt_sum > 0) %>%
     rename(group1 = !!x, category2 = group_cat, group2 = group)
   
   return(output)
@@ -444,7 +443,7 @@ pop_enroll_total <- bind_rows(lapply(loop_list, function(x) {
   output <- pop_enroll_all_mm %>%
     group_by(wc_flag, year, agency, enroll_type, dual, !!x) %>%
     summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-              pt_days_sum = sum(pt_days, na.rm = T)) %>%
+              pt_sum = sum(pt, na.rm = T)) %>%
     ungroup() %>%
     mutate(
       category1 = quo_name(x), group1 = !!x,
@@ -459,10 +458,10 @@ rm(fixed_list, loop_list)
 
 #### Combine into one ####
 pop_enroll_combine_bivar <- bind_rows(pop_enroll_bivariate, pop_enroll_total) %>%
-  filter(pt_days_sum > 0) %>%
+  filter(pt_sum > 0) %>%
   select(year, agency, enroll_type, dual, category1, group1, 
-         category2, group2, pop_ever_sum, pop_sum, pt_days_sum, wc_flag) %>%
-  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt_days = pt_days_sum) 
+         category2, group2, pop_ever_sum, pop_sum, pt_sum, wc_flag) %>%
+  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt = pt_sum) 
 
 
 # Add suppression and data source
@@ -476,7 +475,7 @@ pop_enroll_combine_bivar <- pop_enroll_combine_bivar %>%
 
 ### Make suppressed version
 pop_enroll_combine_bivar_suppressed <- pop_enroll_combine_bivar %>%
-  select(year:group2, pt_days, pop_ever_supp, pop_supp,
+  select(year:group2, pt, pop_ever_supp, pop_supp,
          pop_ever_supp_flag, pop_supp_flag, wc_flag, source) %>%
   rename(
     pop_ever = pop_ever_supp, pop = pop_supp,
@@ -502,7 +501,7 @@ DBI::dbWriteTable(db_extractstore51,
              name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
              value = pop_enroll_combine_bivar_suppressed,
              append = F, overwrite = T,
-             field.types = c(year = "integer", pt_days = "integer", 
+             field.types = c(year = "integer", pt = "integer", 
                              pop_ever = "integer", 
                              pop = "integer", pop_ever_supp = "integer",
                              pop_supp = "integer", wc_flag = "integer"))
@@ -513,7 +512,8 @@ DBI::dbWriteTable(db_extractstore51,
 # For looking at enrollment alone, we disaggregate by additional factors 
 #    (e.g., enrollment type, dual)
 # For health events, especially from the Medicaid/Medicare data, we have a shorter
-#    list. Therefore need to rerun population data again
+#    list. Therefore need to rerun population data again. 
+# Also need to filter out people only enrolled in housing
 
 fixed_list <- list_var(year, wc_flag, agency)
 # fixed_list <- list_var(year, agency, dual) # Medicaid-only data
@@ -532,11 +532,12 @@ pop_health_bivariate <- bind_rows(lapply(loop_list, function(x) {
   loop_list_new <- rlang::as_quosures(rlang::syms(loop_list_new), env = environment())
   
   ### Run tabloop
-  output <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt_days),
+  output <- tabloop_f(pop_enroll_all_mm[pop_enroll_all_mm$enroll_type %in% c("h", "Housing only"), ], 
+                      sum = list_var(pop_ever, pop, pt),
                       fixed = fixed_list_new, loop = loop_list_new) %>%
     mutate(category1 = rlang::quo_name(x)) %>%
     # Remove rows with zero count to save memory
-    filter(pt_days_sum > 0) %>%
+    filter(pt_sum > 0) %>%
     rename(group1 = !!x, category2 = group_cat, group2 = group)
   
   return(output)
@@ -549,9 +550,10 @@ loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfoli
 
 pop_health_univariate <- bind_rows(lapply(loop_list, function(x) {
   output <- pop_enroll_all_mm %>%
+    filter(!enroll_type %in% c("h", "Housing only")) %>%
     group_by(year, wc_flag, agency, !!x) %>%
     summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-              pt_days_sum = sum(pt_days, na.rm = T)) %>%
+              pt_sum = sum(pt, na.rm = T)) %>%
     ungroup() %>%
     mutate(
       category1 = quo_name(x), group1 = !!x,
@@ -564,9 +566,10 @@ pop_health_univariate <- bind_rows(lapply(loop_list, function(x) {
 
 # Make overall columns for each agency
 pop_health_total <- pop_enroll_all_mm %>%
+  filter(!enroll_type %in% c("h", "Housing only")) %>%
   group_by(year, wc_flag, agency) %>%
   summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-            pt_days_sum = sum(pt_days, na.rm = T)) %>%
+            pt_sum = sum(pt, na.rm = T)) %>%
   ungroup() %>%
   mutate(
     category1 = "overall", group1 = "overall",
@@ -577,14 +580,14 @@ rm(fixed_list, loop_list)
 
 #### Combine into one ####
 pop_health_combine <- bind_rows(pop_health_bivariate, pop_health_univariate, pop_health_total) %>%
-  filter(pt_days_sum > 0) %>%
+  filter(pt_sum > 0) %>%
   select(year, wc_flag, agency, category1, group1, category2, group2, 
-         pop_ever_sum, pop_sum, pt_days_sum) %>%
-  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt_days = pt_days_sum) 
+         pop_ever_sum, pop_sum, pt_sum) %>%
+  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt = pt_sum) 
 
 
 # Add suppression flags and data source
-# Keep all vars for now because pop is neede for rest_pha calcs
+# Keep all vars for now because pop is needed for rest_pha calcs
 pop_health_combine <- pop_health_combine %>%
   mutate_at(vars(pop_ever, pop),
             list(supp_flag = ~ if_else(between(., 1, 10), 1, 0))) %>%
@@ -826,7 +829,7 @@ health_events_combined_pop <- left_join(
 
 health_events_combined_pop <- health_events_combined_pop %>% 
   mutate(
-    denominator = ifelse(year %in% c(2012, 2016), pt_days / 366, pt_days / 365),
+    denominator = ifelse(year %in% c(2012, 2016), pt / 366, pt / 365),
     rate = case_when(
       acute == 1 ~ count / denominator * 1000,
       acute == 0 & (is.na(pop) | pop == 0) ~ NA_real_,
@@ -854,12 +857,12 @@ rest_pha <- health_events_combined_pop %>%
   filter((agency == "KCHA" | agency == "SHA") & category1 == "portfolio" & 
            category2 == "total") %>%
   group_by(year, acute, wc_flag, indicator, agency) %>%
-  mutate(count_tot = sum(count), pop_tot = sum(pop), pt_tot = sum(pt_days)) %>%
+  mutate(count_tot = sum(count), pop_tot = sum(pop), pt_tot = sum(pt)) %>%
   ungroup() %>%
   mutate(
     rest_count = count_tot - count,
     rest_pop = pop_tot - pop,
-    rest_pt = pt_tot - pt_days,
+    rest_pt = pt_tot - pt,
     rest_denominator = ifelse(year %in% c(2012, 2016), rest_pt / 366, rest_pt / 365),
     rest_pha_rate = case_when(
       acute == 1 ~ rest_count / rest_denominator * 1000,
@@ -895,7 +898,7 @@ health_events_combined_suppressed <- health_events_combined_pop %>%
             ))) %>%
   mutate_at(vars(rest_count, rest_pop), 
             list( ~ ifelse(suppressed == 1 | pop_supp_flag == 1, NA, .))) %>%
-  select(indicator:group2, count_supp, denominator, pt_days, pop_ever_supp, pop_supp, rate:ci_ub, 
+  select(indicator:group2, count_supp, denominator, pt, pop_ever_supp, pop_supp, rate:ci_ub, 
          rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, rest_ci_ub,
          suppressed, pop_ever_supp_flag, pop_supp_flag, source) %>%
   rename(
@@ -913,7 +916,7 @@ health_events_md <- dbGetQuery(
 ### Combine data
 health_events_combined_suppressed <- bind_rows(health_events_combined_suppressed, health_events_md) %>%
   select(indicator, acute, wc_flag, year, agency, enroll_type, dual, 
-         category1, group1, category2, group2, count, denominator, pt_days, 
+         category1, group1, category2, group2, count, denominator, pt, 
          pop_ever, pop, rate, ci_lb, ci_ub, 
          rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, 
          rest_ci_ub,count_supp, pop_ever_supp, pop_supp, source)
@@ -928,7 +931,7 @@ dbWriteTable(db_extractstore51,
                              year = "integer",
                              wc_flag = "integer",
                              count = "integer",
-                             pt_days = "integer",
+                             pt = "integer",
                              pop_ever = "integer",
                              pop = "integer",
                              rest_count = "integer",
@@ -953,7 +956,7 @@ DBI::dbWriteTable(db_extractstore50,
                   name = DBI::Id(schema = "APDE", table = "mcaid_pha_enrollment"),
                   value = pop_enroll_combine_bivar_suppressed,
                   append = F, overwrite = T,
-                  field.types = c(pt_days = "integer", pop_ever = "integer",
+                  field.types = c(pt = "integer", pop_ever = "integer",
                                   pop = "integer", pop_ever_supp = "integer",
                                   pop_supp = "integer", wc_flag = "integer"))
 
@@ -969,7 +972,7 @@ dbWriteTable(db_extractstore50,
                              year = "integer",
                              wc_flag = "integer",
                              count = "integer",
-                             pt_days = "integer",
+                             pt = "integer",
                              pop_ever = "integer",
                              pop = "integer",
                              rest_count = "integer",
