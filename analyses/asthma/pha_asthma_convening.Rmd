@@ -1,7 +1,5 @@
 ---
-title: "Asthma among public housing residents"
-author: "Alastair Matheson"
-date: "`r format(Sys.time(), '%d %B, %Y')`"
+title: "Asthma among public housing residents in King County"
 header-includes:
   - \usepackage{booktabs}
   - \usepackage{makecell}
