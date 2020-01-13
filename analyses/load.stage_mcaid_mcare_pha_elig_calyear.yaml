@@ -8,37 +8,16 @@ vars:
     mcaid: INT
     mcare: INT
     pha: INT
-    enroll_type: CHAR(3)
-    apde_dual: INT
-    geo_kc: INT
-    part_a: INT
-    part_b: INT
-    part_c: INT
-    partial: INT
-    buy_in: INT
-    tpl: INT
-    bsp_group_name: INT
-    full_benefit: INT
-    cov_type: INT
-    mco_id: INT
-    pha_agency: VARCHAR(255)
-    pha_subsidy: VARCHAR(255)
-    pha_voucher: VARCHAR(255)
-    pha_operator: VARCHAR(255)
-    pha_portfolio: VARCHAR(255)
-    geo_zip: VARCHAR(255)
-    geo_zip_centroid: INT
-    geo_street_centroid: INT
-    geo_county_code: VARCHAR(255)
-    geo_tract_code: VARCHAR(255)
-    geo_hra_code: VARCHAR(255)
-    geo_school_code: VARCHAR(255)
-    pt: NUMERIC
-    pt_tot: NUMERIC
+    mcaid_mcare_pha: INT
+    enroll_type: VARCHAR(3)    
     dob: DATE
     death_dt: DATE
-    start_housing: DATE    
-    geo_kc_ever: TINYINT
+    age_yr: NUMERIC
+    adult: INT
+    senior: INT
+    agegrp: VARCHAR(255)
+    agegrp_expanded: VARCHAR(255)
+    age_wc: VARCHAR(255)
     gender_me: VARCHAR(10)
     gender_recent: VARCHAR(10)    
     gender_female: TINYINT
@@ -56,11 +35,48 @@ vars:
     race_white: TINYINT
     race_other: TINYINT
     race_unk: TINYINT
-    age_yr: NUMERIC
-    adult: INT
-    senior: INT
-    agegrp: VARCHAR(255)
-    age_wc: VARCHAR(255)
+    lang_max: VARCHAR(30)
+    lang_amharic: TINYINT
+    lang_arabic: TINYINT
+    lang_chinese: TINYINT
+    lang_korean: TINYINT
+    lang_english: TINYINT
+    lang_russian: TINYINT
+    lang_somali: TINYINT
+    lang_spanish: TINYINT
+    lang_ukrainian: TINYINT
+    lang_vietnamese: TINYINT
+    part_a: INT
+    part_b: INT
+    part_c: INT
+    partial: INT
+    buy_in: INT
+    dual: INT
+    apde_dual: INT
+    tpl: INT
+    bsp_group_cid: INT
+    full_benefit: INT
+    cov_type: CHAR(3)
+    mco_id: INT
+    start_housing: DATE
     time_housing_yr: NUMERIC
     time_housing: VARCHAR(255)
+    pha_agency: VARCHAR(255)
+    pha_subsidy: VARCHAR(255)
+    pha_voucher: VARCHAR(255)
+    pha_operator: VARCHAR(255)
+    pha_portfolio: VARCHAR(255)
+    geo_kc: INT
+    geo_kc_ever: TINYINT
+    geo_zip: VARCHAR(255)
+    geo_zip_centroid: INT
+    geo_street_centroid: INT
+    geo_county_code: VARCHAR(255)
+    geo_tract_code: VARCHAR(255)
+    geo_hra_code: VARCHAR(255)
+    geo_school_code: VARCHAR(255)
+    pt: NUMERIC
+    pt_tot: NUMERIC
+    pop: INT
+    pop_ever: INT
     last_run: DATETIME

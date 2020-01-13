@@ -147,7 +147,7 @@ allocate <- function(df,
   #### Set up data frame ####
   # Pull out heads of households if that is the level of analysis
   if (quo_name(unit) == "hhold_id_new") {
-    df <- df %>% filter(mbr_num == 1)
+    df <- df %>% dplyr::filter(mbr_num == 1)
   }
   
   # Set up overlap between time period of interest and enrollment
@@ -159,7 +159,7 @@ allocate <- function(df,
         lubridate::interval(starttime, endtime)) / ddays(1) + 1)
     ) %>%
     # Remove any rows that don't overlap
-    filter(!is.na(overlap_amount))
+    dplyr::filter(!is.na(overlap_amount))
   
   
   #### Allocate to a group ####
@@ -185,7 +185,7 @@ allocate <- function(df,
     group_by(!!unit) %>%
     summarise(pt_tot = sum(overlap_amount))
   
-  # Join back to a single df
+  # Join back to a single df and sort so largest time is first in the group
   if (length(group_var) == 0) {
     pop <- left_join(df, pt, by = c(quo_name(unit), quo_name(enroll), quo_name(agency))) %>%
       left_join(., pt_tot, by = c(quo_name(unit))) %>%
@@ -238,7 +238,7 @@ allocate <- function(df,
 
   # Remove junk columns or columns with no meaning
   pop <- pop %>%
-    select(-from_date, -to_date, -contiguous, -cov_time_day, -agency, -overlap_amount, -unit_norm, 
+    dplyr::select(-from_date, -to_date, -contiguous, -cov_time_day, -agency, -overlap_amount, -unit_norm, 
            -agency_norm, -agency_count, -agency_sum, -enroll_norm)
   
   return(pop)

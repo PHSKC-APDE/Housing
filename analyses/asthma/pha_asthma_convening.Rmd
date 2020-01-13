@@ -1,0 +1,43 @@
+---
+title: "Asthma among public housing residents in King County"
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{makecell}
+  - \usepackage{multirow}
+output: 
+  powerpoint_presentation:
+    reference_doc: "C:/Users/mathesal/King County/Laurent, Amy - DASHH-External/DASHH2.0/Convening/DASHH convening 2019-02 - overall slides.pptx"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(knitr.kable.NA = '')
+
+# Function to format cell
+bold_cell <- function(x) {
+  cell_spec(x, "latex", bold = ifelse(as.numeric(str_replace(x, "<", "")) < 0.05, T, F))
+}
+
+```
+
+
+
+# CCW asthma increases with age and is higher among PHA recipients
+```{r ccw_age, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
+ccw_asthma_age_g + facet_wrap( ~ year_text, ncol = 1)
+
+```
+
+
+# Risk of having asthma among Medicaid and Medicare members in King County, by ZIP (2016)
+```{r map_16, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
+geo_zip_map(geo_zip_16, title = F)
+```
+
+
+# Risk of having asthma among Medicaid (non-dual) members in King County, by ZIP (2018)
+```{r map_18, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
+geo_zip_map(geo_zip_18, title = F)
+```
+
