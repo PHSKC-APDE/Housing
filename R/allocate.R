@@ -144,30 +144,6 @@ allocate <- function(df,
   }
  
   
-  #### Also set up other variables that will be shown ####
-  # Remainder of variables that are not used for grouping but need to be shown
-  #    in the allocated rows
-  # Show all possible groups (maybe ultimately make each variable a flag in this function)
-  # Right now this only applies to the join Medicaid/Medicaid/PHA table
-  group_var_all <- c("apde_dual", "part_a", "part_b", "part_c", "partial", "buy_in", 
-                     "dual", "tpl", "bsp_group_cid", "full_benefit", "cov_type", 
-                     "mco_id", "pha_agency", "pha_subsidy", "pha_voucher", 
-                     "pha_operator", "pha_portfolio", "geo_add1", "geo_add2", 
-                     "geo_city", "geo_state", "geo_zip", "geo_zip_centroid", 
-                     "geo_street_centroid", "geo_county_code", "geo_tract_code", 
-                     "geo_hra_code", "geo_school_code")
-  
-  # Exclude enrollment and agency vars also
-  group_var_all <- group_var_all[is.na(match(group_var_all, quo_name(agency)))]
-  group_var_all <- group_var_all[is.na(match(group_var_all, quo_name(enroll)))]
-  
-  # Keep the groups are even in this DF
-  group_var_all <- group_var_all[group_var_all %in% names(df)]
-  
-  # Remove variables used for grouping
-  group_var_all <- group_var_all[is.na(match(group_var_all, lapply(group_var, quo_name)))]
-  
-  
   #### Set up data frame ####
   # Pull out heads of households if that is the level of analysis
   if (quo_name(unit) == "hhold_id_new") {

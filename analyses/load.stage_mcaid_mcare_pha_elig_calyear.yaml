@@ -16,6 +16,7 @@ vars:
     adult: INT
     senior: INT
     agegrp: VARCHAR(255)
+    agegrp_expanded: VARCHAR(255)
     age_wc: VARCHAR(255)
     gender_me: VARCHAR(10)
     gender_recent: VARCHAR(10)    

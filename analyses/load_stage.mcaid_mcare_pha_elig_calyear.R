@@ -1,8 +1,14 @@
 ###############################################################################
 # Code to generate data for the housing/Medicaid dashboard
+# Allocates each person into a single category for each calendar year
+# Follows the logic set up in the allocate function of the housing package
+# Used as denominator for chronic conditions and for summarizing enrollment.
+#
+# Also adds a summary of person-time (days) for each calendar year for each 
+#    combination of variables. Used as a denominator for acute events.
 #
 # Alastair Matheson (PHSKC-APDE)
-# 2018-01-24
+# 2018-01-24, updated 202-01-13
 #
 #
 ###############################################################################
@@ -62,6 +68,8 @@ mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar %>%
 
 
 #### RUN ALLOCATION FOR EACH CALENDAR YEAR ####
+# Used for chronic disease denominator and enrollment analyses
+
 # Set up calendar years
 years <- seq(2012, 2018)
 
@@ -71,15 +79,18 @@ allocated <- bind_rows(lapply(seq_along(years), function(x) {
                    endtime = paste0(years[x], "-12-31"), 
                    agency = pha_agency, enroll = enroll_type,
                    unit = id_apde,
-                   from_date = from_date, to_date = to_date,
-                   # Grouping vars
-                   apde_dual, full_benefit, pha_subsidy, pha_voucher, 
-                   pha_operator, pha_portfolio, geo_zip) %>%
+                   from_date = from_date, to_date = to_date
+                   # No grouping vars
+                   ) %>%
     mutate(year = years[x]) %>%
-    select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state, -pt_allocate)
+    dplyr::select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state, 
+                  -pt_allocate)
 }))
 
+
 #### MAKE PT AND POP_EVER FIELDS ####
+# Used as denominator for acute events
+
 # Want to keep a row for any combination of groups vars that appeared
 pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
   
@@ -95,50 +106,64 @@ pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
     ) %>%
     # Remove any rows that don't overlap
     filter(!is.na(overlap_amount)) %>%
-    group_by(id_apde, enroll_type, pha_agency, 
-             apde_dual, full_benefit, pha_subsidy, pha_voucher, 
-             pha_operator, pha_portfolio, geo_zip) %>%
-    summarise(pop_ever = n_distinct(id_apde),
+    group_by(id_apde, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
+             apde_dual, part_a, part_b, part_c, partial, buy_in, 
+             dual, tpl, bsp_group_cid, full_benefit, cov_type, 
+             mco_id, pha_agency, pha_subsidy, pha_voucher, 
+             pha_operator, pha_portfolio, geo_kc, geo_zip, geo_zip_centroid, 
+             geo_street_centroid, geo_county_code, geo_tract_code, 
+             geo_hra_code, geo_school_code
+             ) %>%
+    summarise(pop_ever = 1L,
               pt = sum(overlap_amount)) %>%
     ungroup() %>%
     mutate(year = years[x])
-
   
   return(output)
 }))
 
+
+#### BRING INTO A SINGLE DATA FRAME ####
+mcaid_mcare_pha_elig_calyear <- bind_rows(allocated, pt_rows)
+
+
 #### JOIN TO ELIG_DEMO AND ADD CALCULATED FIELDS ####
-mcaid_mcare_pha_elig_calyear <- left_join(pt_rows, 
-                  allocated, by = c("year", "id_apde", "enroll_type", "pha_agency", 
-                                    "apde_dual", "full_benefit", "pha_subsidy", 
-                                    "pha_voucher", "pha_operator", "pha_portfolio", "geo_zip")) %>%
-  left_join(., select(mcaid_mcare_pha_elig_demo, -mcaid_mcare_pha, -apde_dual, -last_run), 
-            by = "id_apde")
+mcaid_mcare_pha_elig_calyear <- left_join(mcaid_mcare_pha_elig_calyear, 
+                                          select(mcaid_mcare_pha_elig_demo, -mcaid_mcare_pha, -apde_dual, -last_run), 
+                                          by = "id_apde")
 
-
-mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
-  mutate(age_yr = floor(interval(start = dob, end = paste0(year, "-12-31")) / years(1)),
-         adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
-         senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
-         agegrp = case_when(
-           age_yr < 18 ~ "<18",
-           between(age_yr, 18, 24.99) ~ "18-24",
-           between(age_yr, 25, 44.99) ~ "24-44",
-           between(age_yr, 45, 64.99) ~ "45-64",
-           age_yr >= 65 ~ "65+",
-           is.na(age_yr) ~ NA_character_),
-         age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
-                            TRUE ~ NA_character_),
-         time_housing_yr = 
-           round(interval(start = start_housing, end = paste0(year, "-12-31")) / years(1), 1),
-         time_housing = case_when(
-           is.na(pha_agency) ~ "Non-PHA",
-           time_housing_yr < 3 ~ "<3 years",
-           between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
-           time_housing_yr >= 6 ~ "6+ years",
-           TRUE ~ "Unknown"),
-         last_run = Sys.time()
-  )
+mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
+mcaid_mcare_pha_elig_calyear[, age_yr := floor(interval(start = dob, end = paste0(year, "-12-31")) / years(1))]
+mcaid_mcare_pha_elig_calyear[, adult := case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L)]
+mcaid_mcare_pha_elig_calyear[, senior := case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L)]
+mcaid_mcare_pha_elig_calyear[, agegrp := case_when(
+  age_yr < 18 ~ "<18",
+  data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "24-44",
+  data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+  age_yr >= 65 ~ "65+",
+  is.na(age_yr) ~ NA_character_)]
+mcaid_mcare_pha_elig_calyear[, agegrp_expanded := case_when(
+  age_yr < 10 ~ "<10",
+  data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+  data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "24-44",
+  data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+  data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+  age_yr >= 75 ~ "75+",
+  is.na(age_yr) ~ NA_character_)]
+mcaid_mcare_pha_elig_calyear[, age_wc := case_when(
+  data.table::between(age_yr, 0, 6.99, NAbounds = NA) ~ "Children aged 0-6", 
+  TRUE ~ NA_character_)]
+mcaid_mcare_pha_elig_calyear[, time_housing_yr := 
+                               round(interval(start = start_housing, end = paste0(year, "-12-31")) / years(1), 1)]
+mcaid_mcare_pha_elig_calyear[, time_housing := case_when(
+  is.na(pha_agency) ~ "Non-PHA",
+  time_housing_yr < 3 ~ "<3 years",
+  data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA) ~ "3 to <6 years",
+  time_housing_yr >= 6 ~ "6+ years",
+  TRUE ~ "Unknown")]
+mcaid_mcare_pha_elig_calyear[, last_run := Sys.time()]
 
 
 #### WRITE DATA TO SQL SERVER ####
