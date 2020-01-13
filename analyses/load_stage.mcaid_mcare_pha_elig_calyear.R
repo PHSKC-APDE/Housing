@@ -36,7 +36,7 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 #### BRING IN DATA ####
 ### Code for mapping field values
 demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/pha_2018_data/processing/housing_mcaid%20demo%20codes.csv"), 
-                   header = TRUE, stringsAsFactors = FALSE)
+                       header = TRUE, stringsAsFactors = FALSE)
 
 ### Main merged data
 mcaid_mcare_pha_elig_demo <- dbGetQuery(db_apde51, "SELECT * FROM final.mcaid_mcare_pha_elig_demo")
@@ -81,7 +81,7 @@ allocated <- bind_rows(lapply(seq_along(years), function(x) {
                    unit = id_apde,
                    from_date = from_date, to_date = to_date
                    # No grouping vars
-                   ) %>%
+  ) %>%
     mutate(year = years[x]) %>%
     dplyr::select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state, 
                   -pt_allocate)
@@ -113,7 +113,7 @@ pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
              pha_operator, pha_portfolio, geo_kc, geo_zip, geo_zip_centroid, 
              geo_street_centroid, geo_county_code, geo_tract_code, 
              geo_hra_code, geo_school_code
-             ) %>%
+    ) %>%
     summarise(pop_ever = 1L,
               pt = sum(overlap_amount)) %>%
     ungroup() %>%

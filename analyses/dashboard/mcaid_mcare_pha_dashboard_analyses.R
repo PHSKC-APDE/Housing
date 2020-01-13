@@ -31,7 +31,7 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
 #### BRING IN DATA ####
 ### Years to look over
-years <- seq(2012, 2016)
+years <- seq(2012, 2018)
 
 ### Code for mapping field values
 demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/pha_2018_data/processing/housing_mcaid%20demo%20codes.csv"), 
@@ -42,13 +42,19 @@ demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/P
 # Use stage for now
 mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid_mcare_pha_elig_calyear")
 
-# Convert to data table for faster results
-mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
-mcaid_mcare_pha_elig_calyear[, ':=' (
-  dob = as.Date(dob, origin = "1970-01-01"),
-  death_dt = as.Date(death_dt, origin = "1970-01-01"),
-  start_housing = as.Date(start_housing, origin = "1970-01-01")
-)]
+mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
+  mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
+
+# Temp until table is remade
+mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
+  mutate(agegrp_expanded = case_when(age_yr < 10 ~ "<10",
+                                     between(age_yr, 10, 17.99) ~ "10-17",
+                                     between(age_yr, 18, 24.99) ~ "18-24",
+                                     between(age_yr, 25, 44.99) ~ "24-44",
+                                     between(age_yr, 45, 64.99) ~ "45-64",
+                                     between(age_yr, 65, 74.99) ~ "65-74",
+                                     age_yr >= 75 ~ "75+",
+                                     is.na(age_yr) ~ NA_character_))
 
 
 
@@ -334,46 +340,45 @@ eventcount_acute_persons_f <- function(df_events = acute, df_pop = chronic_pop,
 
 #### POPULATION ####
 #### Enrollment population for joint Medicaid/Medicare data ####
-pop_enroll_all_mm <- bind_rows(lapply(seq_along(years), function(x) {
-  sql_query <- glue_sql(
-    "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
-    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip, SUM(pt) AS pt, 
-    SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
-    FROM stage.mcaid_mcare_pha_elig_calyear 
-    WHERE [year] = {years[x]} 
-    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
-    gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip",
-    .con = db_apde51)
-  
-  pop <- dbGetQuery(db_apde51, sql_query) %>% mutate(wc_flag = 0L)
-  return(pop)
-}))
+# Run different age groups for Medicaid/Medicare vs Medicaid-only data
+pop_enroll_all_mm_12_16 <- mcaid_mcare_pha_elig_calyear %>%
+  filter(year <= 2016) %>%
+  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, agegrp_expanded, 
+           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+           pha_portfolio, time_housing, geo_zip) %>%
+  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
+
+pop_enroll_all_md_12_18 <- mcaid_mcare_pha_elig_calyear %>%
+  filter(mcare == 0) %>%
+  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
+           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+           pha_portfolio, time_housing, geo_zip) %>%
+  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
+
+
+temp <- mcaid_mcare_pha_elig_calyear %>% filter(pha_agency == "KCHA" & pop == 1) %>% 
+  group_by(year, enroll_type) %>% summarise(pop = sum(pop)) %>%
+  mutate(enroll_type = case_when(
+    enroll_type == "a" ~ "Medicaid and Medicare and housing (dual eligible)",
+    enroll_type == "h" ~ "Housing only, not in Medicaid/Medicaid",
+    enroll_type == "hmd" ~ "Medicaid and housing, not dual eligible",
+    enroll_type == "hme" ~ "Medicare and housing, not dual eligible")
+    )
+ggplot(temp, aes(x = year, y = pop, fill = enroll_type)) + 
+  geom_area()
 
 
 ### Repeat for well-child population
-pop_enroll_all_mm_wc <- bind_rows(lapply(seq_along(years), function(x) {
-  sql_query <- glue_sql(
-    "SELECT [year], enroll_type, pha_agency, apde_dual, full_benefit, 
-    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip, SUM(pt) AS pt, 
-    SUM(pop_ever) AS pop_ever, SUM(pop) AS pop 
-    FROM stage.mcaid_mcare_pha_elig_calyear 
-    WHERE [year] = {years[x]} AND age_wc IS NOT NULL 
-    GROUP BY [year], enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
-    gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-    pha_portfolio, time_housing, geo_zip",
-    .con = db_apde51)
-  
-  pop <- dbGetQuery(db_apde51, sql_query) %>%
-    mutate(wc_flag = 1L)
-  return(pop)
-}))
+pop_enroll_all_mm_wc <- mcaid_mcare_pha_elig_calyear %>%
+  filter(!is.na(age_wc)) %>%
+  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, age_wc, 
+           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+           pha_portfolio, time_housing, geo_zip) %>%
+  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
 
 
 ### Combine into one
-pop_enroll_all_mm <- bind_rows(pop_enroll_all_mm, pop_enroll_all_mm_wc)
+pop_enroll_all_mm <- bind_rows(pop_enroll_all_mm_12_16, pop_enroll_all_mm_17_18, pop_enroll_all_mm_wc)
 pop_enroll_all_mm <- pop_enroll_all_mm %>%
   mutate_at(vars(starts_with("pha_")), 
             list( ~ ifelse(enroll_type %in% c("mm", "md", "me"), "Non-PHA", .))) %>%
