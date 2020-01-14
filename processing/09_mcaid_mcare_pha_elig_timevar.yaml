@@ -1,5 +1,7 @@
 schema: stage
 table: mcaid_mcare_pha_elig_timevar
+index_type: ccs
+index_name: idx_ccs_final_mcaid_mcare_pha_elig_timevar
 vars:
     id_apde: INT
     from_date: DATE
