@@ -37,19 +37,10 @@ spatial_dir <- paste0(dashh_2_path, "/Deep Dive/Asthma/spatial")
 
 
 #### BRING IN RELEVANT DATA ----------------------------------------------------
-# Find the most recent month we have enrollment summaries for
-# Comes in as year-month
-max_month <- unlist(dbGetQuery(db_claims, "SELECT MAX(year_month) FROM stage.perf_enroll_denom"))
-# Now find last day of the month by going forward a month then back a day
-max_month <- as.Date(parse_date_time(max_month, "Ym") %m+% months(1) - days(1))
-
-# Set up quarters to run over
-months_list <- as.list(seq(as.Date("2013-01-01"), as.Date(max_month) + 1, by = "year") - 1)
-
-
 ### Linked housing/Medicaid data
-mcaid_mcare_pha_elig_demo <- DBI::dbReadTable(
-  db_apde, DBI::Id(schema = "stage", table = "mcaid_mcare_pha_elig_calyear"))
+# Only need the data where people are allocated into a single bucket
+mcaid_mcare_pha_elig_demo <- dbGetQuery(db_apde, 
+  "SELECT * FROM stage.mcaid_mcare_pha_elig_calyear WHERE pop = 1")
 
 # Add in additional info/formating that can be useful
 mcaid_mcare_pha_elig_demo <- mcaid_mcare_pha_elig_demo %>%
@@ -111,6 +102,44 @@ kc_zip_trim <- read_sf("//gisdw/kclib/Plibrary2/admin/shapes/polygon/zipcode_sho
 kc_zip_trim <- kc_zip_trim %>% filter(COUNTY == "033")
 
 
+### HEDIS AMR
+# Bring in denominator
+amr_denom <- dbGetQuery(db_claims,
+                        "SELECT b.id_apde, 'enroll_flag' = 1
+                        FROM
+                        (SELECT id_mcaid, year_month, end_month_age 
+                        FROM [PHClaims].[stage].[mcaid_perf_enroll_denom]
+                        WHERE full_benefit_t_12_m >= 11 AND dual_t_12_m = 0 AND 
+                        end_month_age >= 5 AND end_month_age < 65 AND
+                        year_month = 201812) a
+                        LEFT JOIN
+                        (SELECT id_apde, id_mcaid FROM final.xwalk_apde_mcaid_mcare_pha) b
+                        ON a.id_mcaid = b.id_mcaid")
+
+
+# Need to join to xwalk to get id_apde
+amr_1_year <- dbGetQuery(db_claims,
+                         "SELECT b.id_apde, a.end_year_month, a.numerator, a.denominator
+                         FROM
+                         (SELECT id_mcaid, end_year_month, numerator, denominator
+                         FROM stage.mcaid_perf_measure
+                         WHERE measure_id = 20 AND end_year_month = '201812') a
+                         LEFT JOIN
+                         (SELECT id_apde, id_mcaid FROM final.xwalk_apde_mcaid_mcare_pha) b
+                         ON a.id_mcaid = b.id_mcaid")
+
+amr <- dbGetQuery(db_claims,
+                         "SELECT b.id_apde, a.end_year_month, a.numerator, a.denominator
+                         FROM
+                         (SELECT id_mcaid, end_year_month, numerator, denominator
+                         FROM stage.mcaid_perf_measure
+                         WHERE measure_id = 19 AND end_year_month = '201812') a
+                         LEFT JOIN
+                         (SELECT id_apde, id_mcaid FROM final.xwalk_apde_mcaid_mcare_pha) b
+                         ON a.id_mcaid = b.id_mcaid")
+
+
+
 #### GENERAL SETTING UP OF DATA ------------------------------------------------
 ### Join long asthma to demogs
 ccw_asthma_demog <- mcaid_mcare_pha_elig_demo %>% 
@@ -124,6 +153,20 @@ ccw_asthma_demog %>% filter(year == 2016) %>%
   summarise(count = sum(asthma), rows = n(), total = n_distinct(id_apde)) %>%
   ungroup() %>%
   mutate(prop = round(count / total * 1000, 4))
+
+### Join AMR to demogs
+housing_amr <- mcaid_mcare_pha_elig_demo %>%
+  filter(year == 2018) %>%
+  left_join(., amr_denom, by = "id_apde") %>%
+  left_join(., select(amr, -end_year_month), by = "id_apde") %>%
+  left_join(., select(amr_1_year, -end_year_month), by = "id_apde") %>%
+  rename(denominator = denominator.x,
+         numerator = numerator.x,
+         denominator_1yr = denominator.y,
+         numerator_1yr = numerator.y) %>%
+  replace_na(., list(denominator = 0, numerator = 0, 
+                     denominator_1yr = 0, numerator_1yr = 0,
+                     enroll_flag = 0))
 
 
 #### GENERAL DEMOGS OF PHA RESIDENTS -------------------------------------------
@@ -442,7 +485,128 @@ geo_zip_18_pha <- geo_setup_f(year = 2018, pha = T)
 geo_zip_map(geo_zip_18)
 
 
-### Write out PPT slides
+#### HEDIS ASTHMA AND AMR ------------------------------------------------------
+# Spot check to make sure no-one with housing-only, Medicare-only, or dual status 
+#   is showing up with asthma (2018 is only Medicaid data, duals are excluded)
+housing_amr %>% 
+  filter(enroll_flag == 1) %>%
+  group_by(enroll_type_text) %>% 
+  # See how many people meet the definition for asthma
+  summarise(numerator = sum(denominator),
+            numerator_1yr = sum(denominator_1yr),
+            denominator = n()) %>%
+  ungroup() %>% mutate(total = sum(numerator), total_1yr = sum(numerator_1yr))
+
+### Proportion with asthma
+hedis_asthma_age <- housing_amr %>%
+  filter(enroll_flag == 1) %>%
+  group_by(age_yr_asthma, pha_agency) %>%
+  summarise(count = sum(denominator), total = n_distinct(id_apde)) %>%
+  ungroup() %>%
+  mutate(prop = round(count / total * 1000, 4),
+         amr_type = "Persistent asthma")
+hedis_asthma_age_1yr <- housing_amr %>%
+  filter(enroll_flag == 1) %>%
+  group_by(age_yr_asthma, pha_agency) %>%
+  summarise(count = sum(denominator_1yr), total = n_distinct(id_apde)) %>%
+  ungroup() %>%
+  mutate(prop = round(count / total * 1000, 4),
+         amr_type = "One-year asthma")
+
+hedis_asthma_all_age <- bind_rows(hedis_asthma_age, hedis_asthma_age_1yr)
+
+hedis_asthma_all_age_g <- hedis_asthma_all_age %>%
+  ggplot(aes(fill = pha_agency, y = prop, x = age_yr_asthma)) + 
+  geom_bar(position = "dodge", stat = "identity", color = "#333333") +
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
+  xlab("Age (years)") + ylab("Number per 1,000") + 
+  theme_ipsum_ps()
+
+### AMR descriptive
+hedis_amr_age <- housing_amr %>%
+  filter(enroll_flag == 1) %>%
+  group_by(age_yr_asthma, pha_agency) %>%
+  summarise(count = sum(numerator), total = sum(denominator)) %>%
+  ungroup() %>%
+  mutate(prop = round(count / total * 100, 3),
+         amr_type = "Met AMR (persistent asthma)")
+hedis_amr_age_1yr <- housing_amr %>%
+  filter(enroll_flag == 1) %>%
+  group_by(age_yr_asthma, pha_agency) %>%
+  summarise(count = sum(numerator_1yr), total = sum(denominator_1yr)) %>%
+  ungroup() %>%
+  mutate(prop = round(count / total * 100, 3),
+         amr_type = "Met AMR (one-year asthma)")
+
+hedis_amr_all_age <- bind_rows(hedis_amr_age, hedis_amr_age_1yr)
+
+hedis_amr_all_age_g <- hedis_amr_all_age %>%
+  ggplot(aes(fill = pha_agency, y = prop, x = age_yr_asthma)) + 
+  geom_bar(position = "dodge", stat = "identity", color = "#333333") +
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
+  xlab("Age (years)") + ylab("Percent") + 
+  theme_ipsum_ps()
+
+
+### AMR regression
+# Restrict to 2017 and recode
+amr_regression_df <- housing_amr %>%
+  filter(enroll_flag == 1) %>%
+  mutate(pha = ifelse(pha_agency == "Non-PHA", 0, 1),
+         age_grp = cut(age_yr, 
+                       breaks = c(4.999, 11.999, 18.999, 30.999, 50.999, 64.999), 
+                       include.lowest = F, 
+                       labels = c("5-11", "12-18", "19-30", "31-50", "51-64"), 
+                       ordered_result = F),
+         length_grp = factor(time_housing,
+                             levels = c("<3 years", "3-6 years", "6+ years"),
+                             labels = c("<3 years", "3-6 years", "6+ years"))
+  )
+
+# Look at asthma overall
+asthma_m <- glm(denominator ~ pha + age_grp + gender_me + race_eth_me,
+                      data = amr_regression_df,
+                      family = "binomial")
+asthma_m_1yr <- glm(denominator_1yr ~ pha + age_grp + gender_me + race_eth_me,
+                      data = amr_regression_df,
+                      family = "binomial")
+
+# Pull out coeficients
+asthma_m_coef <- tidy(asthma_m, conf.int = T, exponentiate = T)
+asthma_m_coef_pha <- asthma_m_coef %>% filter(term == "pha")
+asthma_m_1yr_coef <- tidy(asthma_m_1yr, conf.int = T, exponentiate = T)
+asthma_m_1yr_coef_pha <- asthma_m_1yr_coef %>% filter(term == "pha")
+
+# summary(asthma_m)
+# exp(coef(asthma_m))
+# 
+# summary(asthma_m_1yr)
+# exp(coef(asthma_m_1yr))
+
+
+# Look at AMR
+amr_m <- glm(numerator ~ pha + age_grp + gender_me + race_eth_me,
+                      data = amr_regression_df[amr_regression_df$denominator == 1, ],
+                      family = "binomial")
+amr_m_1yr <- glm(numerator_1yr ~ pha + age_grp + gender_me + race_eth_me,
+                   data = amr_regression_df[amr_regression_df$denominator_1yr == 1, ],
+                   family = "binomial")
+
+# Pull out coeficients
+amr_m_coef <- tidy(amr_m, conf.int = T, exponentiate = T)
+amr_m_coef_pha <- amr_m_coef %>% filter(term == "pha")
+amr_m_1yr_coef <- tidy(amr_m_1yr, conf.int = T, exponentiate = T)
+amr_m_1yr_coef_pha <- amr_m_1yr_coef %>% filter(term == "pha")
+
+# summary(amr_m)
+# exp(coef(amr_m))
+# 
+# summary(asthma_m_1yr)
+# exp(coef(asthma_m_1yr))
+
+
+
+#### WRITE OUT PPT SLIDES ------------------------------------------------------
 render(file.path(getwd(), "analyses/asthma/pha_asthma_convening.Rmd"), "powerpoint_presentation",
        output_file = file.path(dashh_2_path, "Convening", "DASHH convening 2019-02 - data slides.pptx"))
 

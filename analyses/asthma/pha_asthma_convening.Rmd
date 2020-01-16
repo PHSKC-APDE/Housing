@@ -26,18 +26,39 @@ bold_cell <- function(x) {
 # CCW asthma increases with age and is higher among PHA recipients
 ```{r ccw_age, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
 ccw_asthma_age_g + facet_wrap( ~ year_text, ncol = 1)
-
 ```
 
+# HEDIS asthma by age group (2018, non-dual Medicaid members only)
+```{r hedis_age, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
+hedis_asthma_all_age_g + facet_wrap( ~ amr_type, ncol = 1)
+```
 
-# Risk of having asthma among Medicaid and Medicare members in King County, by ZIP (2016)
+# Adjusted HEDIS-defined asthma results
+After adjusting for age, gender, and race/ethnicity, people receiving PHA support were:
+
+- `r abs(round((asthma_m_coef_pha$estimate-1)*100, 1))`% 
+`r ifelse(asthma_m_coef_pha$estimate > 1, "more", "less")` likely to meet the HEDIS definition for persistent asthma 
+(`r ifelse(asthma_m_coef_pha$p.value < 0.05, "significantly different", "not significant")`)
+- `r abs(round((asthma_m_1yr_coef_pha$estimate-1)*100, 1))`% 
+`r ifelse(asthma_m_1yr_coef_pha$estimate > 1, "more", "less")` likely to meet the one-year HEDIS definition for asthma 
+(`r ifelse(asthma_m_1yr_coef_pha$p.value < 0.05, "significantly different", "not significant")`)
+- `r abs(round((amr_m_coef_pha$estimate-1)*100, 1))`% 
+`r ifelse(amr_m_coef_pha$estimate > 1, "more", "less")` likely to meet the desired AMR (persistent asthma) 
+(`r ifelse(amr_m_coef_pha$p.value < 0.05, "significantly different", "not significant")`)
+- `r abs(round((amr_m_1yr_coef_pha$estimate-1)*100, 1))`% 
+`r ifelse(amr_m_1yr_coef_pha$estimate > 1, "more", "less")` likely to meet the desired AMR (one-year asthma) 
+(`r ifelse(amr_m_1yr_coef_pha$p.value < 0.05, "significantly different", "not significant")`)
+
+
+# Risk of having CCW asthma among Medicaid and Medicare members in King County, by ZIP (2016)
 ```{r map_16, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
 geo_zip_map(geo_zip_16, title = F)
 ```
 
-
-# Risk of having asthma among Medicaid (non-dual) members in King County, by ZIP (2018)
+# Risk of having CCW asthma among Medicaid (non-dual) members in King County, by ZIP (2018)
 ```{r map_18, echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
 geo_zip_map(geo_zip_18, title = F)
 ```
+
+
 

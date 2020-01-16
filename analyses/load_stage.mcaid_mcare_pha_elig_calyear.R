@@ -21,6 +21,7 @@ library(openxlsx) # Used to import/export Excel files
 library(housing) # contains many useful functions for analyzing housing/Medicaid data
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
+library(glue)
 library(data.table) # Used to manipulate data
 library(claims) # Used to aggregate data
 
