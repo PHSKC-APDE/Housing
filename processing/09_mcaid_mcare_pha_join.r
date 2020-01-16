@@ -57,6 +57,9 @@ yaml.elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/proces
 
 yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/09_mcaid_mcare_pha_elig_timevar.yaml"
 
+source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/alter_schema.R")
+source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
+
 ##### Connect to the servers #####
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
@@ -72,7 +75,7 @@ db_claims51 <- dbConnect(odbc(), "PHClaims51")
         pid, start_housing, startdate, enddate, dob_m6, 
         gender_new_m6,
         race_new, r_aian_new, r_asian_new, r_black_new, r_nhpi_new, r_white_new, r_hisp_new,
-        unit_zip_new, unit_city_new, unit_add_new, unit_apt, unit_apt2, 
+        unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
         agency_new, operator_type, portfolio_final, subsidy_type, vouch_type_final
                                 FROM [PH_APDEStore].[stage].[pha] WHERE enddate >= '2012-01-01'"))
   
@@ -83,6 +86,14 @@ db_claims51 <- dbConnect(odbc(), "PHClaims51")
   ### Joint Medicaid-Medicare elig_timevar ----
   timevar.mm <- setDT(odbc::dbGetQuery(db_claims51, "SELECT * FROM [PHClaims].[final].[mcaid_mcare_elig_timevar]"))
   timevar.mm[, c("contiguous", "last_run", "cov_time_day") := NULL]
+  
+  ### Geo ref table ----
+  ref.geo <- setDT(odbc::dbGetQuery(db_claims51, "
+  SELECT geo_add1_clean, geo_city_clean, geo_state_clean, geo_zip_clean, 
+  geo_zip_centroid, geo_street_centroid, geo_countyfp10 AS geo_county_code,
+  geo_tractce10 AS geo_tract_code, geo_hra_id AS geo_hra_code, 
+  geo_school_geoid10 AS geo_school_code 
+  FROM ref.address_geocode"))
 
 
 ##### Clean / prep mm data -----
@@ -140,6 +151,12 @@ setnames(race.recent, c("race_me", "race_eth_me"), c("race_recent", "race_eth_re
 pha <- merge(pha, race.recent, by = "id_apde", all.x = T, all.y = T)
 pha[, counter := NULL]
 rm(race.recent)
+
+# add in geo_ data
+pha <- merge(pha, ref.geo, 
+             by.x = c("unit_add_new", "unit_city_new", "unit_state_new", "unit_zip_new"),
+             by.y = c("geo_add1_clean", "geo_city_clean", "geo_state_clean", "geo_zip_clean"),
+             all.x = T, all.y = F)
 
 # ascribe ever KC residence status
 pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
@@ -206,12 +223,15 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       # clean objects no longer used
       rm(elig.mm, elig.mm.linked, elig.mm.solo, elig.pha, elig.pha.linked, elig.pha.solo, linked)
       
+      
 ##### Create Mcaid-Mcare-PHA elig_timevar -----
   ### Create PHA elig_timevar ----
   timevar.pha <- copy(pha)
   timevar.pha <- timevar.pha[, .(id_apde, from_date, to_date, 
-                                 unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_zip_new, 
-                                 agency_new, subsidy_type, vouch_type_final, operator_type,portfolio_final)]
+                                 unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
+                                 geo_zip_centroid, geo_street_centroid, geo_county_code, 
+                                 geo_tract_code, geo_hra_code, geo_school_code, 
+                                 agency_new, subsidy_type, vouch_type_final, operator_type, portfolio_final)]
 
   ### Identify IDs in both Mcaid-Mcare & PHA and split from non-linked IDs ----
       linked.id <- intersect(timevar.mm$id_apde, timevar.pha$id_apde)
@@ -522,9 +542,19 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[!is.na(unit_apt), geo_add2 := unit_apt][, c("unit_apt", "unit_apt2") := NULL]
       # city
       timevar[!is.na(unit_city_new ), geo_city := unit_city_new ][, unit_city_new  := NULL]
+      # state
+      timevar[!is.na(unit_state_new ), geo_state := unit_state_new ][, unit_state_new  := NULL]
       # zip
       timevar[!is.na(unit_zip_new), geo_zip := unit_zip_new][, unit_zip_new := NULL]
-
+      # other geo_ variables (note that default is already in place, only filling in gaps)
+      timevar[is.na(geo_zip_centroid), geo_zip_centroid := i.geo_zip_centroid][, i.geo_zip_centroid := NULL]
+      timevar[is.na(geo_street_centroid), geo_street_centroid := i.geo_street_centroid][, i.geo_street_centroid := NULL]
+      timevar[is.na(geo_county_code), geo_county_code := i.geo_county_code][, i.geo_county_code := NULL]
+      timevar[is.na(geo_tract_code), geo_tract_code := i.geo_tract_code][, i.geo_tract_code := NULL]
+      timevar[is.na(geo_hra_code), geo_hra_code := i.geo_hra_code][, i.geo_hra_code := NULL]
+      timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
+      
+      
       #-- Add KC flag based on zip code ----  
       kc.zips <- fread(kc.zips.url)
       timevar[, geo_kc := 0]
@@ -551,17 +581,17 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
 ##### Write elig_demo to SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config <- yaml::yaml.load(RCurl::getURL(yaml.elig))
+  table_config_demo <- yaml::yaml.load(RCurl::getURL(yaml.elig))
 
   # Ensure columns are in same order in R & SQL
-  setcolorder(elig, names(table_config$vars))
+  setcolorder(elig, names(table_config_demo$vars))
   
   # Write table to SQL
   dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config$schema, table = table_config$table), 
+               DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table), 
                value = as.data.frame(elig),
                overwrite = T, append = F, 
-               field.types = unlist(table_config$vars))
+               field.types = unlist(table_config_demo$vars))
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -707,20 +737,21 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   
   odbc::dbGetQuery(conn = db_apde51, qa.values2)
   
+  
 ##### Write elig_timevar to SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
+  table_config_timevar <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
 
   # Ensure columns are in same order in R & SQL
-  setcolorder(timevar, names(table_config$vars))
+  setcolorder(timevar, names(table_config_timevar$vars))
   
   # Write table to SQL
   dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config$schema, table = table_config$table), 
+               DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table), 
                value = as.data.frame(timevar),
                overwrite = T, append = F, 
-               field.types = unlist(table_config$vars))
+               field.types = unlist(table_config_timevar$vars))
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -866,7 +897,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   
   odbc::dbGetQuery(conn = db_apde51, qa.values2)
         
-### Print error messages ----
+### Print error messages and load to final ----
   #-- create summary of errors
   problems <- glue::glue(
     problem.timevar.row_diff, "\n",
@@ -879,6 +910,29 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
     message(glue::glue("WARNING ... MCAID_MCARE_PHA_ELIG_TIMEVAR OR ELIG_DEMO FAILED AT LEAST ONE QA TEST", "\n",
                        "Summary of problems in new tables: ", "\n", 
                        problems))
-  }else{message("Staged MCAID_MCARE_PHA_ELIG_TIMEVAR & ELIG_DEMO passed all QA tests")}
+  } else {
+    message("Staged MCAID_MCARE_PHA_ELIG_TIMEVAR & ELIG_DEMO passed all QA tests")
+    
+    # Load to final schema (permissions should be in place but not working)
+    # Use SQL code file for now
+    
+    
+    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+                   table_name = "mcaid_mcare_pha_elig_demo")
+    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+                   table_name = "mcaid_mcare_pha_elig_timevar")
+    
+    
+    # Add index
+    # (need to update schema name in the config file first)
+    table_config_demo$schema <- "final"
+    table_config_timevar$schema <- "final"
+    
+    add_index_f(db_apde51, table_config = table_config_demo)
+    add_index_f(db_apde51, table_config = table_config_timevar)
+    }
+
   
+
+    
 # the end ----  
