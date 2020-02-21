@@ -904,9 +904,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
     # Use SQL code file for now
     
     
-    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51",  
+                   from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_demo")
-    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+    
+    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51", 
+                   from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_timevar")
     
     
