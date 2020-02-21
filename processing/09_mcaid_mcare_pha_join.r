@@ -507,6 +507,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[, pha := 0][!is.na(agency_new), pha := 1]
       timevar[, apde_dual := 0][mcare == 1 & mcaid == 1, apde_dual := 1]
       timevar[is.na(dual), dual := 0] # is.na(dual)==T when data are only from PHA and/or Mcare
+      timevar[apde_dual == 1 , dual := 1] # discussed this change via email with Alastair on 2/21/2020
       timevar[, mcaid_mcare_pha := 0][mcaid == 1 & mcare==1 & pha == 1, mcaid_mcare_pha := 1]
       timevar[, enroll_type := NULL] # kept until now for comparison with the dual flag
       if(nrow(timevar[mcare==0 & mcaid==0 & pha == 0]) > 0) 
@@ -542,11 +543,10 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
       #-- Add KC flag based on zip code ----  
-        timevar[pha==1, geo_kc := 1] # By definition, KCHA and SHA are in King County
-        # kc.zips <- fread(kc.zips.url)
-        # timevar[, geo_kc := 0]
-        # timevar[geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
-        # rm(kc.zips)
+        kc.zips <- fread(kc.zips.url)
+        timevar[, geo_kc := 0]
+        timevar[geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
+        rm(kc.zips)
       
       #-- create time stamp ----
       timevar[, last_run := Sys.time()]  
