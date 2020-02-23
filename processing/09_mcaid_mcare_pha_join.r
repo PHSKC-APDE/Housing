@@ -124,8 +124,7 @@ pha[, gender_new_m6 := NULL]
 # identify most recent gender
 setorder(pha, id_apde, -from_date) # sort to identify the most recent time per id
 pha[, counter := 1:.N, by = c("id_apde")]
-gender.recent <- pha[counter == 1, .(id_apde, gender_me)] # keep most recent gender
-setnames(gender.recent, "gender_me", "gender_recent")
+gender.recent <- pha[counter == 1, .(id_apde, gender_recent = gender_me)] # keep most recent gender
 pha <- merge(pha, gender.recent, by = "id_apde", all.x = T, all.y = T)
 pha[, counter := NULL]
 rm(gender.recent)
@@ -146,8 +145,7 @@ setnames(pha,
 # identify most recent race
 setorder(pha, id_apde, -from_date) # sort to identify the most recent time per id
 pha[, counter := 1:.N, by = c("id_apde")]
-race.recent <- pha[counter == 1, .(id_apde, race_me, race_eth_me)] # keep most recent gender
-setnames(race.recent, c("race_me", "race_eth_me"), c("race_recent", "race_eth_recent"))
+race.recent <- pha[counter == 1, .(id_apde, race_recent=race_me, race_eth_recent=race_eth_me)] # keep most recent race
 pha <- merge(pha, race.recent, by = "id_apde", all.x = T, all.y = T)
 pha[, counter := NULL]
 rm(race.recent)
@@ -162,9 +160,9 @@ pha <- merge(pha, ref.geo,
 pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
 
 ##### Create Mcaid-Mcare-PHA elig_demo -----
-  ### Create PHA elig_demo ----
+  ### Create PHA elig_demo (most recent row per id) ----
   elig.pha <- copy(pha)
-  setorder(elig.pha, id_apde, -from_date) # sort to identify the most recent time per id
+  setorder(elig.pha, id_apde, -from_date) 
   elig.pha[, counter := 1:.N, by = c("id_apde")]
   elig.pha <- elig.pha[counter == 1]
   elig.pha[, counter := NULL]
@@ -226,12 +224,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       
 ##### Create Mcaid-Mcare-PHA elig_timevar -----
   ### Create PHA elig_timevar ----
-  timevar.pha <- copy(pha)
-  timevar.pha <- timevar.pha[, .(id_apde, from_date, to_date, 
-                                 unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
-                                 geo_zip_centroid, geo_street_centroid, geo_county_code, 
-                                 geo_tract_code, geo_hra_code, geo_school_code, 
-                                 agency_new, subsidy_type, vouch_type_final, operator_type, portfolio_final)]
+      timevar.pha <- copy(pha)
+      timevar.pha <- timevar.pha[, .(id_apde, from_date, to_date, 
+                                     unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
+                                     geo_zip_centroid, geo_street_centroid, geo_county_code, 
+                                     geo_tract_code, geo_hra_code, geo_school_code, 
+                                     agency_new, subsidy_type, vouch_type_final, operator_type, portfolio_final)]
 
   ### Identify IDs in both Mcaid-Mcare & PHA and split from non-linked IDs ----
       linked.id <- intersect(timevar.mm$id_apde, timevar.pha$id_apde)
@@ -249,6 +247,9 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       setnames(linked, names(linked), gsub("\\.y$", ".elig.mm", names(linked))) # clean up suffixes to eliminate confusion
       
       #-- Identify the type of overlaps & number of duplicate rows needed ----
+      # As stated in https://github.com/PHSKC-APDE/claims_data/edit/master/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_timevar.R
+      # The code below was validated against a much more time intensive process where a giant table was made for every individual day within the
+      # time period being analyzed. This faster / more memory efficient code was found to provide equivalent output.
       temp <- linked %>%
         mutate(overlap_type = case_when(
           # First ID the non-matches
@@ -494,26 +495,10 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       setkey(timevar, id_apde, from_date) # order dual data     
       
   ### Collapse data if dates are contiguous and all data is the same ----
-      #-- Create unique ID for data chunks ----
-      timevar.vars <- setdiff(names(timevar), c("from_date", "to_date")) # all vars except date vars
-      timevar[, group := .GRP, by = timevar.vars] # create group id
-      timevar[, group := cumsum( c(0, diff(group)!=0) )] # in situation like a:a:a:b:b:b:b:a:a:a, want to distinguish first set of "a" from second set of "a"
-      
-      #-- Create unique ID for contiguous times within a given data chunk ----
+      timevar[, gr := cumsum(from_date - shift(to_date, fill=1) != 1), by = c(setdiff(names(timevar), c("from_date", "to_date")))] # unique group # (gr) for each set of contiguous dates & constant data 
+      timevar <- timevar[, .(from_date=min(from_date), to_date=max(to_date)), by = c(setdiff(names(timevar), c("from_date", "to_date")))] 
+      timevar[, gr := NULL]
       setkey(timevar, id_apde, from_date)
-      timevar[, prev_to_date := c(NA, to_date[-.N]), by = "group"] # create row with the previous 'to_date', MUCH faster than the shift "lag" function in data.table
-      timevar[, diff.prev := from_date - prev_to_date] # difference between from_date & prev_to_date will be 1 (day) if they are contiguous
-      timevar[diff.prev != 1, diff.prev := NA] # set to NA if difference is not 1 day, i.e., it is not contiguous, i.e., it starts a new contiguous chunk
-      timevar[is.na(diff.prev), contig.id := .I] # Give a unique number for each start of a new contiguous chunk (i.e., section starts with NA)
-      setkey(timevar, group, from_date) # need to order the data so the following line will work.
-      timevar[, contig.id  := contig.id[1], by=  .( group , cumsum(!is.na(contig.id))) ] # fill forward by group
-      timevar[, c("prev_to_date", "diff.prev") := NULL] # drop columns that were just intermediates
-      
-      #-- Collapse rows where data chunks are constant and time is contiguous ----      
-      timevar[, from_date := min(from_date), by = c("group", "contig.id")]
-      timevar[, to_date := max(to_date), by = c("group", "contig.id")]
-      timevar[, c("group", "contig.id") := NULL]
-      timevar <- unique(timevar)
       
   ### Prep for pushing to SQL ----
       #-- Create program flags ----
@@ -521,9 +506,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[, mcaid := 0][!is.na(cov_type), mcaid := 1]
       timevar[, pha := 0][!is.na(agency_new), pha := 1]
       timevar[, apde_dual := 0][mcare == 1 & mcaid == 1, apde_dual := 1]
+      timevar[is.na(dual), dual := 0] # is.na(dual)==T when data are only from PHA and/or Mcare
+      timevar[apde_dual == 1 , dual := 1] # discussed this change via email with Alastair on 2/21/2020
       timevar[, mcaid_mcare_pha := 0][mcaid == 1 & mcare==1 & pha == 1, mcaid_mcare_pha := 1]
       timevar[, enroll_type := NULL] # kept until now for comparison with the dual flag
-      timevar <- timevar[!(mcare==0 & mcaid==0 & pha == 0)]
+      if(nrow(timevar[mcare==0 & mcaid==0 & pha == 0]) > 0) 
+        stop("THERE IS A SERIOUS PROBLEM WITH THE TIMEVAR DATA. Mcaid, Mcare, and PHA should never all == 0")
       
       #-- Create contiguous flag ----  
       # If contiguous with the PREVIOUS row, then it is marked as contiguous. This is the same as mcaid_elig_timevar
@@ -554,12 +542,11 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_hra_code), geo_hra_code := i.geo_hra_code][, i.geo_hra_code := NULL]
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
-      
       #-- Add KC flag based on zip code ----  
-      kc.zips <- fread(kc.zips.url)
-      timevar[, geo_kc := 0]
-      timevar[geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
-      rm(kc.zips)
+        kc.zips <- fread(kc.zips.url)
+        timevar[, geo_kc := 0]
+        timevar[geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
+        rm(kc.zips)
       
       #-- create time stamp ----
       timevar[, last_run := Sys.time()]  
@@ -917,9 +904,12 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
     # Use SQL code file for now
     
     
-    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51",  
+                   from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_demo")
-    alter_schema_f(conn = db_apde51, from_schema = "stage", to_schema = "final",
+    
+    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51", 
+                   from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_timevar")
     
     
