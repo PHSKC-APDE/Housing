@@ -56,6 +56,7 @@ vars:
     tpl: INT
     bsp_group_cid: INT
     full_benefit: INT
+    full_criteria: INT
     cov_type: CHAR(3)
     mco_id: INT
     start_housing: DATE

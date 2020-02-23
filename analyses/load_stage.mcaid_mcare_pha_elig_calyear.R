@@ -109,7 +109,7 @@ pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
     filter(!is.na(overlap_amount)) %>%
     group_by(id_apde, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
              apde_dual, part_a, part_b, part_c, partial, buy_in, 
-             dual, tpl, bsp_group_cid, full_benefit, cov_type, 
+             dual, tpl, bsp_group_cid, full_benefit, full_criteria, cov_type, 
              mco_id, pha_agency, pha_subsidy, pha_voucher, 
              pha_operator, pha_portfolio, geo_kc, geo_zip, geo_zip_centroid, 
              geo_street_centroid, geo_county_code, geo_tract_code, 
@@ -174,6 +174,10 @@ source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_d
 
 
 # Ensure columns are in the correct order
+# First see which columns aren't in either source
+names(mcaid_mcare_pha_elig_calyear)[!names(mcaid_mcare_pha_elig_calyear) %in% names(table_config_stage$vars)]
+names(table_config_stage$vars)[!names(table_config_stage$vars) %in% names(mcaid_mcare_pha_elig_calyear)]
+
 data.table::setcolorder(mcaid_mcare_pha_elig_calyear, names(table_config_stage$vars))
 
 # Load to SQL
