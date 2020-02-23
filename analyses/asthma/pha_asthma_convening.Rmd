@@ -7,7 +7,7 @@ header-includes:
   - \usepackage{multirow}
 output: 
   powerpoint_presentation:
-    reference_doc: "C:/Users/mathesal/King County/Laurent, Amy - DASHH-External/DASHH2.0/Convening/DASHH convening 2019-02 - data slides template.pptx"
+    reference_doc: "C:/Users/mathesal/King County/Laurent, Amy - DASHH-External/DASHH2.0/Convening/DASHH convening 2020-02 - data slides template.pptx"
 ---
 
 ```{r setup, include=FALSE}

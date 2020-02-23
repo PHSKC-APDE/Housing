@@ -173,7 +173,7 @@ acute_query_f <- function(type = c("ed", "hosp"), year = 2018, primary_dx = T) {
   sql_query <- glue_sql(
     "SELECT DISTINCT a.id_apde, a.source_desc, a.first_service_date, 
     YEAR(a.first_service_date) AS year, {top_vars}, c.ccw_asthma, 
-    d.enroll_type, d.pha_agency, d.pha_subsidy, d.dual, d.geo_zip, 
+    d.enroll_type, d.mco_id, d.pha_agency, d.pha_subsidy, d.dual, d.geo_zip, 
     e.dob, e.start_housing, e.gender_me, e.race_eth_me 
     FROM
     (SELECT id_apde, source_desc, claim_header_id, 
@@ -198,6 +198,7 @@ acute_query_f <- function(type = c("ed", "hosp"), year = 2018, primary_dx = T) {
       WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
       WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
       WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
+      mco_id, 
       pha_agency, 
       CASE WHEN pha_subsidy = 'TENANT BASED/SOFT UNIT' THEN 'HCV'
                                WHEN pha_subsidy = 'HARD UNIT' THEN 'PH'
@@ -278,7 +279,7 @@ acute_18_all_dx <- bind_rows(mutate(ed_18_all_dx, type = "ED visits"),
 acute_denom_f <- function(year = 2018) {
   output <- dbGetQuery(db_apde, 
                        glue::glue_sql("SELECT [year], id_apde, enroll_type, age_yr, gender_me, 
-                             race_eth_me, pha_agency, 
+                             race_eth_me, mco_id, pha_agency, 
                              CASE WHEN pha_subsidy = 'TENANT BASED/SOFT UNIT' THEN 'HCV'
                                WHEN pha_subsidy = 'HARD UNIT' THEN 'PH'
                                ELSE 'Non-PHA' END AS pha_subsidy,
@@ -1104,7 +1105,7 @@ hedis_amr_all_age_sub <- bind_rows(hedis_amr_age_sub, hedis_amr_age_1yr_sub) %>%
 hedis_amr_all_age_sub_g <- hedis_amr_all_age_sub %>%
   ggplot(aes(fill = pha_subsidy, y = prop, x = age_yr_asthma)) + 
   geom_bar(position = "dodge", stat = "identity", color = "#333333") +
-  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy type") + 
   xlab("Age (years)") + ylab("Percent") + 
   theme_ipsum_ps() +
   theme(panel.grid.major.y = element_line(color = "grey90"),
@@ -1236,7 +1237,7 @@ acute_18_age_sub_g <- acute_18_age_sub %>%
   geom_bar(position = "dodge", stat = "identity", color = "#333333") +
   geom_text(aes(label = ifelse(numerator == 0, "*", "")), 
             position = position_dodge(width = 0.9), vjust = -0.05) + 
-  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy type") + 
   xlab("Age (years)") + ylab("Rate per 1,000 member-months") + 
   ggtitle("ED visits from asthma (primary dx) (2018, non-dual Medicaid members only)") +
   theme_ipsum_ps() +
@@ -1273,7 +1274,7 @@ acute_18_all_dx_age_sub_g <- acute_18_all_dx_age_sub %>%
   geom_bar(position = "dodge", stat = "identity", color = "#333333") +
   geom_text(aes(label = ifelse(numerator == 0, "*", "")), 
             position = position_dodge(width = 0.9), vjust = -0.05) + 
-  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy type") + 
   xlab("Age (years)") + ylab("Rate per 1,000 member-months") + 
   labs(caption = "* = numbers suppressed due to small size") + 
   ggtitle("ED visits/hospitalizations from asthma (any dx) (2018, non-dual Medicaid members only)") + 
@@ -1447,40 +1448,160 @@ ed_18_all_avoidable <- ed_18_all_expected %>%
 mco_ref <- dbGetQuery(db_claims, "SELECT * FROM ref.mco")
 
 # Find people who were in an MCO in 2018
-mco_18 <- ccw_asthma_demog %>%
-  filter(!is.na(mco_id) & year == 2018) %>%
+mco_18 <- mcaid_mcare_pha_elig_demo %>%
+  filter(!is.na(mco_id) & year == 2018 & age_yr < 65 & dual != 1) %>%
   left_join(., dplyr::select(mco_ref, product_identifier, mco), 
-            by = c("mco_id" = "product_identifier"))
+            by = c("mco_id" = "product_identifier")) %>%
+  filter(!is.na(mco))
 
+
+#### Enrollment in MCO and PHA ####
+mco_enrollment <- mco_18 %>% group_by(mco, dual, pha_subsidy) %>%
+  summarise(enrolled = n_distinct(id_apde)) %>%
+  group_by(mco) %>%
+  mutate(total = sum(enrolled)) %>% ungroup() %>%
+  mutate(pct = round(enrolled / total * 100, 1))
+
+# Add overall to show comparison
+mco_enrollment <- bind_rows(mco_enrollment,
+                            mco_enrollment %>% group_by(pha_subsidy) %>%
+                              summarise(enrolled = sum(enrolled), total = sum(total),
+                                        pct = round(enrolled / total * 100, 1),
+                                        mco = "MCOs overall") %>% ungroup(),
+                            filter(mcaid_mcare_pha_elig_demo, year == 2018 & age_yr < 65 & dual != 1) %>%
+                              group_by(pha_subsidy) %>%
+                              summarise(enrolled = n_distinct(id_apde)) %>%
+                              ungroup() %>% mutate(total = sum(enrolled),
+                                                   pct = round(enrolled / total * 100, 1),
+                                                   mco = "Overall"))
+
+mco_enrollment <- mco_enrollment %>%
+  group_by(mco) %>% 
+  mutate(ymax = cumsum(pct),
+         ymin = ifelse(is.na(lag(ymax, 1)), 0, lag(ymax, 1)))
+
+# Test graph
+mco_enrollment %>%
+  filter(mco == "Coordinated Care of Washington") %>%
+  ggplot(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = pha_subsidy)) +
+  geom_rect(color = "grey20") + 
+  coord_polar(theta = "y") + 
+  xlim(c(2, 4)) + 
+  theme_void() + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy") +
+  geom_label(x = 3.5, aes(y = (ymax + ymin) / 2, label = paste0(pct, "%")), size = 3,
+             show.legend = F)
+
+
+#### Proportion with asthma ####
 # Summarise by MCO
-ccw_asthma_mco_age_18 <- mco_18 %>%
+ccw_asthma_mco_age <- mco_18 %>%
   filter(!is.na(age_yr_asthma) & !is.na(mco) & year == 2018 & age_yr < 65 & dual != 1) %>%
   group_by(mco, year, year_text, age_yr_asthma, pha_subsidy) %>%
   summarise(count = sum(asthma), total = n_distinct(id_apde)) %>%
   ungroup() %>%
-  mutate(prop = round(count / total * 1000, 4))
+  mutate(prop = round(count / total * 1000, 3))
 
 # Add overall to show comparison
-ccw_asthma_mco_age_18 <- left_join(ccw_asthma_mco_age_18, 
-                                   dplyr::select(ccw_asthma_age_sub_18, year, age_yr_asthma, 
-                                                 pha_subsidy, prop) %>%
-                                     rename(prop_overall = prop),
-                                   by = c("year", "age_yr_asthma", "pha_subsidy"))
+ccw_asthma_mco_age <- bind_rows(mutate(ccw_asthma_mco_age),
+                                   mutate(ccw_asthma_age_sub_18, mco = "Overall"),
+                                ccw_asthma_mco_age %>% 
+                                     group_by(year, year_text, age_yr_asthma, pha_subsidy) %>%
+                                     summarise(count = sum(count), total = sum(total)) %>%
+                                     ungroup() %>%
+                                     mutate(prop = round(count / total * 1000, 3),
+                                            mco = "MCOs overall"))
 
+# Also make non-age version
+ccw_asthma_mco <- ccw_asthma_mco_age %>% 
+  group_by(mco, pha_subsidy) %>%
+  summarise(count = sum(count), total = sum(total)) %>%
+  ungroup() %>%
+  mutate(prop = round(count / total * 1000, 0))
 
-ccw_asthma_mco_age_18_g <- ccw_asthma_mco_age_18 %>%
-  ggplot(aes(fill = pha_subsidy, y = prop, x = age_yr_asthma)) + 
+# Test graph
+ccw_asthma_mco %>%
+  filter(mco == "Amerigroup Washington Inc." | mco == "MCOs overall") %>%
+  ggplot(aes(fill = pha_subsidy, y = prop, x = mco)) + 
   geom_bar(position = "dodge", stat = "identity", color = "#333333") +
-  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "Agency") + 
-  xlab("Age (years)") + ylab("Number per 1,000") + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy") + 
+  xlab("") + ylab("Number per 1,000") + 
   theme_ipsum_ps() +
   theme(panel.grid.major.y = element_line(color = "grey90"),
         panel.grid.major.x = element_blank(), 
         panel.grid.minor = element_blank())
 
-ccw_asthma_mco_age_18_g + facet_wrap( ~ mco, ncol = 2)
+
+#### ED visits ####
+# Make a denominator
+denom_18_sub_mco <- acute_denom_18 %>%
+  left_join(., dplyr::select(mco_ref, product_identifier, mco), 
+            by = c("mco_id" = "product_identifier")) %>%
+  filter(!is.na(mco) & age_yr < 65 & dual != 1) %>%
+  group_by(mco, pha_subsidy) %>%
+  summarise(denominator = sum(pt), denominator_yr = sum(pt) / 365,
+            denominator_mth = denominator_yr * 12)
+
+
+acute_18_sub_mco <- acute_18 %>%
+  left_join(., dplyr::select(mco_ref, product_identifier, mco), 
+            by = c("mco_id" = "product_identifier")) %>%
+  filter(!is.na(mco) & age_yr < 65 & dual != 1 & type == "ED visits") %>%
+  group_by(mco, pha_subsidy) %>%
+  summarise(numerator = sum(event)) %>%
+  ungroup() %>%
+  left_join(., denom_18_sub_mco, by = c("mco", "pha_subsidy")) %>%
+  mutate(rate = numerator / denominator_mth * 1000)
+
+
+# Add in overall
+acute_18_sub_mco <- bind_rows(acute_18_sub_mco,
+                              acute_18_sub_mco %>% group_by(pha_subsidy) %>%
+                                summarise(numerator = sum(numerator), denominator = sum(denominator),
+                                          denominator_yr = sum(denominator_yr), denominator_mth = sum(denominator_mth)) %>%
+                                ungroup() %>%
+                                mutate(rate = numerator / denominator_mth * 1000,
+                                       mco = "MCOs overall"),
+                              acute_18_age_sub %>% filter(type == "ED visits" & 
+                                                            !age_yr_asthma %in% c("65-74", "75+")) %>%
+                                group_by(pha_subsidy) %>%
+                                summarise(numerator = sum(numerator), denominator = sum(denominator),
+                                          denominator_yr = sum(denominator_yr), denominator_mth = sum(denominator_mth)) %>%
+                                ungroup() %>%
+                                mutate(rate = numerator / denominator_mth * 1000,
+                                       mco = "Overall"))
+
+# Test graph
+acute_18_sub_mco %>%
+  filter(mco == "Amerigroup Washington Inc." | mco == "MCOs overall") %>%
+  ggplot(aes(fill = pha_subsidy, y = rate, x = mco)) + 
+  geom_bar(position = "dodge", stat = "identity", color = "#333333") +
+  geom_text(aes(label = ifelse(numerator == 0, "*", "")), 
+            position = position_dodge(width = 0.9), vjust = -0.05) + 
+  scale_fill_manual(values = c("#79706e", "#2c7bb6", "#87d180"), name = "PHA subsidy") + 
+  xlab("") + ylab("Rate per 1,000 member-months") + 
+  ggtitle("ED visits from asthma (primary dx) (2018, non-dual Medicaid members only)") +
+  theme_ipsum_ps() +
+  theme(panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.major.x = element_blank(), 
+        panel.grid.minor = element_blank())
+
+
+
+#### Make list of MCOs ####
+mcos <- as.list(unique(ccw_asthma_mco_age_18$mco))
+mcos <- mcos[!mcos %in% c("Overall", "MCOs overall")]
+
+#### Write out custom reports ####
+lapply(mcos, function(x) {
+  message(paste0("Working on ", x))
+
+  render(file.path(dashh_2_path, "/Convening/DASHH convening 2019-02 - MCO report.Rmd"),
+  output_file = file.path(dashh_2_path, "Convening", paste0("DASHH convening 2020-02 - MCO report - ", x, ".html")))
+})
+
 
 
 #### WRITE OUT PPT SLIDES ------------------------------------------------------
 render(file.path(getwd(), "analyses/asthma/pha_asthma_convening.Rmd"), "powerpoint_presentation",
-       output_file = file.path(dashh_2_path, "Convening", "DASHH convening 2019-02 - data slides.pptx"))
+       output_file = file.path(dashh_2_path, "Convening", "DASHH convening 2020-02 - data slides.pptx"))
