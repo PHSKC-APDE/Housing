@@ -570,8 +570,9 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   # Pull YAML from GitHub
   table_config_demo <- yaml::yaml.load(RCurl::getURL(yaml.elig))
 
-  # Ensure columns are in same order in R & SQL
-  setcolorder(elig, names(table_config_demo$vars))
+  # Ensure columns are in same order in R & SQL & that we drop extraneous variables
+  keep.elig <- names(table_config_demo$vars)
+  elig <- elig[, ..keep.elig]
   
   # Write table to SQL
   dbWriteTable(db_apde51, 
@@ -730,7 +731,10 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   # Pull YAML from GitHub
   table_config_timevar <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
 
-  # Ensure columns are in same order in R & SQL
+  # Ensure columns are in same order in R & SQL & are limited those specified in the YAML
+  keep.timevars <- names(table_config_timevar$vars)
+  timevar <- timevar[, ..keep.timevars]
+  
   setcolorder(timevar, names(table_config_timevar$vars))
   
   # Write table to SQL
