@@ -521,7 +521,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[, prev_to_date := NULL] # drop because no longer needed
       
       #-- Create cov_time_date ----
-      timevar[, cov_time_day := as.integer(to_date - from_date)]
+      timevar[, cov_time_day := as.integer(to_date - from_date + 1)]
       
       #-- Select PHA address data over Mcaid-Mcare when available ----
       # street
