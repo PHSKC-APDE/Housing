@@ -521,7 +521,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[, prev_to_date := NULL] # drop because no longer needed
       
       #-- Create cov_time_date ----
-      timevar[, cov_time_day := as.integer(to_date - from_date)]
+      timevar[, cov_time_day := as.integer(to_date - from_date + 1)]
       
       #-- Select PHA address data over Mcaid-Mcare when available ----
       # street
@@ -542,12 +542,13 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_hra_code), geo_hra_code := i.geo_hra_code][, i.geo_hra_code := NULL]
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
-      #-- Add KC flag based on zip code ----  
-        kc.zips <- fread(kc.zips.url)
-        timevar[, geo_kc := 0]
-        timevar[geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
-        rm(kc.zips)
-      
+      #-- Add KC flag based on zip code or FIPS code as appropriate----  
+      kc.zips <- fread(kc.zips.url)
+      timevar[, geo_kc := 0]
+      timevar[geo_county_code=="033", geo_kc := 1]
+      timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
+      rm(kc.zips)
+
       #-- create time stamp ----
       timevar[, last_run := Sys.time()]  
       
