@@ -35,10 +35,6 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
 
 #### BRING IN DATA ####
-### Code for mapping field values
-demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/pha_2018_data/processing/housing_mcaid%20demo%20codes.csv"), 
-                       header = TRUE, stringsAsFactors = FALSE)
-
 ### Main merged data
 mcaid_mcare_pha_elig_demo <- dbGetQuery(db_apde51, "SELECT * FROM final.mcaid_mcare_pha_elig_demo")
 mcaid_mcare_pha_elig_timevar <- dbGetQuery(
@@ -52,7 +48,9 @@ mcaid_mcare_pha_elig_demo <- mcaid_mcare_pha_elig_demo %>%
   mutate_at(vars(dob, death_dt, start_housing), list( ~ as.Date(.)))
 
 mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar %>%
-  mutate_at(vars(from_date, to_date), list( ~ as.Date(.)))
+  mutate_at(vars(from_date, to_date), list( ~ as.Date(.))) %>%
+  mutate_at(vars(part_a, part_b, part_c, partial, buy_in, full_benefit, full_criteria),
+            list(~ ifelse(mcaid == 0 & mcare == 0, 0L, .)))
 
 
 ### Make enroll field
@@ -75,6 +73,9 @@ mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar %>%
 years <- seq(2012, 2018)
 
 allocated <- bind_rows(lapply(seq_along(years), function(x) {
+  
+  message(glue("Working on {years[x]}"))
+  
   year <- allocate(df = mcaid_mcare_pha_elig_timevar, 
                    starttime = paste0(years[x], "-01-01"), 
                    endtime = paste0(years[x], "-12-31"), 
@@ -87,6 +88,7 @@ allocated <- bind_rows(lapply(seq_along(years), function(x) {
     dplyr::select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state, 
                   -pt_allocate)
 }))
+
 
 
 #### MAKE PT AND POP_EVER FIELDS ####
@@ -122,6 +124,23 @@ pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
   
   return(output)
 }))
+
+
+#### MAKE FLAG TO INDICATE FULL CRITERIA FOR EACH YEAR
+# Definition: 11+ months coverage with full_criteria
+full_criteria <- pt_rows %>%
+  group_by(id_apde, year, full_criteria) %>%
+  summarise(pt_tot = sum(pt)) %>%
+  ungroup() %>%
+  mutate(full_criteria_12 = case_when(
+    year %in% c(2012, 2016, 2020) & pt_tot >= 11/12 * 366 ~ 1L, 
+    pt_tot >= 11/12 * 365 ~ 1L, 
+    TRUE ~ 0L)) %>%
+  group_by(id_apde, year) %>%
+  summarise(full_criteria_12 = max(full_criteria_12)) %>% ungroup()
+
+# Join back to main data
+allocated <- allocated %>% left_join(., full_criteria, by = c("year", "id_apde"))
 
 
 #### BRING INTO A SINGLE DATA FRAME ####
@@ -178,7 +197,9 @@ source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_d
 names(mcaid_mcare_pha_elig_calyear)[!names(mcaid_mcare_pha_elig_calyear) %in% names(table_config_stage$vars)]
 names(table_config_stage$vars)[!names(table_config_stage$vars) %in% names(mcaid_mcare_pha_elig_calyear)]
 
-data.table::setcolorder(mcaid_mcare_pha_elig_calyear, names(table_config_stage$vars))
+# First approach restricts to columns only in YAML, second reorders but retains other columns
+mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear[, names(table_config_stage$vars), with = F]
+# data.table::setcolorder(mcaid_mcare_pha_elig_calyear, names(table_config_stage$vars))
 
 # Load to SQL
 DBI::dbWriteTable(db_apde51,

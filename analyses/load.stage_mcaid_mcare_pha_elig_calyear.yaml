@@ -57,6 +57,7 @@ vars:
     bsp_group_cid: INT
     full_benefit: INT
     full_criteria: INT
+    full_criteria_12: INT
     cov_type: CHAR(3)
     mco_id: INT
     start_housing: DATE
