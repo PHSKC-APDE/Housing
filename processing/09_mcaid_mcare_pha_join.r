@@ -513,6 +513,15 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       if(nrow(timevar[mcare==0 & mcaid==0 & pha == 0]) > 0) 
         stop("THERE IS A SERIOUS PROBLEM WITH THE TIMEVAR DATA. Mcaid, Mcare, and PHA should never all == 0")
       
+      #-- Set Mcare/Mcaid related program flag NULLs to zero when person is only in PHA ----
+      timevar[mcare == 0 & mcaid == 0 & is.na(part_a), part_a := 0]
+      timevar[mcare == 0 & mcaid == 0 & is.na(part_b), part_b := 0]
+      timevar[mcare == 0 & mcaid == 0 & is.na(part_c), part_c := 0]
+      timevar[mcare == 0 & mcaid == 0 & is.na(partial), partial := 0]
+      timevar[mcare == 0 & mcaid == 0 & is.na(buy_in), buy_in := 0]
+      timevar[mcare == 0 & mcaid == 0 & is.na(full_benefit), full_benefit := 0]  
+      timevar[mcare == 0 & mcaid == 0 & is.na(full_criteria), full_criteria := 0]  
+      
       #-- Create contiguous flag ----  
       # If contiguous with the PREVIOUS row, then it is marked as contiguous. This is the same as mcaid_elig_timevar
       timevar[, prev_to_date := c(NA, to_date[-.N]), by = "id_apde"] # MUCH faster than the shift "lag" function in data.table
