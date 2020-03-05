@@ -8,7 +8,7 @@
 ###############################################################################
 
 ##### Set up global parameter and call in libraries #####
-options(max.print = 350, tibble.print_max = 30, scipen = 999)
+options(max.print = 350, tibble.print_max = 30, scipen = 999, warning.length = 8170)
 
 library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
@@ -33,10 +33,6 @@ housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 ### Years to look over
 years <- seq(2012, 2018)
 
-### Code for mapping field values
-demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/pha_2018_data/processing/housing_mcaid%20demo%20codes.csv"), 
-                   header = TRUE, stringsAsFactors = FALSE)
-
 
 ### Precalculated calendar year table
 # Use stage for now
@@ -45,56 +41,90 @@ mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid
 mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
   mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
 
-# Temp until table is remade
-mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
-  mutate(agegrp_expanded = case_when(age_yr < 10 ~ "<10",
-                                     between(age_yr, 10, 17.99) ~ "10-17",
-                                     between(age_yr, 18, 24.99) ~ "18-24",
-                                     between(age_yr, 25, 44.99) ~ "24-44",
-                                     between(age_yr, 45, 64.99) ~ "45-64",
-                                     between(age_yr, 65, 74.99) ~ "65-74",
-                                     age_yr >= 75 ~ "75+",
-                                     is.na(age_yr) ~ NA_character_))
-
-
-
-### Bring in acute events (ED visits, hospitalizations, injuries, well child)
-acute <- dbGetQuery(db_claims51, 
-                    "SELECT id_apde, source_desc, claim_header_id, 
-                    first_service_date AS from_date, 
-                    last_service_date AS to_date, 
-                    claim_type_mcaid_id, claim_type_mcare_id, 
-                    ed, ed_bh, ed_avoid_ca, ed_emergent_nyu, ed_nonemergent_nyu,
-                    ed_intermediate_nyu, ed_mh_nyu, ed_sud_nyu, ed_alc_nyu, 
-                    ed_injury_nyu, ed_unclass_nyu, 
-                    inpatient, intent, mechanism, ccs_final_plain_lang
-                    FROM final.mcaid_mcare_claim_header
-                    WHERE intent IS NOT NULL OR ed = 1 OR inpatient = 1 
-                    OR claim_type_mcaid_id = 27 OR claim_type_mcare_id = 27")
-
-
-# Convert to data table to speed things up
-acute <- setDT(acute)
-acute[, ':=' (
-  from_date = as.Date(from_date, origin = "1970-01-01"),
-  to_date = as.Date(to_date, origin = "1970-01-01")
-)]
-
+mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
 
 #### FUNCTIONS ####
-### Pull in acute data
-acute_query_f <- function(type = c("ed", "hosp", "inj")) {
+### Standard recode/rename function
+recode_f <- function(df) {
+  
+  if (is.data.table(df) == F) {
+    return_df <- T
+  } else if (is.data.table(df) == T) {
+    return_df <- F
+  } else {
+    stop("df was neither data frame nor data table")
+  }
+  
+  # Mutate_at much faster than the DT code I tried so use that then convert to DT for 
+  # remaining processing
+  output <- df %>%
+    mutate_at(vars(starts_with("pha_")), 
+              list( ~ ifelse(enroll_type %in% c("mm", "md", "me"), "Non-PHA", .)))
+  
+  output <- setDT(output)
+  output[, ':=' (
+    dual = if_else(dual == 1, "Dual eligible", "Not dual eligible"),
+    full_benefit = case_when(
+      full_benefit == 1 ~ "Full Medicaid benefits",
+      full_benefit == 0 ~ "Not full Medicaid benefits"),
+    enroll_type = case_when(
+      enroll_type == "h" ~ "Housing only",
+      enroll_type == "md" ~ "Medicaid only",
+      enroll_type == "me" ~ "Medicare only",
+      enroll_type == "mm" ~ "Medicaid and Medicare",
+      enroll_type == "hmd" ~ "Housing and Medicaid",
+      enroll_type == "hme" ~ "Housing and Medicare",
+      enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
+    pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
+                          pha_operator),
+    pha_portfolio = case_when(
+      pha_operator == "NON-PHA OPERATED" ~ NA_character_,
+      pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
+      pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
+      TRUE ~ pha_portfolio)
+  )]
+  setnames(output, 
+           c("pha_agency", "gender_me", "race_eth_me", "time_housing", "pha_subsidy",
+             "pha_voucher", "pha_operator", "pha_portfolio", "geo_zip"),
+           c("agency", "gender", "ethn", "length", "subsidy", 
+             "voucher", "operator", "portfolio", "zip"))
+  
+  if ("full_criteria" %in% names(output)) {
+    output[, full_criteria := case_when(full_criteria == 1 ~ "Met full criteria",
+                                        full_criteria == 0 ~ "Did not meet full criteria")]
+  }
+  
+  if ("full_criteria_12" %in% names(output)) {
+    output[, full_criteria_12 := case_when(full_criteria_12 == 1 ~ "Met full criteria",
+                                           full_criteria_12 == 0 ~ "Did not meet full criteria")]
+  }  
+  
+  
+  if (return_df == T) {
+    output <- as.data.frame(output)
+  }
+  return(output)
+}
+
+
+### Function to pull in acute data and join to demogs
+acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
+                           source = c("all", "mcaid")) {
+  
+  # NB Age taken from end of calyear table to match denom data
+  # Other time-varying elements come from timevar table
   
   type <- match.arg(type)
+  source <- match.arg(source)
   
   if (type == "ed") {
-    top_vars <- glue_sql("a.ed ", .con = db_claims51)
-    vars <- glue_sql("ed ", .con = db_claims51)
-    where <- glue_sql("ed = 1", .con = db_claims51)
+    top_vars <- glue_sql("a.ed_pophealth_id ", .con = db_claims51)
+    vars <- glue_sql("ed_pophealth_id ", .con = db_claims51)
+    where <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_claims51)
   } else if (type == "hosp") {
-    top_vars <- glue_sql("a.inpatient ", .con = db_claims51)
-    vars <- glue_sql("inpatient ", .con = db_claims51)
-    where <- glue_sql("inpatient = 1", .con = db_claims51)
+    top_vars <- glue_sql("a.inpatient_id ", .con = db_claims51)
+    vars <- glue_sql("inpatient_id ", .con = db_claims51)
+    where <- glue_sql("inpatient_id IS NOT NULL", .con = db_claims51)
   } else if (type == "inj") {
     top_vars <- glue_sql("a.intent ", .con = db_claims51)
     vars <- glue_sql("intent ", .con = db_claims51)
@@ -102,18 +132,18 @@ acute_query_f <- function(type = c("ed", "hosp", "inj")) {
   }
   
   sql_query <- glue_sql(
-    "SELECT a.id_apde, a.source_desc, a.claim_header_id, a.first_service_date, 
-    YEAR(a.first_service_date) AS year, {top_vars}, 
-    b.enroll_type, b.pha_agency, b.apde_dual, b.full_benefit, b.pha_voucher, 
-    b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
+    "SELECT DISTINCT a.id_apde, a.first_service_date, YEAR(a.first_service_date) AS year, 
+    {top_vars}, b.mcaid, b.mcare, 
+    b.enroll_type, b.pha_agency, b.dual, b.full_benefit, b.full_criteria, 
+    b.pha_voucher, b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
     c.dob, c.start_housing, c.gender_me, c.race_eth_me 
     FROM
-    (SELECT id_apde, source_desc, claim_header_id, 
-      first_service_date, {vars}
+    (SELECT id_apde, MIN(first_service_date) AS first_service_date, {vars}
       FROM PHClaims.final.mcaid_mcare_claim_header
-      WHERE {where}) a
+      WHERE {where}
+      GROUP BY id_apde, {vars}) a
     INNER JOIN
-    (SELECT id_apde, from_date, to_date, 
+    (SELECT id_apde, from_date, to_date, mcaid, mcare, 
       CASE WHEN mcaid = 0 AND mcare = 0 AND pha = 1 THEN 'h'
       WHEN mcaid = 1 AND mcare = 0 AND pha = 1 THEN 'hmd'
       WHEN mcaid = 0 AND mcare = 1 AND pha = 1 THEN 'hme'
@@ -121,7 +151,7 @@ acute_query_f <- function(type = c("ed", "hosp", "inj")) {
       WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
       WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
       WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
-      pha_agency, apde_dual, full_benefit, pha_voucher,
+      pha_agency, dual, full_benefit, full_criteria, pha_voucher,
       pha_subsidy, pha_operator, pha_portfolio, geo_zip
       FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
       WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
@@ -133,90 +163,149 @@ acute_query_f <- function(type = c("ed", "hosp", "inj")) {
     ON COALESCE(a.id_apde, b.id_apde) = c.id_apde",
     .con = db_claims51)
   
-  # sql_query <- glue_sql(
-  #   "SELECT a.id_apde, a.source_desc, a.claim_header_id, a.first_service_date, 
-  #   YEAR(a.first_service_date) AS year, {top_vars}, 
-  #   b.enroll_type, b.pha_agency, b.apde_dual, b.full_benefit, b.pha_voucher, 
-  #   b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
-  #   c.dob, c.start_housing, c.gender_me, c.race_eth_me 
-  #   FROM
-  #   (SELECT id_apde, source_desc, claim_header_id, 
-  #     first_service_date, {vars}
-  #     FROM PHClaims.final.mcaid_mcare_claim_header
-  #     WHERE {where}) a
-  #   INNER JOIN
-  #   (SELECT id_apde, from_date, to_date, 
-  #     CASE WHEN mcaid = 0 AND mcare = 0 AND pha = 1 THEN 'h'
-  #     WHEN mcaid = 1 AND mcare = 0 AND pha = 1 THEN 'hmd'
-  #     WHEN mcaid = 0 AND mcare = 1 AND pha = 1 THEN 'hme'
-  #     WHEN mcaid = 1 AND mcare = 0 AND pha = 0 THEN 'md'
-  #     WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
-  #     WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
-  #     WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
-  #     pha_agency, apde_dual, full_benefit, pha_voucher,
-  #     pha_subsidy, pha_operator, pha_portfolio, geo_zip
-  #     FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
-  #     WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
-  #   ON a.id_apde = b.id_apde AND
-  #   a.first_service_date >= b.from_date AND a.first_service_date <= b.to_date
-  #   LEFT JOIN
-  #   (SELECT id_apde, dob, start_housing, gender_me, race_eth_me
-  #     FROM PH_APDEStore.final.mcaid_mcare_pha_elig_demo) c
-  #   ON COALESCE(a.id_apde, b.id_apde) = c.id_apde",
-  #   .con = db_claims51)
-  
-  output <- dbGetQuery(db_claims51, sql_query) %>%
-    # Format vars
+  output <- dbGetQuery(db_claims51, sql_query) %>% 
+    # Add additional recodes (do this BEFORE standard recoding because of time_housing)
     mutate_at(vars(first_service_date, dob), list( ~ as.Date(.))) %>%
-    mutate_at(vars(starts_with("pha_")), 
-              list( ~ ifelse(enroll_type %in% c("mm", "md", "me"), "Non-PHA", .))) %>%
-    # Recode output
-    mutate(apde_dual = if_else(apde_dual == 1, "Dual eligible", "Not dual eligible"),
-           full_benefit = case_when(
-             full_benefit == 1 ~ "Full Medicaid benefits",
-             full_benefit == 0 ~ "Not full Medicaid benefits"),
-           enroll_type = case_when(
-             enroll_type == "h" ~ "Housing only",
-             enroll_type == "md" ~ "Medicaid only",
-             enroll_type == "me" ~ "Medicare only",
-             enroll_type == "mm" ~ "Medicaid and Medicare",
-             enroll_type == "hmd" ~ "Housing and Medicaid",
-             enroll_type == "hme" ~ "Housing and Medicare",
-             enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
-           age_yr = floor(interval(start = dob, end = first_service_date) / years(1)),
+    mutate(age_yr = floor(interval(start = dob, 
+                                   end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
+                          / years(1)),
            adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
            senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
            agegrp = case_when(
              age_yr < 18 ~ "<18",
-             between(age_yr, 18, 24.99) ~ "18-24",
-             between(age_yr, 25, 44.99) ~ "24-44",
-             between(age_yr, 45, 61.99) ~ "45-61",
-             between(age_yr, 62, 64.99) ~ "62-64",
+             data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+             data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+             data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
              age_yr >= 65 ~ "65+",
+             is.na(age_yr) ~ NA_character_),
+           agegrp_expanded = case_when(
+             age_yr < 10 ~ "<10",
+             data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+             data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+             data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+             data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+             data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+             age_yr >= 75 ~ "75+",
              is.na(age_yr) ~ NA_character_),
            age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
                               TRUE ~ NA_character_),
            time_housing_yr = 
-             round(interval(start = start_housing, end = first_service_date) / years(1), 1),
+             round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
+                   / years(1), 1),
            time_housing = case_when(
              is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
              time_housing_yr < 3 ~ "<3 years",
              between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
              time_housing_yr >= 6 ~ "6+ years",
-             TRUE ~ "Unknown"),
-           pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
-                                 pha_operator)
-    ) %>%
-    rename(agency = pha_agency, dual = apde_dual, gender = gender_me,
-           ethn = race_eth_me, )
+             TRUE ~ "Unknown")
+    )
+  
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      filter(!is.na(full_criteria)) %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      filter(!is.na(full_criteria) & mcare == 0) %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+  }
+  
+  return(output)
+}
+
+
+### Function to count # people with acute events based on prioritized pop
+acute_persons_f <- function(type = c("ed", "hosp", "inj", "wc"), year = 2012,
+                            summarise = T, source = c("all", "mcaid")) {
+  
+  type <- match.arg(type)
+  source <- match.arg(source)
+  
+  if (type == "ed") {
+    pop_sql <- DBI::SQL("")
+    where_sql <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_claims51)
+  } else if (type == "hosp") {
+    pop_sql <- DBI::SQL("")
+    where_sql <- glue_sql("inpatient_id IS NOT NULL", .con = db_claims51)
+  } else if (type == "inj") {
+    pop_sql <- DBI::SQL("")
+    where_sql <- glue_sql("intent IS NOT NULL", .con = db_claims51)
+  } else if (type == "wc") {
+    pop_sql <- glue_sql(" AND age_wc IS NOT NULL", .con = db_claims51)
+    where_sql <- glue_sql("claim_type_mcaid_id = 27", .con = db_claims51)
+  }
+  
+  sql_query <- glue_sql(
+    "SELECT DISTINCT a.*, ISNULL(b.event, 0) AS event 
+    FROM
+      (SELECT [year], id_apde, mcaid, mcare, enroll_type, pha_agency, dual,
+        full_benefit, full_criteria, full_criteria_12, 
+        agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
+        pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
+        FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
+        WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1 {pop_sql}) a
+    LEFT JOIN
+      (SELECT DISTINCT id_apde, 1 AS event
+      FROM PHClaims.final.mcaid_mcare_claim_header
+      WHERE {where_sql} AND first_service_date <= {paste0(year, '-12-31')} AND 
+        first_service_date >= {paste0(year, '-01-01')}) b
+    ON a.id_apde = b.id_apde",
+    .con = db_apde51)
+  
+  # Run query
+  output <- dbGetQuery(db_claims51, sql_query)
+  
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := sum(event)) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria" & mcare == 0) %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+             agegrp, gender, ethn, length, 
+             subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := sum(event)) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+  }
   
   return(output)
 }
 
 
 ### Function to pull in and summarize chronic conditions
-eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F) {
+eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
+                                 summarise = T, source = c("all", "mcaid")) {
   
+  source <- match.arg(source)
   
   if (cvd == F) {
     where_sql <- glue_sql("ccw_desc = {condition}", .con = db_apde51)
@@ -228,8 +317,9 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F) {
   sql_query <- glue_sql(
     "SELECT DISTINCT a.*, ISNULL(b.condition, 0) AS condition 
     FROM
-      (SELECT year, id_apde, enroll_type, pha_agency, apde_dual,
-        full_benefit, agegrp, gender_me, race_eth_me, time_housing, 
+      (SELECT year, id_apde, mcaid, mcare, enroll_type, pha_agency, dual,
+        full_benefit, full_criteria, full_criteria_12, 
+        agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
         FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1) a
@@ -241,183 +331,108 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F) {
     ON a.id_apde = b.id_apde",
     .con = db_apde51)
   
+  # Run query
   output <- dbGetQuery(db_apde51, sql_query)
   
-  ### Summarise and rename
-  output <- output %>%
-    mutate_at(vars(starts_with("pha_")), 
-              list( ~ ifelse(enroll_type %in% c("mm", "md", "me"), "Non-PHA", .))) %>%
-    mutate(apde_dual = if_else(apde_dual == 1, "Dual eligible", "Not dual eligible"),
-           full_benefit = case_when(
-             full_benefit == 1 ~ "Full Medicaid benefits",
-             full_benefit == 0 ~ "Not full Medicaid benefits"),
-           enroll_type = case_when(
-             enroll_type == "h" ~ "Housing only",
-             enroll_type == "md" ~ "Medicaid only",
-             enroll_type == "me" ~ "Medicare only",
-             enroll_type == "mm" ~ "Medicaid and Medicare",
-             enroll_type == "hmd" ~ "Housing and Medicaid",
-             enroll_type == "hme" ~ "Housing and Medicare",
-             enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
-           pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
-                                 pha_operator),
-           pha_portfolio = case_when(
-             pha_operator == "NON-PHA OPERATED" ~ NA_character_,
-             pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
-             pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
-             TRUE ~ pha_portfolio)) %>%
-    rename(agency = pha_agency, dual = apde_dual,
-           gender = gender_me, ethn = race_eth_me,
-           length = time_housing, subsidy = pha_subsidy,
-           voucher = pha_voucher, operator = pha_operator,
-           portfolio = pha_portfolio, zip = geo_zip) %>%
-    group_by(year, enroll_type, agency, dual, full_benefit, 
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp_expanded, gender, ethn, length, 
+             subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := sum(condition)) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria" & mcare == 0) %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
              agegrp, gender, ethn, length, 
              subsidy, voucher, operator, portfolio, zip) %>%
-    summarise(count := sum(condition)) %>%
-    ungroup()
-  
-  return(output)
-}
-
-
-
-### Function to count # people with acute events based on prioritized pop
-# Ned to  update this
-eventcount_acute_persons_f <- function(df_events = acute, df_pop = chronic_pop,
-                                       event = c("ed", "hosp", "wc"), year = 12) {
-  
-  yr_chk <- as.numeric(paste0("20", year))
-  
-  # Filter to only include people with the condition in that year
-  if (event == "ed") {
-    df_events <- df_events %>% filter(ed == 1 & year(from_date) == yr_chk)
-  } else if (event == "hosp") {
-    df_events <- df_events %>% filter(inpatient == 1 & year(from_date) == yr_chk)
-  } else if (event == "wc") {
-    df_events <- df_events %>% filter(clm_type_mcaid_id == 27 & year(from_date) == yr_chk)
-  } else {
-    stop("Chose an acute event from 'ed', 'hosp', or 'wc'")
+      summarise(count := sum(condition)) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
   }
   
-  df_events <- df_events %>%
-    distinct(id_apde) %>%
-    mutate(condition = 1)
-  
-  # Filter assigned pop to current year
-  df_pop <- df_pop %>% filter(year == yr_chk)
-  
-  
-  ### Join pop and condition data to summarise
-  output <- left_join(df_pop, df_events, by = "id_apde")
-  output <- output %>% mutate(condition = if_else(is.na(condition), 0, 1))
-  
-  output <- output %>%
-    group_by(year, agency_num, enroll_type_num, dual_elig_num, agegrp,
-             gender_num, ethn_num, voucher_num, subsidy_num, operator_num,
-             portfolio_num, length, zip_c) %>%
-    summarise(count := sum(condition)) %>%
-    ungroup() %>%
-    select(year, agency_num, enroll_type_num, dual_elig_num, agegrp, 
-           gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
-           portfolio_num, length, zip_c,
-           count) %>%
-    rename(agency = agency_num,
-           enroll_type = enroll_type_num,
-           dual = dual_elig_num,
-           gender = gender_num,
-           ethn = ethn_num,
-           voucher = voucher_num,
-           subsidy = subsidy_num,
-           operator = operator_num,
-           portfolio = portfolio_num,
-           zip = zip_c)
-  
   return(output)
-  
 }
 
 
-#### POPULATION ####
-#### Enrollment population for joint Medicaid/Medicare data ####
+#### ENROLLMENT POPULATION ####
 # Run different age groups for Medicaid/Medicare vs Medicaid-only data
-pop_enroll_all_mm_12_16 <- mcaid_mcare_pha_elig_calyear %>%
-  filter(year <= 2016) %>%
-  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, agegrp_expanded, 
-           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-           pha_portfolio, time_housing, geo_zip) %>%
-  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
-
-pop_enroll_all_md_12_18 <- mcaid_mcare_pha_elig_calyear %>%
-  filter(mcare == 0) %>%
-  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, agegrp, 
-           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-           pha_portfolio, time_housing, geo_zip) %>%
-  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
+# Also differentiate between pop counts for enrollment vs denominator data
+# Denominator data excludes people on Medicare and duals for the Medicaid-only data
+pop_enroll_mm <- mcaid_mcare_pha_elig_calyear[year <= 2017 & pop == 1]
+pop_enroll_mm <- pop_enroll_mm[, .(pop = sum(pop), pt = sum(pt_tot)), 
+                               by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
+                                      agegrp_expanded, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                      pha_portfolio, time_housing, geo_zip)]
+pop_enroll_mm[, ':=' (wc_flag = 0L, source = "Medicaid and Medicare", for_enrollment = 1L)]
+setnames(pop_enroll_mm, "agegrp_expanded", "agegrp")
 
 
-temp <- mcaid_mcare_pha_elig_calyear %>% filter(pha_agency == "KCHA" & pop == 1) %>% 
-  group_by(year, enroll_type) %>% summarise(pop = sum(pop)) %>%
-  mutate(enroll_type = case_when(
-    enroll_type == "a" ~ "Medicaid and Medicare and housing (dual eligible)",
-    enroll_type == "h" ~ "Housing only, not in Medicaid/Medicaid",
-    enroll_type == "hmd" ~ "Medicaid and housing, not dual eligible",
-    enroll_type == "hme" ~ "Medicare and housing, not dual eligible")
-    )
-ggplot(temp, aes(x = year, y = pop, fill = enroll_type)) + 
-  geom_area()
+pop_enroll_md <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1]
+pop_enroll_md <- pop_enroll_md[, .(pop = sum(pop), pt = sum(pt_tot)), 
+                               by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
+                                      agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                      pha_portfolio, time_housing, geo_zip)]
+pop_enroll_md[, ':=' (wc_flag = 0L, source = "Medicaid only", for_enrollment = 1L)]
+
+
+pop_enroll_md_health <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1 & mcare == 0 & dual == 0]
+pop_enroll_md_health <- pop_enroll_md_health[, .(pop = sum(pop), pt = sum(pt_tot)), 
+                                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
+                                                    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                                    pha_portfolio, time_housing, geo_zip)]
+pop_enroll_md_health[, ':=' (wc_flag = 0L, source = "Medicaid only", for_enrollment = 0L)]
 
 
 ### Repeat for well-child population
-pop_enroll_all_mm_wc <- mcaid_mcare_pha_elig_calyear %>%
-  filter(!is.na(age_wc)) %>%
-  group_by(year, enroll_type, pha_agency, apde_dual, full_benefit, age_wc, 
-           gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-           pha_portfolio, time_housing, geo_zip) %>%
-  summarise(pop_ever = sum(pop_ever), pt = sum(pt), pop = sum(pop, na.rm = T))
+pop_enroll_md_wc <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1 & !is.na(age_wc)]
+pop_enroll_md_wc <- pop_enroll_md_wc[, .(pop = sum(pop), pt = sum(pt_tot)), 
+                                     by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
+                                            age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                            pha_portfolio, time_housing, geo_zip)]
+pop_enroll_md_wc[, ':=' (wc_flag = 1L, source = "Medicaid only", for_enrollment = 1L)]
+setnames(pop_enroll_md_wc, "age_wc", "agegrp")
+
+
+pop_enroll_md_wc_health <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1 & 
+                                                          mcare == 0 & dual == 0 & !is.na(age_wc)]
+pop_enroll_md_wc_health <- pop_enroll_md_wc_health[, .(pop = sum(pop), pt = sum(pt_tot)), 
+                                                   by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
+                                                          age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                                          pha_portfolio, time_housing, geo_zip)]
+pop_enroll_md_wc_health[, ':=' (wc_flag = 1L, source = "Medicaid only", for_enrollment = 0L)]
+setnames(pop_enroll_md_wc_health, "age_wc", "agegrp")
 
 
 ### Combine into one
-pop_enroll_all_mm <- bind_rows(pop_enroll_all_mm_12_16, pop_enroll_all_mm_17_18, pop_enroll_all_mm_wc)
-pop_enroll_all_mm <- pop_enroll_all_mm %>%
-  mutate_at(vars(starts_with("pha_")), 
-            list( ~ ifelse(enroll_type %in% c("mm", "md", "me"), "Non-PHA", .))) %>%
-  mutate(apde_dual = if_else(apde_dual == 1, "Dual eligible", "Not dual eligible"),
-         full_benefit = case_when(
-           full_benefit == 1 ~ "Full Medicaid benefits",
-           full_benefit == 0 ~ "Not full Medicaid benefits"),
-         enroll_type = case_when(
-           enroll_type == "h" ~ "Housing only",
-           enroll_type == "md" ~ "Medicaid only",
-           enroll_type == "me" ~ "Medicare only",
-           enroll_type == "mm" ~ "Medicaid and Medicare",
-           enroll_type == "hmd" ~ "Housing and Medicaid",
-           enroll_type == "hme" ~ "Housing and Medicare",
-           enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
-         pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
-                               pha_operator),
-         pha_portfolio = case_when(
-           pha_operator == "NON-PHA OPERATED" ~ NA_character_,
-           pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
-           pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
-           TRUE ~ pha_portfolio)) %>% 
-  rename(agency = pha_agency, dual = apde_dual,
-         gender = gender_me, ethn = race_eth_me,
-         length = time_housing, subsidy = pha_subsidy,
-         voucher = pha_voucher, operator = pha_operator,
-         portfolio = pha_portfolio, zip = geo_zip)
+pop_enroll_all <- bind_rows(pop_enroll_mm, pop_enroll_md, pop_enroll_md_health, 
+                            pop_enroll_md_wc, pop_enroll_md_wc_health)
+pop_enroll_all <- recode_f(pop_enroll_all)
+pop_enroll_all <- pop_enroll_all %>% select(for_enrollment, source, wc_flag, year:pt)
+pop_enroll_all <- setDT(pop_enroll_all)
 
 
-#### Collapse into bivariate totals ####
+### Collapse into bivariate totals
 # Use tabloop_f from medicaid package to summarise
 
 # This is using a horrible mix of quosures and lists for now.
 # The tabloop function will be rewritten some day to make this easier.
-fixed_list <- list_var(wc_flag, year, agency, enroll_type, dual)
+fixed_list <- list_var(source, wc_flag, year, agency, enroll_type, dual)
 loop_list <- c("agegrp", "gender", "ethn", "voucher", "subsidy", "operator", 
                "portfolio", "length", "zip")
 
 pop_enroll_bivariate <- bind_rows(lapply(loop_list, function(x) {
+  
+  # Restrict to rows for enrollment purposes
+  input <- pop_enroll_all %>% filter(for_enrollment == 1)
   
   # Set up quosure for each loop var
   loop_quo <- rlang::as_quosure(rlang::sym(x), env = environment()) 
@@ -425,11 +440,12 @@ pop_enroll_bivariate <- bind_rows(lapply(loop_list, function(x) {
   ### Make new versions of each list to feed to tabloop
   # This is super clunky but should work
   fixed_list_new <- rlang::new_quosures(c(fixed_list, loop_quo))
+  
   loop_list_new <- loop_list[!loop_list %in% x]
   loop_list_new <- rlang::as_quosures(rlang::syms(loop_list_new), env = environment())
   
   ### Run tabloop
-  output <- tabloop_f(pop_enroll_all_mm, sum = list_var(pop_ever, pop, pt),
+  output <- tabloop_f(input, sum = list_var(pop, pt),
                       fixed = fixed_list_new, loop = loop_list_new) %>%
     mutate(category1 = rlang::quo_name(x)) %>%
     # Remove rows with zero count to save memory
@@ -445,10 +461,10 @@ pop_enroll_bivariate <- bind_rows(lapply(loop_list, function(x) {
 loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfolio, length, zip)
 
 pop_enroll_total <- bind_rows(lapply(loop_list, function(x) {
-  output <- pop_enroll_all_mm %>%
-    group_by(wc_flag, year, agency, enroll_type, dual, !!x) %>%
-    summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-              pt_sum = sum(pt, na.rm = T)) %>%
+  output <- pop_enroll_all %>%
+    filter(for_enrollment == 1) %>%
+    group_by(source, wc_flag, year, agency, enroll_type, dual, !!x) %>%
+    summarise(pop_sum = sum(pop, na.rm = T), pt_sum = sum(pt, na.rm = T)) %>%
     ungroup() %>%
     mutate(
       category1 = quo_name(x), group1 = !!x,
@@ -461,69 +477,83 @@ pop_enroll_total <- bind_rows(lapply(loop_list, function(x) {
 rm(fixed_list, loop_list)
 
 
-#### Combine into one ####
+### Combine into one
 pop_enroll_combine_bivar <- bind_rows(pop_enroll_bivariate, pop_enroll_total) %>%
   filter(pt_sum > 0) %>%
-  select(year, agency, enroll_type, dual, category1, group1, 
-         category2, group2, pop_ever_sum, pop_sum, pt_sum, wc_flag) %>%
-  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt = pt_sum) 
+  select(source, wc_flag, year, agency, enroll_type, dual, category1, group1, 
+         category2, group2, pop_sum, pt_sum) %>%
+  rename(pop = pop_sum, pt = pt_sum)
 
 
 # Add suppression and data source
 pop_enroll_combine_bivar <- pop_enroll_combine_bivar %>%
-  mutate_at(vars(pop_ever, pop),
-            list(supp_flag = ~ if_else(between(., 1, 10), 1, 0))) %>%
-  mutate_at(vars(pop_ever, pop),
-            list(supp = ~ if_else(between(., 1, 10), NA_real_, .))) %>%
-  mutate(source = "Medicaid and Medicare")
-  
+  mutate(pop_supp_flag = if_else(between(pop, 1, 10), 1, 0),
+         pop_supp = if_else(between(pop, 1, 10), NA_real_, pop))
+
 
 ### Make suppressed version
 pop_enroll_combine_bivar_suppressed <- pop_enroll_combine_bivar %>%
-  select(year:group2, pt, pop_ever_supp, pop_supp,
-         pop_ever_supp_flag, pop_supp_flag, wc_flag, source) %>%
-  rename(
-    pop_ever = pop_ever_supp, pop = pop_supp,
-    pop_ever_supp = pop_ever_supp_flag, pop_supp = pop_supp_flag)
+  select(source:group2, pt, pop_supp, pop_supp_flag) %>%
+  rename(pop = pop_supp)
 
 
-
-
-#### Temp way to populate existing Medicaid-only data ####
-# Will only work once then need to change code
-# Only needed until the combined mcaid_mcare_pha table is remade with dual flag
-pop_enroll_all_md <- dbGetQuery(db_extractstore51, 
-"SELECT * FROM APDE_WIP.mcaid_pha_enrollment WHERE source = 'Medicaid only'")
-
-
-### Combine data
-pop_enroll_combine_bivar_suppressed <- bind_rows(pop_enroll_combine_bivar_suppressed, 
-                                                 pop_enroll_all_md)
-
-
-#### Write to SQL ####
+### Write to SQL
 DBI::dbWriteTable(db_extractstore51,
-             name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
-             value = pop_enroll_combine_bivar_suppressed,
-             append = F, overwrite = T,
-             field.types = c(year = "integer", pt = "integer", 
-                             pop_ever = "integer", 
-                             pop = "integer", pop_ever_supp = "integer",
-                             pop_supp = "integer", wc_flag = "integer"))
+                  name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
+                  value = pop_enroll_combine_bivar_suppressed,
+                  append = F, overwrite = T,
+                  field.types = c(year = "integer", pt = "integer", pop = "integer", 
+                                  pop_supp_flag = "integer", wc_flag = "integer"))
 
 
 
-#### POPULATION TO JOIN TO CHRONIC EVENTS DATA ####
+#### POPULATION TO JOIN TO ACUTE/CHRONIC DATA ####
 # For looking at enrollment alone, we disaggregate by additional factors 
-#    (e.g., enrollment type, dual)
-# For health events, especially from the Medicaid/Medicare data, we have a shorter
+#    (e.g., enrollment type)
+# For health outcomes, especially from the Medicaid/Medicare data, we have a shorter
 #    list. Therefore need to rerun population data again. 
-# Also need to filter out people only enrolled in housing
+# Need to filter out people only enrolled in housing
+# Also need to change grouping based on source
 
-fixed_list <- list_var(year, wc_flag, agency)
-# fixed_list <- list_var(year, agency, dual) # Medicaid-only data
-loop_list <- c("agegrp", "gender", "ethn", "voucher", "subsidy", "operator", 
-               "portfolio", "length", "zip")
+### First set up acute populations
+pop_acute_mm <- mcaid_mcare_pha_elig_calyear[year <= 2017 & pop_ever == 1]
+pop_acute_mm <- pop_acute_mm[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
+                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
+                                    agegrp_expanded, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                    pha_portfolio, time_housing, geo_zip)]
+pop_acute_mm[, ':=' (wc_flag = 0L, source = "Medicaid and Medicare")]
+setnames(pop_acute_mm, "agegrp_expanded", "agegrp")
+
+
+pop_acute_md <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop_ever == 1 & mcare == 0 & dual == 0]
+pop_acute_md <- pop_acute_md[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
+                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
+                                    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                    pha_portfolio, time_housing, geo_zip)]
+pop_acute_md[, ':=' (wc_flag = 0L, source = "Medicaid only")]
+
+
+pop_acute_md_wc <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop_ever == 1 & 
+                                                  mcare == 0 & dual == 0 & !is.na(age_wc)]
+pop_acute_md_wc <- pop_acute_md_wc[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
+                                   by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
+                                          age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
+                                          pha_portfolio, time_housing, geo_zip)]
+pop_acute_md_wc[, ':=' (wc_flag = 1L, source = "Medicaid only")]
+setnames(pop_acute_md_wc, "age_wc", "agegrp")
+
+
+# Combine into one
+pop_acute_all <- bind_rows(pop_acute_mm, pop_acute_md, pop_acute_md_wc)
+pop_acute_all <- recode_f(pop_acute_all)
+pop_acute_all <- pop_acute_all %>% select(source, wc_flag, year:pt)
+pop_acute_all <- setDT(pop_acute_all)
+
+
+### Set up sources to loop over
+fixed_list_chronic <- list_var(source, wc_flag, year, full_criteria_12, agency, dual)
+fixed_list_acute <- list_var(source, wc_flag, year, full_criteria, agency, dual)
+loop_list <- c("agegrp", "gender", "ethn", "subsidy", "voucher", "operator", "portfolio", "length", "zip")
 
 pop_health_bivariate <- bind_rows(lapply(loop_list, function(x) {
   
@@ -532,19 +562,41 @@ pop_health_bivariate <- bind_rows(lapply(loop_list, function(x) {
   
   ### Make new versions of each list to feed to tabloop
   # This is super clunky but should work
-  fixed_list_new <- rlang::new_quosures(c(fixed_list, loop_quo))
+  fixed_list_chronic_new <- rlang::new_quosures(c(fixed_list_chronic, loop_quo))
+  fixed_list_acute_new <- rlang::new_quosures(c(fixed_list_acute, loop_quo))
   loop_list_new <- loop_list[!loop_list %in% x]
   loop_list_new <- rlang::as_quosures(rlang::syms(loop_list_new), env = environment())
   
-  ### Run tabloop
-  output <- tabloop_f(pop_enroll_all_mm[pop_enroll_all_mm$enroll_type %in% c("h", "Housing only"), ], 
-                      sum = list_var(pop_ever, pop, pt),
-                      fixed = fixed_list_new, loop = loop_list_new) %>%
+  
+  ### RUN FOR CHRONIC CONDITIONS
+  # Set up data frame with appropriate filtering
+  input_chronic <- pop_enroll_all %>% 
+    filter(!enroll_type %in% c("h", "Housing only") &
+             (for_enrollment == 1 | source == "Medicaid and Medicare"))
+  
+  # Run inner loop
+  output_chronic <- tabloop_f(input_chronic, sum = list_var(pop, pt),
+                              fixed = fixed_list_chronic_new, loop = loop_list_new) %>%
     mutate(category1 = rlang::quo_name(x)) %>%
     # Remove rows with zero count to save memory
     filter(pt_sum > 0) %>%
     rename(group1 = !!x, category2 = group_cat, group2 = group)
   
+  
+  ### RUN FOR ACUTE CONDITIONS
+  # Set up data frame with appropriate filtering
+  input_acute <- pop_acute_all %>% filter(!enroll_type %in% c("h", "Housing only"))
+  
+  # Run inner loop
+  output_acute <- tabloop_f(input_acute, sum = list_var(pop_ever, pt),
+                            fixed = fixed_list_acute_new, loop = loop_list_new) %>%
+    mutate(category1 = rlang::quo_name(x)) %>%
+    # Remove rows with zero count to save memory
+    filter(pt_sum > 0) %>%
+    rename(group1 = !!x, category2 = group_cat, group2 = group)
+  
+  
+  output <- bind_rows(output_chronic, output_acute)
   return(output)
 }))
 
@@ -552,196 +604,338 @@ pop_health_bivariate <- bind_rows(lapply(loop_list, function(x) {
 ### Make total columns for univariate analyses
 # Make this a set of quosures for expediency's sake
 loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfolio, length, zip)
-
 pop_health_univariate <- bind_rows(lapply(loop_list, function(x) {
-  output <- pop_enroll_all_mm %>%
-    filter(!enroll_type %in% c("h", "Housing only")) %>%
-    group_by(year, wc_flag, agency, !!x) %>%
-    summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-              pt_sum = sum(pt, na.rm = T)) %>%
+  ### RUN FOR CHRONIC CONDITIONS
+  output_chronic <- pop_enroll_all %>%
+    filter(!enroll_type %in% c("h", "Housing only") & 
+             (for_enrollment == 1 | source == "Medicaid and Medicare")) %>%
+    group_by(source, year, wc_flag, full_criteria_12, agency, dual, !!x) %>%
+    summarise(pop_sum = sum(pop, na.rm = T), pt_sum = sum(pt, na.rm = T)) %>%
     ungroup() %>%
     mutate(
       category1 = quo_name(x), group1 = !!x,
       category2 = "total", group2 = "total") %>%
     select(-(!!x))
   
+  ### RUN FOR ACUTE CONDITIONS
+  output_acute <- pop_acute_all %>%
+    filter(!enroll_type %in% c("h", "Housing only")) %>%
+    group_by(source, year, wc_flag, full_criteria, agency, dual, !!x) %>%
+    summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pt_sum = sum(pt, na.rm = T)) %>%
+    ungroup() %>%
+    mutate(
+      category1 = quo_name(x), group1 = !!x,
+      category2 = "total", group2 = "total") %>%
+    select(-(!!x))
+  
+  output <- bind_rows(output_chronic, output_acute)
   return(output)
 }))
 
 
-# Make overall columns for each agency
-pop_health_total <- pop_enroll_all_mm %>%
-  filter(!enroll_type %in% c("h", "Housing only")) %>%
-  group_by(year, wc_flag, agency) %>%
-  summarise(pop_ever_sum = sum(pop_ever, na.rm = T), pop_sum = sum(pop, na.rm = T),
-            pt_sum = sum(pt, na.rm = T)) %>%
-  ungroup() %>%
-  mutate(
-    category1 = "overall", group1 = "overall",
-    category2 = "total", group2 = "total")
-
-rm(fixed_list, loop_list)
+### Make overall columns for each agency
+pop_health_total_chronic <- pop_enroll_all[!enroll_type %in% c("h", "Housing only") & 
+                                             (for_enrollment == 1 | source == "Medicaid and Medicare")]
+pop_health_total_chronic <- pop_health_total_chronic[, .(pop_sum = sum(pop, na.rm = T), pt_sum = sum(pt, na.rm = T)), 
+                                                     by = .(source, year, wc_flag, full_criteria_12, agency, dual)]
+pop_health_total_chronic[, ':=' (category1 = "overall", group1 = "overall",
+                                 category2 = "total", group2 = "total")]
 
 
-#### Combine into one ####
-pop_health_combine <- bind_rows(pop_health_bivariate, pop_health_univariate, pop_health_total) %>%
+pop_health_total_acute <- pop_acute_all[!enroll_type %in% c("h", "Housing only")]
+pop_health_total_acute <- pop_health_total_acute[, .(pop_ever_sum = sum(pop_ever, na.rm = T), pt_sum = sum(pt, na.rm = T)), 
+                                                 by = .(source, year, wc_flag, full_criteria, agency, dual)]
+pop_health_total_acute[, ':=' (category1 = "overall", group1 = "overall",
+                               category2 = "total", group2 = "total")]
+
+
+### Combine into one
+pop_health_combine <- bind_rows(pop_health_bivariate, pop_health_univariate, 
+                                pop_health_total_chronic, pop_health_total_acute) %>%
   filter(pt_sum > 0) %>%
-  select(year, wc_flag, agency, category1, group1, category2, group2, 
+  mutate(full_criteria = ifelse(is.na(full_criteria), full_criteria_12, full_criteria)) %>%
+  select(source, year, wc_flag, full_criteria, agency, dual, category1, group1, category2, group2, 
          pop_ever_sum, pop_sum, pt_sum) %>%
-  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt = pt_sum) 
+  rename(pop_ever = pop_ever_sum, pop = pop_sum, pt = pt_sum)
 
 
 # Add suppression flags and data source
 # Keep all vars for now because pop is needed for rest_pha calcs
 pop_health_combine <- pop_health_combine %>%
+  # Remove combinations we won't show (e.g., duals when source = Medicaid)
+  filter(full_criteria == "Met full criteria" & 
+           (source == "Medicaid and Medicare" | 
+              (source == "Medicaid only" & dual == "Not dual eligible"))) %>%
   mutate_at(vars(pop_ever, pop),
             list(supp_flag = ~ if_else(between(., 1, 10), 1, 0))) %>%
   mutate_at(vars(pop_ever, pop),
-            list(supp = ~ if_else(between(., 1, 10), NA_real_, .))) %>%
-  mutate(source = "Medicaid and Medicare")
+            list(supp = ~ if_else(between(., 1, 10), NA_real_, .)))
 
 
 #### CLEAN UP ####
-rm(pop_enroll_all_mm, pop_enroll_all_mm_wc)
-rm(pop_enroll_bivariate, pop_enroll_total)
-gc()
+rm(fixed_list, loop_list)
+rm(pop_enroll_mm, pop_enroll_md, pop_enroll_md_health, 
+   pop_enroll_md_wc, pop_enroll_md_wc_health)
+rm(pop_enroll_all, pop_enroll_bivariate, pop_enroll_total)
+rm(pop_acute_mm, pop_acute_md, pop_acute_md_wc)
+rm(pop_health_bivariate, pop_health_univariate, 
+   pop_health_total_chronic, pop_health_total_acute)
+
 
 #### END POPULATION ####
 
 
 #### PERSON-TIME BASED EVENTS ####
 ### Hospitalizations
-# Join demographic and hospitalization data
-pha_mcaid_hosp <- acute_query_f(type = "hosp")
-
-# Run for total number of hospitalizations
-hosp_cnt <- pha_mcaid_hosp %>%
-  group_by(year, enroll_type, agency, dual, full_benefit, 
-           agegrp, gender_me, race_eth_me, time_housing, 
-           pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip) %>%
-  summarise(count = sum(inpatient)) %>%
+hosp_events_all <- acute_events_f(type = "hosp", source = "all") %>% 
   mutate(indicator = "Hospitalizations")
+
+hosp_events_mcaid <- acute_events_f(type = "hosp", source = "mcaid") %>% 
+  mutate(indicator = "Hospitalizations")
+
+### ED visits
+ed_events_all <- acute_events_f(type = "ed", source = "all") %>% 
+  mutate(indicator = "ED visits")
+
+ed_events_mcaid <- acute_events_f(type = "ed", source = "mcaid") %>% 
+  mutate(indicator = "ED visits")
+
+### Injuries
+# Only for mcaid at the moment
+inj_events_mcaid <- acute_events_f(type = "inj", source = "mcaid") %>% 
+  mutate(indicator = "Injuries")
+
+
+#### PERSON-BASED ACUTE EVENTS ####
+### Hospitalizations
+hosp_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+                              type = "hosp", source = "all")) %>%
+  mutate(indicator = "Persons with hospitalizations")
+
+hosp_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+                                  type = "hosp", source = "mcaid")) %>%
+  mutate(indicator = "Persons with hospitalizations")
 
 
 ### ED visits
-# Join demographics and ED events
-pha_mcaid_ed <- acute_query_f(type = "ed")
+ed_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+                                  type = "ed", source = "all")) %>%
+  mutate(indicator = "Persons with ED visits")
 
-# Run for total number of ED visits
-ed_cnt <- pha_mcaid_ed %>%
-  group_by(year, enroll_type, agency, dual, full_benefit, 
-           agegrp, gender_me, race_eth_me, time_housing, 
-           pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip) %>%
-  summarise(count = sum(ed)) %>%
-  mutate(indicator = "ED visits")
+ed_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+                                    type = "ed", source = "mcaid")) %>%
+  mutate(indicator = "Persons with ED visits")
 
+
+### Injuries
+inj_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+                                  type = "inj", source = "mcaid")) %>%
+  mutate(indicator = "Persons with injuries")
+
+
+### Well-child checks
+wc_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+                                 type = "wc", source = "all")) %>%
+  mutate(indicator = "Persons with well-child checks")
+
+wc_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+                                   type = "wc", source = "mcaid")) %>%
+  mutate(indicator = "Persons with well-child checks")
 
 
 #### CHRONIC CONDITIONS ####
 ### Alzheimer's related
-alzheimer_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                   condition = "ccw_alzheimer_related", cvd = F)) %>%
+alzheimer_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                   condition = "ccw_alzheimer_related", cvd = F,
+                                   source = "all")) %>%
+  mutate(indicator = "Persons with Alzheimer's-related conditions")
+
+alzheimer_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                       condition = "ccw_alzheimer_related", cvd = F,
+                                       source = "mcaid")) %>%
   mutate(indicator = "Persons with Alzheimer's-related conditions")
 
 
 ### Asthma
-asthma_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                condition = "ccw_asthma", cvd = F)) %>%
+asthma_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                       condition = "ccw_asthma", cvd = F,
+                                       source = "all")) %>%
+  mutate(indicator = "Persons with asthma")
+
+asthma_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                         condition = "ccw_asthma", cvd = F,
+                                         source = "mcaid")) %>%
   mutate(indicator = "Persons with asthma")
 
 
 ### Cancer - breast
-cancer_breast_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                condition = "ccw_cancer_breast", cvd = F)) %>%
+cancer_breast_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                    condition = "ccw_cancer_breast", cvd = F,
+                                    source = "all")) %>%
+  mutate(indicator = "Persons with cancer: breast")
+
+cancer_breast_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                      condition = "ccw_cancer_breast", cvd = F,
+                                      source = "mcaid")) %>%
   mutate(indicator = "Persons with cancer: breast")
 
 
 ### Cancer - colorectal
-cancer_colorectal_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                           condition = "ccw_cancer_colorectal", cvd = F)) %>%
+cancer_colorectal_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                      condition = "ccw_cancer_colorectal", cvd = F,
+                                      source = "all")) %>%
+  mutate(indicator = "Persons with cancer: breast")
+
+cancer_colorectal_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                        condition = "ccw_cancer_colorectal", cvd = F,
+                                        source = "mcaid")) %>%
   mutate(indicator = "Persons with cancer: colorectal")
 
 
 ### CHF
-chf_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                             condition = "ccw_heart_failure", cvd = F)) %>%
+chf_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                          condition = "ccw_heart_failure", cvd = F,
+                                          source = "all")) %>%
+  mutate(indicator = "Persons with cardiovascular disease: congestive heart failure")
+
+chf_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                            condition = "ccw_heart_failure", cvd = F,
+                                            source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: congestive heart failure")
 
 
 # COPD
-copd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                             condition = "ccw_copd", cvd = F)) %>%
+copd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                            condition = "ccw_copd", cvd = F,
+                            source = "all")) %>%
+  mutate(indicator = "Persons with chronic obstructive pulmonary disease")
+
+copd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                              condition = "ccw_copd", cvd = F,
+                              source = "mcaid")) %>%
   mutate(indicator = "Persons with chronic obstructive pulmonary disease")
 
 
 ### CVD
-cvd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                             condition = "", cvd = T)) %>%
+cvd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                            condition = "", cvd = T,
+                            source = "all")) %>%
+  mutate(indicator = "Persons with cardiovascular disease: any type")
+
+cvd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                              condition = "", cvd = T,
+                              source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: any type")
 
 
 ### Depression
-depression_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                             condition = "ccw_depression", cvd = F)) %>%
+depression_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                             condition = "ccw_depression", cvd = F,
+                             source = "all")) %>%
+  mutate(indicator = "Persons with depression")
+
+depression_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                               condition = "ccw_depression", cvd = F,
+                               source = "mcaid")) %>%
   mutate(indicator = "Persons with depression")
 
 
 ### Diabetes
-diabetes_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                  condition = "ccw_diabetes", cvd = F)) %>%
+diabetes_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                   condition = "ccw_diabetes", cvd = F,
+                                   source = "all")) %>%
+  mutate(indicator = "Persons with diabetes")
+
+diabetes_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                     condition = "ccw_diabetes", cvd = F,
+                                     source = "mcaid")) %>%
   mutate(indicator = "Persons with diabetes")
 
 
 ### Hypertension
-hypertension_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                      condition = "ccw_hypertension", cvd = F)) %>%
+hypertension_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                            condition = "ccw_hypertension", cvd = F,
+                            source = "all")) %>%
+  mutate(indicator = "Persons with cardiovascular disease: hypertension")
+
+hypertension_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                              condition = "ccw_hypertension", cvd = F,
+                              source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: hypertension")
 
 
 ### IHD
-ihd_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                      condition = "ccw_ischemic_heart_dis", cvd = F)) %>%
+ihd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                            condition = "ccw_ischemic_heart_dis", cvd = F,
+                            source = "all")) %>%
+  mutate(indicator = "Persons with cardiovascular disease: ischemic heart disease")
+
+ihd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                              condition = "ccw_ischemic_heart_dis", cvd = F,
+                              source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: ischemic heart disease")
 
 
 ### Kidney disease
-kidney_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                             condition = "ccw_chr_kidney_dis", cvd = F)) %>%
+kidney_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                 condition = "ccw_chr_kidney_dis", cvd = F,
+                                 source = "all")) %>%
+  mutate(indicator = "Persons with kidney disease")
+
+kidney_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                   condition = "ccw_chr_kidney_dis", cvd = F,
+                                   source = "mcaid")) %>%
   mutate(indicator = "Persons with kidney disease")
 
 
 ### Myocardial infarction
-mi_pers <- bind_rows(lapply(seq(2012, 2016), eventcount_chronic_f, 
-                                condition = "ccw_mi", cvd = F)) %>%
+mi_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+                                     condition = "ccw_mi", cvd = F,
+                                     source = "all")) %>%
+  mutate(indicator = "Persons with cardiovascular disease: myocardial infarction")
+
+mi_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+                                       condition = "ccw_mi", cvd = F,
+                                       source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: myocardial infarction")
 
 
 #### COMBINE DATA ####
-health_events <- bind_rows(alzheimer_pers, asthma_pers, cancer_breast_pers,
-                           cancer_colorectal_pers, chf_pers, copd_pers, cvd_pers, 
-                           depression_pers, diabetes_pers, hypertension_pers, 
-                           ihd_pers, kidney_pers, mi_pers)
+health_events <- bind_rows(alzheimer_all, asthma_all, cancer_breast_all,
+                           cancer_colorectal_all, chf_all, copd_all, cvd_all, 
+                           depression_all, diabetes_all, hypertension_all, 
+                           ihd_all, kidney_all, mi_all,
+                           hosp_events_all, ed_events_all,
+                           hosp_pers_all, ed_pers_all, wc_pers_all,
+                           alzheimer_mcaid, asthma_mcaid, cancer_breast_mcaid,
+                           cancer_colorectal_mcaid, chf_mcaid, copd_mcaid, cvd_mcaid, 
+                           depression_mcaid, diabetes_mcaid, hypertension_mcaid, 
+                           ihd_mcaid, kidney_mcaid, mi_mcaid,
+                           hosp_events_mcaid, ed_events_mcaid, inj_events_mcaid,
+                           hosp_pers_mcaid, ed_pers_mcaid, inj_pers_mcaid, wc_pers_mcaid) %>%
+  mutate(full_criteria = ifelse(is.na(full_criteria), full_criteria_12, full_criteria)) %>%
+  select(-full_criteria_12) %>%
+  # remove the few people who had acute events when they appeared to only be enrolled
+  # in housing
+  filter(!enroll_type %in% c("h", "Housing only")) %>%
+  # Remove events for years where we don't have pop data
+  filter(year < 2019) %>%
+  # Remove combinations we won't show (e.g., duals when source = Medicaid)
+  filter(full_criteria == "Met full criteria" & 
+           (source == "Medicaid and Medicare" | 
+              (source == "Medicaid only" & dual == "Not dual eligible")))
 
-
-rm(list = ls(pattern = "_cnt$"))
-rm(list = ls(pattern = "^ed_cnt"))
-rm(list = ls(pattern = "_pers$"))
+# rm(list = ls(pattern = "_all$"))
+# rm(list = ls(pattern = "_mcaid$"))
 
 
 #### AGGREGATION ####
-# Use tabloop_f from medicaid package to summarise
 # Don't loop over ZIP because not using data (and memory intensive)
-
-
-### NOTE: THIS IS CURRENTLY SET UP TO ANALYZE THE MEDICAID/MEDICARE DATA
-# REWORK TO LOOP OVER DUAL IF USING MEDICAID-ONLY DATA
-
 
 # This is using a horrible mix of quosures and lists for now.
 # The tabloop function will be rewritten some day to make this easier.
-fixed_list <- list_var(indicator, year, agency)
-# fixed_list <- list_var(indicator, year, agency, dual) # Medicaid-only version
-loop_list <- c("agegrp", "gender", "ethn", "voucher", "subsidy", "operator", "portfolio", "length")
+fixed_list <- list_var(source, indicator, year, full_criteria, agency, dual)
+loop_list <- c("agegrp", "gender", "ethn", "subsidy", "voucher", "operator", "portfolio", "length")
 
 
 health_events_bivariate <- bind_rows(lapply(loop_list, function(x) {
@@ -758,9 +952,10 @@ health_events_bivariate <- bind_rows(lapply(loop_list, function(x) {
   ### Run tabloop
   output <- tabloop_f(health_events, sum = list_var(count),
                       fixed = fixed_list_new, loop = loop_list_new) %>%
+    filter(count_sum > 0) %>%
     mutate(category1 = rlang::quo_name(x)) %>%
     rename(group1 = !!x, category2 = group_cat, group2 = group)
-
+  
   return(output)
 }))
 
@@ -771,7 +966,7 @@ loop_list <- list_var(agegrp, gender, ethn, voucher, subsidy, operator, portfoli
 ### Make total columns for univariate analyses
 health_events_univariate <- bind_rows(lapply(loop_list, function(x) {
   output <- health_events %>%
-    group_by(indicator, year, agency, !!x) %>%
+    group_by(source, indicator, year, full_criteria, agency, dual, !!x) %>%
     # group_by(indicator, year, agency, enroll_type, dual, !!x) %>% # Medicaid-only version
     summarise(count_sum = sum(count)) %>%
     ungroup() %>%
@@ -788,7 +983,7 @@ rm(fixed_list, loop_list)
 
 ### Make overall 
 health_events_total <- health_events %>%
-  group_by(indicator, year, agency) %>%
+  group_by(source, indicator, year, full_criteria, agency, dual) %>%
   summarise(count_sum = sum(count)) %>%
   ungroup() %>%
   mutate(
@@ -798,19 +993,17 @@ health_events_total <- health_events %>%
 
 #### Combine into one data frame ####
 health_events_combined <- bind_rows(health_events_bivariate, health_events_univariate, health_events_total) %>%
-  # Filter out impossible combinations
-  filter(!(indicator == "Injuries" & year < 2016)) %>%
+  # TEMP: filter out source/year combos with no populations
+  filter((source == "Medicaid and Medicare" & year < 2018) |
+           (source == "Medicaid only" & year < 2019)) %>%
   rename(count = count_sum) %>%
-  mutate(wc_flag = if_else(indicator == "Well-child check", 1L, 0L),
+  mutate(wc_flag = if_else(str_detect(indicator, "(W|w)ell-child check"), 1L, 0L),
          acute = case_when(
            str_detect(indicator, "Persons with") ~ 0L,
-           str_detect(indicator, "ED visits") ~ 1L,
-           indicator %in% c("Hospitalizations", "Well-child check", "Injuries") ~ 1L,
+           indicator %in% c("Hospitalizations", "ED visits", "Injuries") ~ 1L,
            TRUE ~ NA_integer_)) %>%
-  # select(indicator, acute, wc_flag, year, agency, dual, category1, group1:count) %>%
-  # arrange(indicator, year, agency, dual, category1, group1, category2, group2)
-  select(indicator, acute, wc_flag, year, agency, category1, group1:count) %>%
-  arrange(indicator, year, agency, category1, group1, category2, group2)
+  select(source, acute, wc_flag, indicator, year, full_criteria, agency, dual, category1, group1:count) %>%
+  arrange(source, indicator, year, full_criteria, agency, dual, category1, group1, category2, group2)
 
 
 # Add suppression
@@ -821,32 +1014,101 @@ health_events_combined <- health_events_combined %>%
 
 
 #### COMBINE WITH POP DATA ####
-health_events_combined_pop <- left_join(
-  health_events_combined, pop_health_combine,
-  by = c("year", "wc_flag", "agency", "category1", "group1", "category2", "group2")) %>%
-  # Filter out rows with no population
-  filter(!is.na(pop_ever))
+# Need to separate acute and chronic pop joins
+# Set up pop frame with all indicators
 
+### Acute
+pop_health_combine_acute <- pop_health_combine %>% 
+  filter(!is.na(pop_ever) & wc_flag == 0 &
+           # Remove bivariate rows with ZIP since events are not aggregated this way
+           category2 != "zip" & !(category1 == "zip" & category2 != "total"))
+pop_health_combine_acute <- cbind(
+  pop_health_combine_acute, 
+  indicator = rep(unique(health_events_combined$indicator[health_events_combined$acute == 1]), 
+                  each = nrow(pop_health_combine_acute))) %>%
+  # Remove injuries from mcaid/mcare rows since not available
+  filter(!(source == "Medicaid and Medicare" & indicator == "Injuries"))
+
+health_events_combined_pop_acute <- left_join(
+  pop_health_combine_acute,
+  filter(health_events_combined, acute == 1), 
+  by = c("source", "indicator", "year", "wc_flag", "full_criteria", "agency", 
+         "dual", "category1", "group1", "category2", "group2"))
+
+health_events_combined_pop_acute %>% group_by(acute) %>% summarise(count = n())
+health_events_combined_pop_acute %>% 
+  filter(is.na(acute) & 
+           !(indicator == "ED visits" & year %in% c(2012, 2013) & 
+               (group1 %in% c("Asian_PI", "Other") | group2 %in% c("Asian_PI", "Other"))) &
+           !(indicator == "Hospitalizations" & year %in% c(2012) & 
+               (group1 %in% c("Asian_PI", "Other") | group2 %in% c("Asian_PI", "Other")))
+         ) %>% 
+  arrange(-pop_ever) %>% head()
+
+health_events_combined_pop_acute %>% 
+  filter(source == "Medicaid and Medicare" & year == 2013 & group1 == "Asian_PI" & 
+          category2 == "length" & group2 == "Non-PHA" & agency == "Non-PHA" & dual == "Not dual eligible")
+
+health_events_combined %>% 
+  filter(source == "Medicaid and Medicare" & year == 2013 & group1 == "Asian_PI" & 
+           category2 == "length" & group2 == "Non-PHA" & agency == "Non-PHA" & 
+           dual == "Not dual eligible")
+
+health_events %>% 
+  
+  ed_events_all %>%
+  filter(source == "Medicaid and Medicare" & 
+           ethn %in% c("Asian_PI", "Other") & length == "Non-PHA" & dual == "Not dual eligible") %>%
+  group_by(ethn, year) %>%
+  summarise(count = sum(count)) %>% as.data.frame()
+
+
+### Chronic
+pop_health_combine_chronic <- pop_health_combine %>% filter(!is.na(pop))
+pop_health_combine_chronic <- cbind(
+  pop_health_combine_chronic, 
+  indicator = rep(unique(health_events_combined$indicator[health_events_combined$acute == 0]), 
+                  each = nrow(pop_health_combine_chronic)))
+
+health_events_combined_pop_chronic <- left_join(
+  pop_health_combine_chronic,
+  filter(health_events_combined, acute == 0), 
+  by = c("source", "indicator", "year", "wc_flag", "full_criteria", "agency", 
+         "dual", "category1", "group1", "category2", "group2"))
+
+health_events_combined_pop <- bind_rows(health_events_combined_pop_acute,
+                                        health_events_combined_pop_chronic) %>%
+  mutate(suppressed = ifelse(is.na(count), 1L, 0L),
+         count = ifelse(is.na(count), 0L, count))
+
+rm(pop_health_combine_acute, health_events_combined_pop_acute, 
+   pop_health_combine_chronic, health_events_combined_pop_chronic)
 
 # FVery slow but seems to work (~6.5 mins)
 # Adapted from here: 
 # https://stackoverflow.com/questions/49222353/how-to-use-purrrs-map-function-to-perform-row-wise-prop-tests-and-add-results-t
 
-health_events_combined_pop <- health_events_combined_pop %>% 
+health_events_combined_pop <- health_events_combined_pop %>%
   mutate(
     denominator = ifelse(year %in% c(2012, 2016), pt / 366, pt / 365),
     rate = case_when(
       acute == 1 ~ count / denominator * 1000,
       acute == 0 & (is.na(pop) | pop == 0) ~ NA_real_,
       acute == 0 ~ count / pop * 1000)) %>%
-  mutate(chronic_cols = map2(count, pop, ~ if (.y < 1) {NA} else {prop.test(.x, n = .y, correct = F)})) %>%
-  mutate(ci_lb_chronic = map_dbl(chronic_cols, function(x) {if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[1]]}}),
-         ci_ub_chronic = map_dbl(chronic_cols, function(x) {if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[2]]}})) %>%
+  mutate(chronic_cols = map2(count, pop, 
+                             ~ if (is.na(.y) | .y < 1) {NA} else {prop.test(.x, n = .y, correct = F)})) %>%
+  mutate(ci_lb_chronic = map_dbl(chronic_cols, function(x) {
+    if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[1]]}}),
+         ci_ub_chronic = map_dbl(chronic_cols, function(x) {
+           if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[2]]}})) %>%
   select(-chronic_cols) %>%
-  mutate(acute_cols = map2(count, denominator, ~ poisson.test(.x, T = .y) %>% 
-                             {tibble(ci_lb_acute = .[["conf.int"]][[1]],
-                                     ci_ub_acute = .[["conf.int"]][[2]])})) %>%
-  unnest() %>%
+  mutate(acute_cols = map2(count, denominator, 
+                           ~ if (is.na(.y) | .y < 1) {NA} else {poisson.test(.x, T = .y)})) %>% 
+  mutate(ci_lb_acute = map_dbl(acute_cols, function(x) {
+    if (max(is.na(x)) == 1) {NA} else (x[["conf.int"]][[1]])}),
+         ci_ub_acute = map_dbl(acute_cols, function(x) {
+           if (max(is.na(x)) == 1) {NA} else (x[["conf.int"]][[2]])})) %>%
+  select(-acute_cols) %>%
   mutate(ci_lb = ifelse(acute == 1, ci_lb_acute, ci_lb_chronic) * 1000,
          ci_ub = ifelse(acute == 1, ci_ub_acute, ci_ub_chronic) * 1000) %>%
   select(-ci_lb_acute, -ci_ub_acute, -ci_lb_chronic, -ci_ub_chronic)
@@ -860,8 +1122,8 @@ health_events_combined_pop <- health_events_combined_pop %>%
 
 rest_pha <- health_events_combined_pop %>%
   filter((agency == "KCHA" | agency == "SHA") & category1 == "portfolio" & 
-           category2 == "total") %>%
-  group_by(year, acute, wc_flag, indicator, agency) %>%
+           !is.na(group1) & category2 == "total") %>%
+  group_by(source, indicator, year, full_criteria, agency, dual) %>%
   mutate(count_tot = sum(count), pop_tot = sum(pop), pt_tot = sum(pt)) %>%
   ungroup() %>%
   mutate(
@@ -873,28 +1135,42 @@ rest_pha <- health_events_combined_pop %>%
       acute == 1 ~ rest_count / rest_denominator * 1000,
       acute == 0 & pop == 0 ~ NA_real_,
       acute == 0 ~ rest_count / rest_pop * 1000)) %>%
-  mutate(chronic_cols = map2(rest_count, rest_pop, ~ if (.y < 1) {NA} else {prop.test(.x, n = .y, correct = F)})) %>%
-  mutate(rest_ci_lb_chronic = map_dbl(chronic_cols, function(x) {if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[1]]}}),
-         rest_ci_ub_chronic = map_dbl(chronic_cols, function(x) {if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[2]]}})) %>%
+  mutate(chronic_cols = map2(rest_count, rest_pop, ~ if (is.na(.y) | .y < 1) {NA} else {prop.test(.x, n = .y, correct = F)})) %>%
+  mutate(rest_ci_lb_chronic = map_dbl(chronic_cols, function(x) {
+    if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[1]]}}),
+         rest_ci_ub_chronic = map_dbl(chronic_cols, function(x) {
+           if (max(is.na(x)) == 1) {NA} else {x[["conf.int"]][[2]]}})) %>%
   select(-chronic_cols) %>%
-  mutate(acute_cols = map2(rest_count, rest_denominator, ~ poisson.test(.x, T = .y) %>% 
-                             {tibble(rest_ci_lb_acute = .[["conf.int"]][[1]],
-                                     rest_ci_ub_acute = .[["conf.int"]][[2]])})) %>%
-  unnest() %>%
+  mutate(acute_cols = map2(rest_count, rest_denominator, 
+                           ~ if (is.na(.y) | .y < 1) {NA} else {poisson.test(.x, T = .y)})) %>% 
+  mutate(rest_ci_lb_acute = map_dbl(acute_cols, function(x) {
+    if (max(is.na(x)) == 1) {NA} else (x[["conf.int"]][[1]])}),
+    rest_ci_ub_acute = map_dbl(acute_cols, function(x) {
+      if (max(is.na(x)) == 1) {NA} else (x[["conf.int"]][[2]])})) %>%
+  select(-acute_cols) %>%
   mutate(rest_ci_lb = ifelse(acute == 1, rest_ci_lb_acute * 1000, rest_ci_lb_chronic * 1000),
          rest_ci_ub = ifelse(acute == 1, rest_ci_ub_acute * 1000, rest_ci_ub_chronic * 1000)) %>%
-  select(year, acute, indicator, agency, category1, group1, category2, group2,
+  select(source, indicator, year, full_criteria, agency, dual, 
+         category1, group1, category2, group2,
          rest_count, rest_denominator, rest_pop, rest_pt,
          rest_pha_rate, rest_ci_lb, rest_ci_ub)
 
 
-health_events_combined_pop <- left_join(health_events_combined_pop, rest_pha,
-                                        by = c("year", "acute", "indicator", "agency", 
-                                               "category1", "group1", "category2", "group2"))
-
+health_events_pop_final <- left_join(
+  health_events_combined_pop, rest_pha, 
+  by = c("source", "year", "indicator", "full_criteria", "agency", "dual", 
+         "category1", "group1", "category2", "group2"))
 
 ### Make suppressed version
-health_events_combined_suppressed <- health_events_combined_pop %>%
+health_events_pop_final_suppressed <- health_events_pop_final %>%
+  # Remove people who didn't meet criteria
+  filter(full_criteria == "Met full criteria") %>%
+  mutate(denominator = round(denominator, 3),
+         rest_denominator = round(rest_denominator, 3)) %>%
+  mutate_at(vars(acute, year, wc_flag, count, pt, pop_ever, pop, rest_count,
+                 rest_pop, rest_pt, count_supp, pop_ever_supp, pop_supp,
+                 suppressed, pop_ever_supp_flag, pop_supp_flag),
+            list( ~ as.integer(.))) %>%
   mutate_at(vars(rate, ci_lb, ci_ub, rest_pha_rate, rest_ci_lb, rest_ci_ub),
             list( ~ case_when(
               suppressed == 1 ~ NA_real_,
@@ -902,39 +1178,23 @@ health_events_combined_suppressed <- health_events_combined_pop %>%
               TRUE ~ round(., 1)
             ))) %>%
   mutate_at(vars(rest_count, rest_pop), 
-            list( ~ ifelse(suppressed == 1 | pop_supp_flag == 1, NA, .))) %>%
-  select(indicator:group2, count_supp, denominator, pt, pop_ever_supp, pop_supp, rate:ci_ub, 
+            list( ~ ifelse(suppressed == 1 | pop_supp_flag == 1, NA_integer_, .))) %>%
+  select(source:group2, count_supp, denominator, pt, pop_ever_supp, pop_supp, rate:ci_ub, 
          rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, rest_ci_ub,
-         suppressed, pop_ever_supp_flag, pop_supp_flag, source) %>%
-  rename(
-    count = count_supp, pop_ever = pop_ever_supp, pop = pop_supp,
-    count_supp = suppressed, pop_ever_supp = pop_ever_supp_flag,
-    pop_supp = pop_supp_flag)
-
-
-
-#### TEMP - BRING IN EXISTING DATA AND JOIN ####
-health_events_md <- dbGetQuery(
-  db_extractstore50, "SELECT * FROM APDE.mcaid_mcare_pha_events WHERE source = 'Medicaid only'")
-
-
-### Combine data
-health_events_combined_suppressed <- bind_rows(health_events_combined_suppressed, health_events_md) %>%
-  select(indicator, acute, wc_flag, year, agency, enroll_type, dual, 
-         category1, group1, category2, group2, count, denominator, pt, 
-         pop_ever, pop, rate, ci_lb, ci_ub, 
-         rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, 
-         rest_ci_ub,count_supp, pop_ever_supp, pop_supp, source)
+         suppressed, pop_ever_supp_flag, pop_supp_flag) %>%
+  rename(count = count_supp, pop_ever = pop_ever_supp, pop = pop_supp, 
+         count_supp = suppressed, pop_ever_supp = pop_ever_supp_flag,
+         pop_supp = pop_supp_flag)
 
 
 
 #### WRITE DATA ####
 dbWriteTable(db_extractstore51, 
              name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
-             value = health_events_combined_suppressed, overwrite = T,
-             field.types = c(acute = "integer",
+             value = health_events_combined_suppressed[654218:654220,], overwrite = T,
+             field.types = c(acute = "tinyint",
                              year = "integer",
-                             wc_flag = "integer",
+                             wc_flag = "tinyint",
                              count = "integer",
                              pt = "integer",
                              pop_ever = "integer",
@@ -943,8 +1203,11 @@ dbWriteTable(db_extractstore51,
                              rest_pop = "integer",
                              rest_pt = "integer",
                              count_supp = "integer",
-                             pop_ever_supp = "integer",
-                             pop_supp = "integer"))
+                             pop_ever_supp = "tinyint",
+                             pop_supp = "tinyint",
+                             rest_pha_rate = "float",
+                             rest_ci_lb = "float",
+                             rest_ci_ub = "float"))
 
 
 
@@ -1011,37 +1274,37 @@ ed_cnt <- as.data.frame(data.table::rbindlist(ed_cnt)) %>%
 
 # Run for number of unavoidable ED visits
 ed_cnt_unavoid <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                 event = ed_emergent_nyu, number = T, person = F)
+                         event = ed_emergent_nyu, number = T, person = F)
 ed_cnt_unavoid <- as.data.frame(data.table::rbindlist(ed_cnt_unavoid)) %>%
   mutate(indicator = "ED visits - unavoidable")
 
 # Run for number of too close to call ED visits
 ed_cnt_inter <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                         event = ed_intermediate_nyu, number = T, person = F)
+                       event = ed_intermediate_nyu, number = T, person = F)
 ed_cnt_inter <- as.data.frame(data.table::rbindlist(ed_cnt_inter)) %>%
   mutate(indicator = "ED visits - borderline avoidable")
 
 # Run for number of avoidable ED visits
 ed_cnt_avoid <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                         event = ed_nonemergent_nyu, number = T, person = F)
+                       event = ed_nonemergent_nyu, number = T, person = F)
 ed_cnt_avoid <- as.data.frame(data.table::rbindlist(ed_cnt_avoid)) %>%
   mutate(indicator = "ED visits - potentially avoidable")
 
 # Run for number of unclassified ED visits
 ed_cnt_unclass <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                       event = ed_unclass_nyu, number = T, person = F)
+                         event = ed_unclass_nyu, number = T, person = F)
 ed_cnt_unclass <- as.data.frame(data.table::rbindlist(ed_cnt_unclass)) %>%
   mutate(indicator = "ED visits - unable to determine avoidability")
 
 # Run for number of MH ED visits
 ed_cnt_mh <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                         event = ed_mh_nyu, number = T, person = F)
+                    event = ed_mh_nyu, number = T, person = F)
 ed_cnt_mh <- as.data.frame(data.table::rbindlist(ed_cnt_mh)) %>%
   mutate(indicator = "ED visits - mental health primary dx")
 
 # Run for number of alcohol-related ED visits
 ed_cnt_alc <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                    event = ed_alc_nyu, number = T, person = F)
+                     event = ed_alc_nyu, number = T, person = F)
 ed_cnt_alc <- as.data.frame(data.table::rbindlist(ed_cnt_alc)) %>%
   mutate(indicator = "ED visits - alcohol-related primary dx")
 
@@ -1053,7 +1316,7 @@ ed_cnt_sud <- as.data.frame(data.table::rbindlist(ed_cnt_sud)) %>%
 
 # Run for number of BH-related ED visits
 ed_cnt_bh <- lapply(seq(12, 18), eventcount_acute_f, df = pha_mcaid_ed, 
-                     event = ed_bh, number = T, person = F)
+                    event = ed_bh, number = T, person = F)
 ed_cnt_bh <- as.data.frame(data.table::rbindlist(ed_cnt_bh)) %>%
   mutate(indicator = "ED visits - behavioral health-related primary dx")
 
@@ -1092,26 +1355,26 @@ acute_cause_nonpha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Hospitalizations (primary dx only)
   hosp_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 0, ],
-                                 cohort_id = id_apde, server = db_claims51, 
-                                 from_date = year_from, to_date = year_to,
-                                 ind_dates = T,
-                                 ind_from_date = startdate_c,
-                                 ind_to_date = enddate_c,
-                                 inpatient = T, ed_all = F, ed_avoid_ny = F, ed_avoid_ca = F,
-                                 primary_dx = T)
-  hosp_primary <- hosp_primary %>%
-    mutate(year = x, agency_num = 0, cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
-  
-  # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 0, ],
                                cohort_id = id_apde, server = db_claims51, 
-                               renew_ids = F,
                                from_date = year_from, to_date = year_to,
                                ind_dates = T,
                                ind_from_date = startdate_c,
                                ind_to_date = enddate_c,
                                inpatient = T, ed_all = F, ed_avoid_ny = F, ed_avoid_ca = F,
-                               primary_dx = F)
+                               primary_dx = T)
+  hosp_primary <- hosp_primary %>%
+    mutate(year = x, agency_num = 0, cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
+  
+  # Hospitalizations (all dx fields)
+  hosp_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 0, ],
+                             cohort_id = id_apde, server = db_claims51, 
+                             renew_ids = F,
+                             from_date = year_from, to_date = year_to,
+                             ind_dates = T,
+                             ind_from_date = startdate_c,
+                             ind_to_date = enddate_c,
+                             inpatient = T, ed_all = F, ed_avoid_ny = F, ed_avoid_ca = F,
+                             primary_dx = F)
   hosp_alldx <- hosp_alldx %>%
     mutate(year = x, agency_num = 0, cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
@@ -1180,7 +1443,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Hospitalizations (primary dx only)
   hosp_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                         mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                    mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                cohort_id = id_apde, server = db_claims51, 
                                from_date = year_from, to_date = year_to,
                                ind_dates = T,
@@ -1193,7 +1456,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Hospitalizations (all dx fields)
   hosp_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                       mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                  mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                              cohort_id = id_apde, server = db_claims51, 
                              renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1207,7 +1470,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # All ED visits (primary dx only)
   ed_all_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                           mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                      mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                  cohort_id = id_apde, server = db_claims51, 
                                  renew_ids = F,
                                  from_date = year_from, to_date = year_to,
@@ -1221,7 +1484,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # All ED visits (all dx fields)
   ed_all_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                         mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                    mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                cohort_id = id_apde, server = db_claims51, 
                                renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1235,7 +1498,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Potentially avoidable ED visits (primary dx only)
   ed_avoid_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                             mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                        mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                    cohort_id = id_apde, server = db_claims51, 
                                    renew_ids = F,
                                    from_date = year_from, to_date = year_to,
@@ -1249,7 +1512,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Potentially avoidable ED visits (all dx fields)
   ed_avoid_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 1 & 
-                                                           mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                      mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                  cohort_id = id_apde, server = db_claims51, 
                                  renew_ids = F,
                                  from_date = year_from, to_date = year_to,
@@ -1274,7 +1537,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Hospitalizations (primary dx only)
   hosp_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                         mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                    mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                cohort_id = id_apde, server = db_claims51, 
                                from_date = year_from, to_date = year_to,
                                ind_dates = T,
@@ -1287,7 +1550,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Hospitalizations (all dx fields)
   hosp_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                       mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                  mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                              cohort_id = id_apde, server = db_claims51, 
                              renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1301,7 +1564,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # All ED visits (primary dx only)
   ed_all_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                           mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                      mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                  cohort_id = id_apde, server = db_claims51, 
                                  renew_ids = F,
                                  from_date = year_from, to_date = year_to,
@@ -1315,7 +1578,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # All ED visits (all dx fields)
   ed_all_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                         mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                    mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                cohort_id = id_apde, server = db_claims51, 
                                renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1329,7 +1592,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Potentially avoidable ED visits (primary dx only)
   ed_avoid_primary <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                             mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                        mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                    cohort_id = id_apde, server = db_claims51, 
                                    renew_ids = F,
                                    from_date = year_from, to_date = year_to,
@@ -1343,7 +1606,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2018), function(x) {
   
   # Potentially avoidable ED visits (all dx fields)
   ed_avoid_alldx <- top_causes_f(cohort = mcaid_mcare_pha_elig_demo[mcaid_mcare_pha_elig_demo$agency_num == 2 & 
-                                                           mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
+                                                                      mcaid_mcare_pha_elig_demo$enroll_type_num == 3, ],
                                  cohort_id = id_apde, server = db_claims51, 
                                  renew_ids = F,
                                  from_date = year_from, to_date = year_to,
@@ -1418,17 +1681,17 @@ asthma_pers <- bind_rows(lapply(seq(12, 18),
 
 # Cancer - breast
 cancer_breast_pers <- bind_rows(lapply(seq(12, 18), 
-                                eventcount_chronic_f, df_chronic = chronic, 
-                                df_pop = chronic_pop, condition = "ccw_cancer_breast", 
-                                cvd = F)) %>%
+                                       eventcount_chronic_f, df_chronic = chronic, 
+                                       df_pop = chronic_pop, condition = "ccw_cancer_breast", 
+                                       cvd = F)) %>%
   mutate(indicator = "Persons with cancer: breast")
 
 
 # Cancer - colorectal
 cancer_colorectal_pers <- bind_rows(lapply(seq(12, 18), 
-                                       eventcount_chronic_f, df_chronic = chronic, 
-                                       df_pop = chronic_pop, condition = "ccw_cancer_colorectal", 
-                                       cvd = F)) %>%
+                                           eventcount_chronic_f, df_chronic = chronic, 
+                                           df_pop = chronic_pop, condition = "ccw_cancer_colorectal", 
+                                           cvd = F)) %>%
   mutate(indicator = "Persons with cancer: colorectal")
 
 
@@ -1498,8 +1761,8 @@ kidney_pers <- bind_rows(lapply(seq(12, 18),
 
 # Persons with an ED visit
 ed_pers <- bind_rows(lapply(seq(12, 18), eventcount_acute_persons_f, 
-                              df_events = acute, df_pop = chronic_pop,
-                              event = "ed")) %>%
+                            df_events = acute, df_pop = chronic_pop,
+                            event = "ed")) %>%
   mutate(indicator = "Persons with ED visits")
 
 
@@ -1512,8 +1775,8 @@ hosp_pers <- bind_rows(lapply(seq(12, 18), eventcount_acute_persons_f,
 
 # Persons with a well-child visit
 wc_pers <- bind_rows(lapply(seq(12, 18), eventcount_acute_persons_f, 
-                              df_events = acute, df_pop = chronic_pop_wc,
-                              event = "wc")) %>%
+                            df_events = acute, df_pop = chronic_pop_wc,
+                            event = "wc")) %>%
   mutate(indicator = "Well-child check")
 
 
