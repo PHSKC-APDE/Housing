@@ -99,45 +99,39 @@ pt_rows <- bind_rows(lapply(seq_along(years), function(x) {
   
   message(glue("Working on {years[x]}"))
   
-  output <- mcaid_mcare_pha_elig_timevar %>%
-    mutate(
-      overlap_amount = as.numeric(lubridate::intersect(
-        #time_int,
-        lubridate::interval(from_date, to_date),
-        lubridate::interval(as.Date(paste0(years[x], "-01-01")), 
-                            as.Date(paste0(years[x], "-12-31")))) / ddays(1) + 1)
-    ) %>%
-    # Remove any rows that don't overlap
-    filter(!is.na(overlap_amount)) %>%
-    group_by(id_apde, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
-             apde_dual, part_a, part_b, part_c, partial, buy_in, 
-             dual, tpl, bsp_group_cid, full_benefit, full_criteria, cov_type, 
-             mco_id, pha_agency, pha_subsidy, pha_voucher, 
-             pha_operator, pha_portfolio, geo_kc, geo_zip, geo_zip_centroid, 
-             geo_street_centroid, geo_county_code, geo_tract_code, 
-             geo_hra_code, geo_school_code
-    ) %>%
-    summarise(pop_ever = 1L,
-              pt = sum(overlap_amount)) %>%
-    ungroup() %>%
-    mutate(year = years[x])
+  output <- setDT(mcaid_mcare_pha_elig_timevar)
+  output[, overlap_amount:= as.numeric(lubridate::intersect(
+    lubridate::interval(from_date, to_date),
+    lubridate::interval(as.Date(paste0(years[x], "-01-01")), 
+                        as.Date(paste0(years[x], "-12-31")))) / ddays(1) + 1)]
+  # Remove any rows that don't overlap
+  output <- output[!is.na(overlap_amount)]
+  
+  # Make summary data
+  output <- output[, .(pt = sum(overlap_amount)),
+                   by = .(id_apde, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
+                          apde_dual, part_a, part_b, part_c, partial, buy_in, 
+                          dual, tpl, bsp_group_cid, full_benefit, full_criteria, cov_type, 
+                          mco_id, pha_agency, pha_subsidy, pha_voucher, 
+                          pha_operator, pha_portfolio, geo_kc, geo_zip, geo_zip_centroid, 
+                          geo_street_centroid, geo_county_code, geo_tract_code, 
+                          geo_hra_code, geo_school_code)]
+  output[, pop_ever := 1L]
+  output[, year := years[x]]
   
   return(output)
 }))
 
 
+
 #### MAKE FLAG TO INDICATE FULL CRITERIA FOR EACH YEAR
 # Definition: 11+ months coverage with full_criteria
-full_criteria <- pt_rows %>%
-  group_by(id_apde, year, full_criteria) %>%
-  summarise(pt_tot = sum(pt)) %>%
-  ungroup() %>%
-  mutate(full_criteria_12 = case_when(
-    year %in% c(2012, 2016, 2020) & pt_tot >= 11/12 * 366 ~ 1L, 
-    pt_tot >= 11/12 * 365 ~ 1L, 
-    TRUE ~ 0L)) %>%
-  group_by(id_apde, year) %>%
-  summarise(full_criteria_12 = max(full_criteria_12)) %>% ungroup()
+full_criteria <- pt_rows[, .(pt_tot = sum(pt)), by = .(id_apde, year, full_criteria)]
+full_criteria[, full_criteria_12 := case_when(
+  year %in% c(2012, 2016, 2020) & pt_tot >= 11/12 * 366 ~ 1L, 
+  pt_tot >= 11/12 * 365 ~ 1L, 
+  TRUE ~ 0L)]
+full_criteria <- full_criteria[, .(full_criteria_12 = max(full_criteria_12)), by = .(id_apde, year)]
 
 # Join back to main data
 allocated <- allocated %>% left_join(., full_criteria, by = c("year", "id_apde"))
@@ -159,7 +153,7 @@ mcaid_mcare_pha_elig_calyear[, senior := case_when(age_yr >= 62 ~ 1L, age_yr < 6
 mcaid_mcare_pha_elig_calyear[, agegrp := case_when(
   age_yr < 18 ~ "<18",
   data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "24-44",
+  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
   data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
   age_yr >= 65 ~ "65+",
   is.na(age_yr) ~ NA_character_)]
@@ -167,7 +161,7 @@ mcaid_mcare_pha_elig_calyear[, agegrp_expanded := case_when(
   age_yr < 10 ~ "<10",
   data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
   data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "24-44",
+  data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
   data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
   data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
   age_yr >= 75 ~ "75+",
@@ -178,7 +172,7 @@ mcaid_mcare_pha_elig_calyear[, age_wc := case_when(
 mcaid_mcare_pha_elig_calyear[, time_housing_yr := 
                                round(interval(start = start_housing, end = paste0(year, "-12-31")) / years(1), 1)]
 mcaid_mcare_pha_elig_calyear[, time_housing := case_when(
-  is.na(pha_agency) ~ "Non-PHA",
+  is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
   time_housing_yr < 3 ~ "<3 years",
   data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA) ~ "3 to <6 years",
   time_housing_yr >= 6 ~ "6+ years",
