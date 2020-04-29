@@ -297,172 +297,176 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       }
       
       #-- Expand out rows to separate out overlaps ----
-      temp_ext <- temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)]
+      temp_ext <- setDT(temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)])
+      
+      temp2 <- temp %>% filter(id_apde == 408970) ## DELETE LATER
+      temp_ext <- temp2[rep(seq(nrow(temp2)), temp2$repnum), 1:ncol(temp2)]
+      
       
       #-- Process the expanded data ----
-      temp_ext <- temp_ext %>% 
-        group_by(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm) %>% 
-        mutate(rownum_temp = row_number()) %>%
-        ungroup() %>%
-        arrange(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm, from_date_o, 
-                to_date_o, overlap_type, rownum_temp) %>%
-        mutate(
-          # Remove non-overlapping dates
-          from_date.elig.pha = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
-                                                (overlap_type == 7 & rownum_temp == 1), 
-                                              NA, from_date.elig.pha), origin = "1970-01-01"), 
-          to_date.elig.pha = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
+      temp_ext[, rownum_temp := rowid(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm)]
+      setorder(temp_ext, id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm, from_date_o, 
+                              to_date_o, overlap_type, rownum_temp)
+      # Remove non-overlapping dates
+      temp_ext[, ':=' (
+        from_date.elig.pha = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
                                               (overlap_type == 7 & rownum_temp == 1), 
-                                            NA, to_date.elig.pha), origin = "1970-01-01"),
-          from_date.elig.mm = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
-                                               (overlap_type == 7 & rownum_temp == 2), 
-                                             NA, from_date.elig.mm), origin = "1970-01-01"), 
-          to_date.elig.mm = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
+                                            NA, from_date.elig.pha), origin = "1970-01-01"), 
+        to_date.elig.pha = as.Date(ifelse((overlap_type == 6 & rownum_temp == 2) | 
+                                            (overlap_type == 7 & rownum_temp == 1), 
+                                          NA, to_date.elig.pha), origin = "1970-01-01"),
+        from_date.elig.mm = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
                                              (overlap_type == 7 & rownum_temp == 2), 
-                                           NA, to_date.elig.mm), origin = "1970-01-01")) %>%
-        distinct(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm, from_date_o, 
-                 to_date_o, overlap_type, rownum_temp, .keep_all = TRUE) %>%
-        # Remove first row if start dates are the same or PHA is only one day
-        filter(!(overlap_type %in% c(2:5) & rownum_temp == 1 & 
-                   (from_date.elig.pha == from_date.elig.mm | from_date.elig.pha == to_date.elig.pha))) %>%
-        # Remove third row if to_dates are the same
-        filter(!(overlap_type %in% c(2:5) & rownum_temp == 3 & to_date.elig.pha == to_date.elig.mm))
+                                           NA, from_date.elig.mm), origin = "1970-01-01"), 
+        to_date.elig.mm = as.Date(ifelse((overlap_type == 6 & rownum_temp == 1) | 
+                                           (overlap_type == 7 & rownum_temp == 2), 
+                                         NA, to_date.elig.mm), origin = "1970-01-01")
+      )]
+      temp_ext <- unique(temp_ext)
+      # Remove first row if start dates are the same or PHA is only one day
+      temp_ext <- temp_ext[!(overlap_type %in% c(2:5) & rownum_temp == 1 & 
+                               (from_date.elig.pha == from_date.elig.mm | from_date.elig.pha == to_date.elig.pha))]
+      # Remove third row if to_dates are the same
+      temp_ext <- temp_ext[!(overlap_type %in% c(2:5) & rownum_temp == 3 & to_date.elig.pha == to_date.elig.mm)]
+      
       
       #-- Calculate the finalized date columms----
-      temp_ext <- temp_ext %>%
-        # Set up combined dates
-        mutate(
-          # Start with rows with only PHA or mcaid_mcare, or when both sets of dates are identical
-          from_date = as.Date(
-            case_when(
-              (!is.na(from_date.elig.pha) & is.na(from_date.elig.mm)) | overlap_type == 1 ~ from_date.elig.pha,
-              !is.na(from_date.elig.mm) & is.na(from_date.elig.pha) ~ from_date.elig.mm), origin = "1970-01-01"),
-          to_date = as.Date(
-            case_when(
-              (!is.na(to_date.elig.pha) & is.na(to_date.elig.mm)) | overlap_type == 1 ~ to_date.elig.pha,
-              !is.na(to_date.elig.mm) & is.na(to_date.elig.pha) ~ to_date.elig.mm), origin = "1970-01-01"),
-          # Now look at overlapping rows and rows completely contained within the other data's dates
-          from_date = as.Date(
-            case_when(
-              overlap_type %in% c(2, 4) & rownum_temp == 1 ~ from_date.elig.pha,
-              overlap_type %in% c(3, 5) & rownum_temp == 1 ~ from_date.elig.mm,
-              overlap_type %in% c(2:5) & rownum_temp == 2 ~ from_date_o,
-              overlap_type %in% c(2:5) & rownum_temp == 3 ~ to_date_o + 1,
-              TRUE ~ from_date), origin = "1970-01-01"),
-          to_date = as.Date(
-            case_when(
-              overlap_type %in% c(2:5) & rownum_temp == 1 ~ lead(from_date_o, 1) - 1,
-              overlap_type %in% c(2:5) & rownum_temp == 2 ~ to_date_o,
-              overlap_type %in% c(2, 5) & rownum_temp == 3 ~ to_date.elig.mm,
-              overlap_type %in% c(3, 4) & rownum_temp == 3 ~ to_date.elig.pha,
-              TRUE ~ to_date), origin = "1970-01-01"),
-          # Deal with the last line for each person if it's part of an overlap
-          from_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
-                                       overlap_type %in% c(2:5) & 
-                                       to_date.elig.pha != to_date.elig.mm, 
-                                     lag(to_date_o, 1) + 1, 
-                                     from_date), origin = "1970-01-01"),
-          to_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
-                                     overlap_type %in% c(2:5), 
-                                   pmax(to_date.elig.pha, to_date.elig.mm, na.rm = TRUE), 
-                                   to_date), origin = "1970-01-01")
-        ) %>%
-        arrange(id_apde, from_date, to_date, from_date.elig.pha, from_date.elig.mm, 
-                to_date.elig.pha, to_date.elig.mm, overlap_type)
+      # Set up combined dates
+      # Start with rows with only PHA or mcaid_mcare, or when both sets of dates are identical
+      temp_ext[, ':=' (
+        from_date = as.Date(
+          case_when(
+            (!is.na(from_date.elig.pha) & is.na(from_date.elig.mm)) | overlap_type == 1 ~ from_date.elig.pha,
+            !is.na(from_date.elig.mm) & is.na(from_date.elig.pha) ~ from_date.elig.mm), origin = "1970-01-01"),
+        to_date = as.Date(
+          case_when(
+            (!is.na(to_date.elig.pha) & is.na(to_date.elig.mm)) | overlap_type == 1 ~ to_date.elig.pha,
+            !is.na(to_date.elig.mm) & is.na(to_date.elig.pha) ~ to_date.elig.mm), origin = "1970-01-01")
+      )]
+      # Now look at overlapping rows and rows completely contained within the other data's dates
+      temp_ext[, ':=' (
+        from_date = as.Date(
+          case_when(
+            overlap_type %in% c(2, 4) & rownum_temp == 1 ~ from_date.elig.pha,
+            overlap_type %in% c(3, 5) & rownum_temp == 1 ~ from_date.elig.mm,
+            overlap_type %in% c(2:5) & rownum_temp == 2 ~ from_date_o,
+            overlap_type %in% c(2:5) & rownum_temp == 3 ~ to_date_o + 1,
+            TRUE ~ from_date), origin = "1970-01-01"),
+        to_date = as.Date(
+          case_when(
+            overlap_type %in% c(2:5) & rownum_temp == 1 ~ lead(from_date_o, 1) - 1,
+            overlap_type %in% c(2:5) & rownum_temp == 2 ~ to_date_o,
+            overlap_type %in% c(2, 5) & rownum_temp == 3 ~ to_date.elig.mm,
+            overlap_type %in% c(3, 4) & rownum_temp == 3 ~ to_date.elig.pha,
+            TRUE ~ to_date), origin = "1970-01-01")
+      )]
+      # Deal with the last line for each person if it's part of an overlap
+      temp_ext[, ':=' (
+        from_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
+                                     overlap_type %in% c(2:5) & 
+                                     to_date.elig.pha != to_date.elig.mm, 
+                                   lag(to_date_o, 1) + 1, 
+                                   from_date), origin = "1970-01-01"),
+        to_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
+                                   overlap_type %in% c(2:5), 
+                                 pmax(to_date.elig.pha, to_date.elig.mm, na.rm = TRUE), 
+                                 to_date), origin = "1970-01-01")
+      )]
+      # Reorder in preparation for next phase
+      setorder(temp_ext, id_apde, from_date, to_date, from_date.elig.pha, from_date.elig.mm, 
+               to_date.elig.pha, to_date.elig.mm, overlap_type)
+ 
       
       #-- Label and clean summary interval data ----
-      temp_ext <- temp_ext %>%
-        mutate(
-          # Identify which type of enrollment this row represents
-          enroll_type = 
-            case_when(
-              (overlap_type == 2 & rownum_temp == 1) | 
-                (overlap_type == 3 & rownum_temp == 3) |
-                (overlap_type == 6 & rownum_temp == 1) | 
-                (overlap_type == 7 & rownum_temp == 2) |
-                (overlap_type == 4 & rownum_temp %in% c(1, 3)) |
-                (overlap_type == 0 & is.na(from_date.elig.mm)) ~ "PHA",
-              (overlap_type == 3 & rownum_temp == 1) | 
-                (overlap_type == 2 & rownum_temp == 3) |
-                (overlap_type == 6 & rownum_temp == 2) | 
-                (overlap_type == 7 & rownum_temp == 1) | 
-                (overlap_type == 5 & rownum_temp %in% c(1, 3)) |
-                (overlap_type == 0 & is.na(from_date.elig.pha)) ~ "mcaid_mcare",
-              overlap_type == 1 | (overlap_type %in% c(2:5) & rownum_temp == 2) ~ "both",
-              TRUE ~ "x"
-            ),
-          # Drop rows from enroll_type == h/m when they are fully covered by an enroll_type == b
-          drop = 
-            case_when(
-              id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
-                from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
-                to_date >= lag(to_date, 1) & !is.na(lag(to_date, 1)) & 
-                # Fix up quirk from PHA data where two rows present for the same day
-                !(lag(enroll_type, 1) != "mcaid_mcare" & lag(to_date.elig.pha, 1) == lag(from_date.elig.pha, 1)) &
-                enroll_type != "both" ~ 1,
-              id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
-                from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
-                to_date <= lead(to_date, 1) & !is.na(lead(to_date, 1)) & 
-                # Fix up quirk from PHA data where two rows present for the same day
-                !(lead(enroll_type, 1) != "mcaid_mcare" & lead(to_date.elig.pha, 1) == lead(from_date.elig.pha, 1)) &
-                enroll_type != "both" & lead(enroll_type, 1) == "both" ~ 1,
-              # Fix up other oddities when the date range is only one day
-              id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
-                from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
-                from_date == to_date & !is.na(from_date) & 
-                ((enroll_type == "mcaid_mcare" & lag(enroll_type, 1) %in% c("both", "PHA")) |
-                   (enroll_type == "PHA" & lag(enroll_type, 1) %in% c("both", "mcaid_mcare"))) ~ 1,
-              id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
-                from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
-                from_date == to_date & !is.na(from_date) &
-                from_date.elig.pha == lag(from_date.elig.pha, 1) & to_date.elig.pha == lag(to_date.elig.pha, 1) &
-                !is.na(from_date.elig.pha) & !is.na(lag(from_date.elig.pha, 1)) &
-                enroll_type != "both" ~ 1,
-              id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
-                from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
-                from_date == to_date & !is.na(from_date) &
-                ((enroll_type == "mcaid_mcare" & lead(enroll_type, 1) %in% c("both", "PHA")) |
-                   (enroll_type == "PHA" & lead(enroll_type, 1) %in% c("both", "mcaid_mcare"))) ~ 1,
-              # Drop rows where the to_date < from_date due to 
-              # both data sources' dates ending at the same time
-              to_date < from_date ~ 1,
-              TRUE ~ 0
-            )
-        ) %>%
-        filter(drop == 0 | is.na(drop)) %>%
-        # Truncate remaining overlapping end dates
-        mutate(to_date = as.Date(
-          ifelse(id_apde == lead(id_apde, 1) & !is.na(lead(from_date, 1)) &
-                   from_date < lead(from_date, 1) &
-                   to_date >= lead(to_date, 1),
-                 lead(from_date, 1) - 1,
-                 to_date),
-          origin = "1970-01-01")
-        ) %>%
-        select(-drop, -repnum, -rownum_temp) %>%
-        # With rows truncated, now additional rows with enroll_type == h/m that 
-        # are fully covered by an enroll_type == b
-        # Also catches single day rows that now have to_date < from_date
-        mutate(
-          drop = case_when(
-            id_apde == lag(id_apde, 1) & from_date == lag(from_date, 1) &
-              to_date == lag(to_date, 1) & lag(enroll_type, 1) == "both" & 
-              enroll_type != "both" ~ 1,
-            id_apde == lead(id_apde, 1) & from_date == lead(from_date, 1) &
-              to_date <= lead(to_date, 1) & lead(enroll_type, 1) == "both" ~ 1,
-            id_apde == lag(id_apde, 1) & from_date >= lag(from_date, 1) &
-              to_date <= lag(to_date, 1) & enroll_type != "both" &
-              lag(enroll_type, 1) == "both" ~ 1,
-            id_apde == lead(id_apde, 1) & from_date >= lead(from_date, 1) &
-              to_date <= lead(to_date, 1) & enroll_type != "both" &
-              lead(enroll_type, 1) == "both" ~ 1,
-            TRUE ~ 0)
-        ) %>%
-        filter(drop == 0 | is.na(drop)) %>%
-        select(id_apde, from_date, to_date, enroll_type)
+      # Identify which type of enrollment this row represents
+      temp_ext[, enroll_type := 
+                 case_when(
+                   (overlap_type == 2 & rownum_temp == 1) | 
+                     (overlap_type == 3 & rownum_temp == 3) |
+                     (overlap_type == 6 & rownum_temp == 1) | 
+                     (overlap_type == 7 & rownum_temp == 2) |
+                     (overlap_type == 4 & rownum_temp %in% c(1, 3)) |
+                     (overlap_type == 0 & is.na(from_date.elig.mm)) ~ "PHA",
+                   (overlap_type == 3 & rownum_temp == 1) | 
+                     (overlap_type == 2 & rownum_temp == 3) |
+                     (overlap_type == 6 & rownum_temp == 2) | 
+                     (overlap_type == 7 & rownum_temp == 1) | 
+                     (overlap_type == 5 & rownum_temp %in% c(1, 3)) |
+                     (overlap_type == 0 & is.na(from_date.elig.pha)) ~ "mcaid_mcare",
+                   overlap_type == 1 | (overlap_type %in% c(2:5) & rownum_temp == 2) ~ "both",
+                   TRUE ~ "x"
+                 )]
+      # Drop rows from enroll_type == h/m when they are fully covered by an enroll_type == b
+      temp_ext[, drop := 
+                 case_when(
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
+                     from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
+                     to_date >= lag(to_date, 1) & !is.na(lag(to_date, 1)) & 
+                     # Fix up quirk from PHA data where two rows present for the same day
+                     !(lag(enroll_type, 1) != "mcaid_mcare" & lag(to_date.elig.pha, 1) == lag(from_date.elig.pha, 1)) &
+                     enroll_type != "both" ~ 1,
+                   id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
+                     from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
+                     to_date <= lead(to_date, 1) & !is.na(lead(to_date, 1)) & 
+                     # Fix up quirk from PHA data where two rows present for the same day
+                     !(lead(enroll_type, 1) != "mcaid_mcare" & lead(to_date.elig.pha, 1) == lead(from_date.elig.pha, 1)) &
+                     enroll_type != "both" & lead(enroll_type, 1) == "both" ~ 1,
+                   # Fix up other oddities when the date range is only one day
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
+                     from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
+                     from_date == to_date & !is.na(from_date) & 
+                     ((enroll_type == "mcaid_mcare" & lag(enroll_type, 1) %in% c("both", "PHA")) |
+                        (enroll_type == "PHA" & lag(enroll_type, 1) %in% c("both", "mcaid_mcare"))) ~ 1,
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
+                     from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
+                     from_date == to_date & !is.na(from_date) &
+                     from_date.elig.pha == lag(from_date.elig.pha, 1) & to_date.elig.pha == lag(to_date.elig.pha, 1) &
+                     !is.na(from_date.elig.pha) & !is.na(lag(from_date.elig.pha, 1)) &
+                     enroll_type != "both" ~ 1,
+                   id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
+                     from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
+                     from_date == to_date & !is.na(from_date) &
+                     ((enroll_type == "mcaid_mcare" & lead(enroll_type, 1) %in% c("both", "PHA")) |
+                        (enroll_type == "PHA" & lead(enroll_type, 1) %in% c("both", "mcaid_mcare"))) ~ 1,
+                   # Drop rows where the to_date < from_date due to 
+                   # both data sources' dates ending at the same time
+                   to_date < from_date ~ 1,
+                   TRUE ~ 0
+                 )]
       
-      linked <- setDT(copy(temp_ext))
+      temp_ext <- temp_ext[drop == 0 | is.na(drop)]
+      
+      # Truncate remaining overlapping end dates
+      temp_ext[, to_date := as.Date(ifelse(id_apde == lead(id_apde, 1) & !is.na(lead(from_date, 1)) & 
+                                             from_date < lead(from_date, 1) & to_date >= lead(to_date, 1),
+                                           lead(from_date, 1) - 1, to_date),
+                                    origin = "1970-01-01")]
+      
+      temp_ext[, ':=' (drop = NULL, repnum = NULL, rownum_temp = NULL)]
+      
+      # With rows truncated, now additional rows with enroll_type == h/m that 
+      # are fully covered by an enroll_type == b
+      # Also catches single day rows that now have to_date < from_date
+      temp_ext[, drop := case_when(id_apde == lag(id_apde, 1) & from_date == lag(from_date, 1) &
+                                     to_date == lag(to_date, 1) & lag(enroll_type, 1) == "both" & 
+                                     enroll_type != "both" ~ 1,
+                                   id_apde == lead(id_apde, 1) & from_date == lead(from_date, 1) &
+                                     to_date <= lead(to_date, 1) & lead(enroll_type, 1) == "both" ~ 1,
+                                   id_apde == lag(id_apde, 1) & from_date >= lag(from_date, 1) &
+                                     to_date <= lag(to_date, 1) & enroll_type != "both" &
+                                     lag(enroll_type, 1) == "both" ~ 1,
+                                   id_apde == lead(id_apde, 1) & from_date >= lead(from_date, 1) &
+                                     to_date <= lead(to_date, 1) & enroll_type != "both" &
+                                     lead(enroll_type, 1) == "both" ~ 1,
+                                   TRUE ~ 0)]
+      temp_ext <- temp_ext[drop == 0 | is.na(drop)]
+      linked <- temp_ext[, .(id_apde, from_date, to_date, enroll_type)]
+      
+      # Catch any duplicates (there are some, have not investigated why yet)
+      linked <- unique(linked)
+
       rm(temp, temp_ext)
+      
       
   ### Linked IDs Part 2: join mcaid_mcare & PHA data based on ID & overlapping time periods ----
       # foverlaps ... https://github.com/Rdatatable/data.table/blob/master/man/foverlaps.Rd
@@ -722,7 +726,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                                 '')",
                               .con = db_apde51)
   
-  odbc::dbGetQuery(conn = db_apde51, qa.values)
+  DBI::dbExecute(conn = db_apde51, qa.values)
   
   qa.values2 <- glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha_values
                                 (table_name, qa_item, qa_value, qa_date, note) 
@@ -733,7 +737,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                                 '')",
                                .con = db_apde51)
   
-  odbc::dbGetQuery(conn = db_apde51, qa.values2)
+  DBI::dbExecute(conn = db_apde51, qa.values2)
   
   
 ##### Write elig_timevar to SQL ----
@@ -783,7 +787,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       row_diff <- stage.count - previous_rows
       
       if (row_diff < 0) {
-        odbc::dbGetQuery(
+        DBI::dbExecute(
           conn = db_apde51,
           glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha
                          (last_run, table_name, qa_item, qa_result, qa_date, note) 
@@ -800,7 +804,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                                        Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
                                        \n")
       } else {
-        odbc::dbGetQuery(
+        DBI::dbExecute(
           conn = db_apde51,
           glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha
                          (last_run, table_name, qa_item, qa_result, qa_date, note) 
@@ -842,7 +846,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       id_diff <- current.unique.id - previous.unique.id
       
       if (id_diff < 0) {
-        odbc::dbGetQuery(
+        DBI::dbExecute(
           conn = db_apde51,
           glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha
                          (last_run, table_name, qa_item, qa_result, qa_date, note) 
@@ -859,7 +863,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                                        Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
                                        \n")
       } else {
-        odbc::dbGetQuery(
+        DBI::dbExecute(
           conn = db_apde51,
           glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha
                          (last_run, table_name, qa_item, qa_result, qa_date, note) 
@@ -885,7 +889,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                             '')",
                               .con = db_apde51)
   
-  odbc::dbGetQuery(conn = db_apde51, qa.values)
+  DBI::dbExecute(conn = db_apde51, qa.values)
   
   qa.values2 <- glue::glue_sql("INSERT INTO metadata.qa_mcaid_mcare_pha_values
                             (table_name, qa_item, qa_value, qa_date, note) 
@@ -896,7 +900,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
                             '')",
                                .con = db_apde51)
   
-  odbc::dbGetQuery(conn = db_apde51, qa.values2)
+  DBI::dbExecute(conn = db_apde51, qa.values2)
         
 ### Print error messages and load to final ----
   #-- create summary of errors
