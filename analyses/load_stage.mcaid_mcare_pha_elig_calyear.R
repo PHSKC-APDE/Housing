@@ -8,7 +8,7 @@
 #    combination of variables. Used as a denominator for acute events.
 #
 # Alastair Matheson (PHSKC-APDE)
-# 2018-01-24, updated 202-01-13
+# 2018-01-24
 #
 #
 ###############################################################################
@@ -85,10 +85,20 @@ allocated <- bind_rows(lapply(seq_along(years), function(x) {
                    # No grouping vars
   ) %>%
     mutate(year = years[x]) %>%
-    dplyr::select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state, 
-                  -pt_allocate)
+    dplyr::select(-last_run, -geo_add1, -geo_add2, -geo_city, -geo_state)
 }))
 
+
+### Fix up impossible pt_tot values
+# A handful (~60) rows have pt_tot >365/6
+# Some/most stem from duplicate rows in the PHA data where a person was recorded
+# at multiple addresses during the same time period.
+# For now, just truncate to 365/6
+allocated <- allocated %>%
+  mutate(pt_tot = case_when(
+    year %in% c(2012, 2016, 2020) & pt_tot > 366 ~ 366, 
+    pt_tot >= 365 ~ 365, 
+    TRUE ~ pt_tot))
 
 
 #### MAKE PT AND POP_EVER FIELDS ####

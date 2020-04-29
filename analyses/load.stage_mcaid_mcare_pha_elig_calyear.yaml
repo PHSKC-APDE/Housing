@@ -77,8 +77,8 @@ vars:
     geo_tract_code: VARCHAR(255)
     geo_hra_code: VARCHAR(255)
     geo_school_code: VARCHAR(255)
-    pt: NUMERIC
-    pt_tot: NUMERIC
-    pop: INT
     pop_ever: INT
+    pt: NUMERIC
+    pop: INT
+    pt_tot: NUMERIC
     last_run: DATETIME
