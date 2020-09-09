@@ -43,8 +43,41 @@ pha_mcaid_final <- dbGetQuery(
     pt12, pt13, pt14, pt15, pt16, pt17, pt18 
   FROM stage.mcaid_pha")
 
+# Bring in timevar table to find people at YT or SS addresses
+pha_timevar <- dbGetQuery(
+  db_apde51,
+  "SELECT id_apde, from_date, to_date, 
+  pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_add1, geo_city
+  FROM final.mcaid_mcare_pha_elig_timevar
+  WHERE pha = 1")
+
+# Bring in property IDs etc
+pha_property <- dbGetQuery(
+  db_apde51,
+  "SELECT DISTINCT unit_add_new, unit_city_new, property_id, property_name
+  FROM stage.pha
+  WHERE property_id IS NOT NULL OR property_name IS NOT NULL"
+)
+
+# Can use pre-calculated calendar year table and join to YT/SS IDs
+pha_claims_calyear <- dbGetQuery(
+  db_apde51,
+  "SELECT year, id_apde, age_yr, gender_me, race_me, race_eth_me, 
+  enroll_type, full_criteria, 
+  pha_agency, pha_subsidy, pha_voucher, pha_operator, pha_portfolio, 
+  geo_zip, pt
+  FROM stage.mcaid_mcare_pha_elig_calyear
+  WHERE pha = 1 AND pop_ever = 1")
+
+
+#### JOIN DATA ####
+
+
 
 #### Set up key variables ####
+
+
+
 ### Yesler Terrace and scattered sites indicators
 yt_mcaid_final <- yt_flag(pha_mcaid_final, unit = pid2, prop_id = property_id,
                           prop_name = property_name, address = unit_add_h)

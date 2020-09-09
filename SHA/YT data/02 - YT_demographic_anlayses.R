@@ -94,19 +94,19 @@ relabel_f <- function(df) {
 }
 
 # Write function to look over all demogs of interest
-yt_demogs_f <- function(df, group = quos(yt), unit = pid2, period = "year") {
+yt_demogs_f <- function(df, group = quos(yt), unit = pid2, 
+                        period = c("year", "quarter", "month", "date")) {
   
   unit2 <- enquo(unit)
+  period <- match.arg(period)
   origin <- "1970-01-01"
   
   result <- popcount(df, group_var = group, yearmin = 2012, yearmax = 2018,
                      period = period, unit = !!unit2,
-                     numeric = F) %>%
-    mutate(date = ifelse(
-      period == "year", year(date),
-      ifelse(period == "quarter", quarter(date, with_year = T),
-             ifelse(period == "month", format(as.Date(date), "%Y-%m"),
-                    date)))
+                     numeric = F) 
+
+  result <- result %>%
+    mutate(date = lubridate::year(date)
     ) %>%
     # case_when throwing evaluation error due to formats
     # mutate(date = case_when(

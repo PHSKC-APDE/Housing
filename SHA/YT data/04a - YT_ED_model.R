@@ -21,7 +21,7 @@ options(max.print = 350, tibble.print_max = 30, scipen = 999)
 library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
 library(housing) # contains many useful functions for analyses
-library(medicaid) # contains many useful functions for analyses
+library(claims) # contains many useful functions for analyses
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(reshape2) # Used to reshape data
@@ -150,7 +150,7 @@ system.time(
                                length16, length17, length18, 
                                hh_inc_12_cap, hh_inc_13_cap, hh_inc_14_cap,
                                hh_inc_15_cap, hh_inc_16_cap, hh_inc_17_cap, hh_inc_18_cap
-                               FROM housing_mcaid_yt")
+                               FROM stage.mcaid_pha_yt")
   )
 
 # Filter to only include YT and SS residents
@@ -1163,7 +1163,7 @@ m_zero_boot <- boot(yt_ed_all_yr, boot_zero_f, R = 100, parallel = "snow", ncpus
 
 
 
-#### Run marginal structural model ####
+#### Run marginal structural model (used in paper) ####
 # Set up IPT weights and join back
 w1 <- ipwtm(exposure = yt, 
             family = "binomial",
@@ -1233,7 +1233,7 @@ summary(m_msm_nb)
 exp(cbind(Estimate = coef(m_msm_nb), confint(m_msm_nb)))
 
 
-# Run GEE Poisson MSM
+# Run GEE Poisson MSM (used in paper)
 m_msm_gee <- geeglm(ed_count ~ yt*year_0 + ethn_c + gender_c + age12 + 
                       length12 + inc_min + offset(log(pt)),
                     id = pid2, corstr = "independence",

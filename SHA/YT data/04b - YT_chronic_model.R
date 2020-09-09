@@ -149,7 +149,8 @@ yt_ss_30 <- yt_ss_30 %>%
     !is.na(age14) ~ age14 - 2,
     !is.na(age15) ~ age15 - 3,
     !is.na(age16) ~ age16 - 4,
-    !is.na(age17) ~ age17 - 5
+    !is.na(age17) ~ age17 - 5,
+    !is.na(age18) ~ age18 - 6
   ))
 
 # Set up length12 for everyone even if missing (may make negative #s)
@@ -160,7 +161,8 @@ yt_ss_30 <- yt_ss_30 %>%
     !is.na(length14) ~ length14 - 2,
     !is.na(length15) ~ length15 - 3,
     !is.na(length16) ~ length16 - 4,
-    !is.na(length17) ~ length17 - 5
+    !is.na(length17) ~ length17 - 5,
+    !is.na(length18) ~ length18 - 6
   ))
 
 
@@ -168,7 +170,7 @@ yt_ss_30 <- yt_ss_30 %>%
 # Only need age and length from baseline (2012)
 yt_ss_30 <- yt_ss_30 %>%
   select(pid2, mid, year_code, yt, yt_orig, ethn_c, gender_c, age12,
-         length12, hh_inc_12_cap:hh_inc_17_cap, pt) %>%
+         length12, hh_inc_12_cap:hh_inc_18_cap, pt) %>%
   rename(year = year_code) %>%
   distinct()
 
@@ -203,7 +205,7 @@ yt_ss_chronic <- yt_ss_chronic %>%
   group_by(pid2) %>%
   mutate(cens_l = ifelse((is.na(lag(year, 1)) & year > 2012) | 
                            (year - lag(year, 1) > 1 & !is.na(lag(year, 1))), 1, 0),
-         cens_r = ifelse((is.na(lead(year, 1)) & year <= 2018) | 
+         cens_r = ifelse((is.na(lead(year, 1)) & year <= 2019) | 
                            (lead(year, 1) - year > 1 & !is.na(lead(year, 1))), 1, 0),
          # Take first non-missing hh_inc
          inc_min = hh_inc_cap[which(!is.na(hh_inc_cap))[1]]
@@ -220,7 +222,7 @@ yt_chronic <- yt_ss_chronic %>%
   mutate(year_0 = year - 2012) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
              is.na(age12) | is.na(length12) | is.na(hh_inc_cap)) &
-           year <= 2018) %>%
+           year <= 2019) %>%
   # Set up cumulative sum for time in YT since redevelopment
   mutate(yt_cumsum = ifelse(yt == 1 & !is.na(yt), 1, 0)) %>%
   # Make lagged variables
@@ -245,7 +247,7 @@ yt_orig_chronic <- yt_chronic %>%
   mutate(year_0 = year - 2012) %>%
   filter(!(is.na(ethn_c) | is.na(gender_c) | 
              is.na(age12) | is.na(length12) | is.na(hh_inc_cap)) &
-           year <= 2018)
+           year <= 2019)
 yt_orig_chronic <- as.data.frame(yt_orig_chronic)
 
 
@@ -291,9 +293,9 @@ predict_f <- function(model, df, group_var, group1, group2, yt_only = F) {
     mutate(adj_pred = predict(model, newdata = df, type = "response"))
   
   if (yt_only == T) {
-    predicted <- predicted %>% filter(year < 2018 & yt == 1)
+    predicted <- predicted %>% filter(year < 2019 & yt == 1)
   } else(
-    predicted <- predicted %>% filter(year < 2018)
+    predicted <- predicted %>% filter(year < 2019)
   )
   
   predicted <- predicted %>%
@@ -409,7 +411,7 @@ summary_f <- function(df, outcome, outcome_name = NULL) {
   outcome_quo <- enquo(outcome)
   
   output <- df %>%
-    filter(year < 2018) %>%
+    filter(year < 2019) %>%
     group_by(yt, year) %>%
     summarise(success = sum(!!outcome_quo), failure = length(!!outcome_quo) - sum(!!outcome_quo)) %>%
     ungroup() %>%
@@ -580,7 +582,7 @@ chronic_plot_plain <- ggplot(data = chronic_combined, aes(x = year)) +
   # ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
   ylab("Percent") +
-  geom_label_repel(aes(y = prop, label=ifelse(year %in% c(2012, 2017), round(prop, 1), ''))) +
+  geom_label_repel(aes(y = prop, label=ifelse(year %in% c(2012, 2018), round(prop, 1), ''))) +
   # expand_limits(y=0) +
   theme(plot.title = element_text(size = 20),
         axis.text = element_text(size = 12),
