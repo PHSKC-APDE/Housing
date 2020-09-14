@@ -43,7 +43,7 @@ if (UW == TRUE) {
 #### Bring in data and sort ####
 pha_cleanadd <- readRDS(file.path(housing_path, pha_cleanadd_fn))
 pha_cleanadd_sort <- pha_cleanadd %>% arrange(pid, act_date, agency_new, prog_type)
-
+}
 
 #### Create key variables ####
 ### Final agency and program fields
