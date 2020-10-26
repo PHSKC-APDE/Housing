@@ -29,6 +29,7 @@ library(broom) # Calculates CIs for GEE models
 library(ipw) # Used to make marginal structural models
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+manuscript_path <- "C:/Users/mathesal/King County/CDIP - Yesler_Terrace/Presentations, Papers, Conferences/2019 health outcomes paper"
 
 #### Connect to the SQL server ####
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -591,15 +592,30 @@ chronic_plot_plain <- ggplot(data = chronic_combined, aes(x = year)) +
         legend.title = element_blank(),
         legend.text = element_text(size = 12),
         legend.position = "bottom",
-        panel.background = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.box.background = element_rect(fill = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
         panel.grid.major = element_line(color = "grey40"),
         panel.grid.major.x = element_blank(),
         axis.line.y.left = element_line(),
         panel.spacing.y = unit(1.5, "lines"),
+        plot.background = element_rect(fill = "transparent", color = NA),
         strip.text.y = element_text(size = 11)
   )
-chronic_plot_plain + facet_grid(outcome ~ .)
+manuscript_chronic_plot <- chronic_plot_plain + facet_grid(outcome ~ .)
 chronic_plot_plain + facet_grid(outcome ~ ., scales = "free_y")
+
+manuscript_chronic_plot
+
+
+# Save plot and file associated with it
+ggsave(manuscript_chronic_plot, 
+       filename = file.path(manuscript_path, "chronic_plot.png"),
+       bg = "transparent")
+write.csv(chronic_combined, 
+          file = file.path(manuscript_path, "chronic_plot_data.csv"), 
+          row.names = F)
+
 
 
 #### MODELS ####
