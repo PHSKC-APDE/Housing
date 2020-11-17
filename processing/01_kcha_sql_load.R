@@ -76,15 +76,23 @@ if(!require(phonics)){
   require(phonics)
 }
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-# housing_source_dir <- "local_path"
+housing_source_dir <- "local_path"
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA, "kcha_data")
 
 if (sql == TRUE) {
-  db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+  db_claims <- DBI::dbConnect(odbc::odbc(),
+                              driver = "ODBC Driver 17 for SQL Server",
+                              server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                              database = "hhs_analytics_workspace",
+                              uid = keyring::key_list("hhsaw_dev")[["username"]],
+                              pwd = keyring::key_get("hhsaw_dev", keyring::key_list("hhsaw_dev")[["username"]]),
+                              Encrypt = "yes",
+                              TrustServerCertificate = "yes",
+                              Authentication = "ActiveDirectoryPassword")
 }
 
 #####################################
@@ -137,6 +145,15 @@ if (add_2018 == TRUE) {
   kcha_p3_2018_2018 <- fread(file = file.path(kcha_path, panel_3_2018_2018_fn), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
+  kcha_p1_2019_2019 <- fread(file = file.path(kcha_path, panel_1_2019_2019_fn),
+                             na.strings = c("NA", "", "NULL", "N/A", "."), 
+                             stringsAsFactors = F)
+  kcha_p2_2019_2019 <- fread(file = file.path(kcha_path, panel_2_2019_2019_fn), 
+                             na.strings = c("NA", "", "NULL", "N/A", "."), 
+                             stringsAsFactors = F)
+  kcha_p3_2019_2019 <- fread(file = file.path(kcha_path, panel_3_2019_2019_fn), 
+                             na.strings = c("NA", "", "NULL", "N/A", "."), 
+                             stringsAsFactors = F)
 }
 
 
@@ -154,7 +171,7 @@ if (UW == TRUE) {
 }
 
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/processing/Field%20name%20mapping.csv"), 
                    header = T, stringsAsFactors = F)
 
 
@@ -294,6 +311,10 @@ kcha_2018_2018_full <- list(kcha_p1_2018_2018, kcha_p2_2018_2018, kcha_p3_2018_2
     dtf1, dtf2, by = c("householdid", "certificationid", "vouchernumber", "h2a", "h2b")), .)
 nrow(kcha_2018_2018_full) == nrow(kcha_p1_2018_2018)
 
+kcha_2019_2019_full <- list(kcha_p1_2019_2019, kcha_p2_2019_2019, kcha_p3_2019_2019) %>%
+  Reduce(function(dtf1, dtf2) full_join(
+    dtf1, dtf2, by = c("householdid", "certificationid", "vouchernumber", "h2a", "h2b")), .)
+nrow(kcha_2019_2019_full) == nrow(kcha_p1_2019_2019)
 
 ### Rename and reformat a few variables to make for easier appending
 # Dates in older data come as integers with dropped leading zeros 
@@ -319,12 +340,17 @@ kcha_2018_2018_full <- kcha_2018_2018_full %>%
   mutate_at(vars(h2b, h2h, starts_with("h3e")),
             funs(as.Date(., format = "%m/%d/%Y")))
 
+kcha_2019_2019_full <- kcha_2019_2019_full %>%
+  mutate_at(vars(h2b, h2h, starts_with("h3e")),
+            funs(as.Date(., format = "%m/%d/%Y")))
 
 # Keep all SSNs as characters for now 
 # (2016/17 data already all character with newer version of fread)
 kcha_2018_2018_full <- kcha_2018_2018_full %>%
   mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
 
+kcha_2019_2019_full <- kcha_2019_2019_full %>%
+  mutate_at(vars(starts_with("h3n")), funs(as.character(.)))
 
 # Fix up some inconsistent naming in income fields of <2015 data
 kcha_2004_2015_full <- kcha_2004_2015_full %>%
@@ -351,16 +377,24 @@ kcha_2018_2018_full <- kcha_2018_2018_full %>%
 kcha_2018_2018_full <- kcha_2018_2018_full %>%
   rename(vouch_num = vouchernumber)
 
+# There are some 5+4 ZIPs in 2019 data, remove and make integer
+kcha_2019_2019_full <- kcha_2019_2019_full %>%
+  mutate(h5a5 = as.numeric(str_replace(h5a5, "-", "")))
+
+# Renaming voucher number field here makes it easier to join with EOP file later
+kcha_2019_2019_full <- kcha_2019_2019_full %>%
+  rename(vouch_num = vouchernumber)
 
 # Add source field to track where each row came from
 kcha_2004_2015_full <- kcha_2004_2015_full %>% mutate(kcha_source = "kcha2015")
 kcha_2016_2016_full <- kcha_2016_2016_full %>% mutate(kcha_source = "kcha2016")
 kcha_2017_2017_full <- kcha_2017_2017_full %>% mutate(kcha_source = "kcha2017")
 kcha_2018_2018_full <- kcha_2018_2018_full %>% mutate(kcha_source = "kcha2018")
+kcha_2019_2019_full <- kcha_2019_2019_full %>% mutate(kcha_source = "kcha2019")
 
 ### Append latest extract
 kcha <- bind_rows(kcha_2004_2015_full, kcha_2016_2016_full, kcha_2017_2017_full,
-                  kcha_2018_2018_full)
+                  kcha_2018_2018_full, kcha_2019_2019_full)
 
 
 
@@ -839,11 +873,11 @@ if (sql == TRUE) {
   
   tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_kcha")
   
-  if (dbExistsTable(db_apde51, tbl_id_meta)) {
-    dbRemoveTable(db_apde51, tbl_id_meta)
+  if (dbExistsTable(db_claims, tbl_id_meta)) {
+    dbRemoveTable(db_claims, tbl_id_meta)
   }
   
-  dbWriteTable(db_apde51, tbl_id_meta, kcha_long, overwrite = T)
+  dbWriteTable(db_claims, tbl_id_meta, kcha_long, overwrite = T)
   rm(tbl_id_meta)
 }
 
