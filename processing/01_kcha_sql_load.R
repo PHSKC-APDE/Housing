@@ -79,9 +79,11 @@ if(!require(phonics)){
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-# housing_source_dir <- "local_path"
+housing_source_dir <- "local path"
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA, "kcha_data")
+
+
 
 if (sql == TRUE) {
   db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -179,7 +181,7 @@ df_dedups <- lapply(dfs, function(data) {
   data <- data %>% 
     mutate_at(vars(contains("h3a"), contains("h3e"), contains("h3m"),
                    contains("h5j"), contains("h19")), 
-              funs(ifelse(. == 0, NA, .))) %>%
+              list(~ifelse(. == 0, NA, .))) %>%
     distinct()
   return(data)
 })
@@ -365,6 +367,10 @@ kcha_2017_2017_full <- kcha_2017_2017_full %>% rename(spec_vouch = spec_voucher)
 # There are some 5+4 ZIPs in 2018 data, remove and make integer
 kcha_2018_2018_full <- kcha_2018_2018_full %>%
   mutate(h5a5 = as.numeric(str_replace(h5a5, "-", "")))
+
+kcha_2019_2019_full <- kcha_2019_2019_full %>%
+  mutate(h5a5 = as.numeric(str_replace(h5a5, "-", "")))
+
 
 # Renaming voucher number field here makes it easier to join with EOP file later
 kcha_2018_2018_full <- kcha_2018_2018_full %>%
@@ -720,12 +726,12 @@ kcha_long <- reshape_f(df = kcha, min = 1, max = 14)
 
 # Get rid of white space (focus on variables used to filter first to save memory)
 kcha_long <- kcha_long %>%
-  mutate_at(vars(h3a, h3b, h3c, h3n, starts_with("h5a")), funs(str_trim(.)))
+  mutate_at(vars(h3a, h3b, h3c, h3n, starts_with("h5a")), list(~str_trim(.)))
 
 
 # Make mbr_num (both created and original data versions) and unit_zip a number
 kcha_long <- mutate_at(kcha_long, vars(h3a, mbr_num, h19a2, h5a5), 
-                       funs(as.numeric(.)))
+                       list(~as.numeric(.)))
 
 
 #### REORGANIZE INCOME FIELDS ####
@@ -872,14 +878,15 @@ if (sql == TRUE) {
 ##### Remove temporary files #####
 #### Remove temporary files ####
 rm(list = ls(pattern = "kcha_2004"))
-rm(list = ls(pattern = "kcha_201[6|7|8]"))
+rm(list = ls(pattern = "kcha_201[6|7|8|9]"))
 rm(list = ls(pattern = "panel_"))
 rm(list = ls(pattern = "p[1|2|3]_"))
 rm(list = c("fields", "reshape_f", "kcha_path"))
-rm(hhold_size)
+rm(hh_size)
 rm(list = c("kcha_portfolio_codes", "kcha_portfolio_codes_fn"))
 rm(kcha_eop_fn)
 rm(kcha)
+rm(kcha_long)
 rm(METADATA)
 rm(set_data_envr)
 rm(add_2018)
