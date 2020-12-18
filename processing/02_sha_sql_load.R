@@ -36,11 +36,12 @@ library(RCurl)
 library(lubridate)
 library(RecordLinkage)
 library(phonics)
+library(stringr)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-housing_source_dir <- "local path"
+housing_source_dir <- "C:/Users/jwhitehurst/OneDrive - King County/GitHub/Housing/processing/"
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA, "sha_data")
 
@@ -760,7 +761,7 @@ if (UW == TRUE) {
 } else if (add_2018 == T) {
   sha6 <- sha6 %>% mutate(sha_source = "sha6")
   sha_ph <- bind_rows(sha1, sha2, sha3, sha6) %>%
-  select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
+    select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 } else {
   sha_ph <- bind_rows(sha1, sha2, sha3) %>%
     select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
@@ -992,11 +993,19 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn &
 # FIX 3: Make sure the HoH has member number = 1
 
 ### Set up temp household ID  unique to a household, action date, and cert/asset IDs
-sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, unit_city, 
-                                act_date, act_type, cert_id, incasset_id)
+sha <- sha %>% 
+  group_by(hh_id, prog_type, unit_add, unit_city, act_date, act_type, cert_id, incasset_id) %>% 
+  mutate(hh_id_temp = cur_group_id()) %>%
+  ungroup()
 
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
+# Check for suffixes in first names and move them to the lnamesuf/hh_lnamesuf columns
+sha <- sha %>%
+  mutate(hh_lnamesuf = ifelse(str_locate(hh_fname, c(" JR", " SR")) > 0, str_trim(substring(hh_fname, str_locate(hh_fname, c(" JR", " SR")))), NA),
+         hh_fname = ifelse(str_locate(hh_fname, c(" JR", " SR")) > 0, str_trim(substring(hh_fname, 1, str_locate(hh_fname, c(" JR", " SR")))), NA),
+         lnamesuf = ifelse(str_locate(fname, c(" JR", " SR")) > 0, str_trim(substring(fname, str_locate(fname, c(" JR", " SR")))), NA),
+         fname = ifelse(str_locate(fname, c(" JR", " SR")) > 0, str_trim(substring(fname, 1, str_locate(fname, c(" JR", " SR")))), NA))
 # Check for households with >1 people listed as HoH
 multi_hoh <- sha %>%
   group_by(hh_id_temp) %>%
