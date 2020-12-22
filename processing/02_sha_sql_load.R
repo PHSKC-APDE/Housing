@@ -41,8 +41,8 @@ library(stringr)
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
 
-housing_source_dir <- "C:/Users/jwhitehurst/OneDrive - King County/GitHub/Housing/processing/"
-METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA, "sha_data")
 
 if(sql == TRUE) {
@@ -111,6 +111,8 @@ sha_prog_codes <- read.xlsx(file.path(
 # Bring in portfolio codes
 sha_portfolio_codes  <- read.xlsx(file.path(
   sha_path, sha_prog_codes_fn), 1)
+
+
 
 #### PREP DATA SETS FOR JOINING ####
 ### First deduplicate data to avoid extra rows being made when joined
@@ -786,6 +788,8 @@ sha_ph <- mutate(sha_ph,
                  portfolio = ifelse(str_detect(portfolio, "Lake City Court"),
                                     "Lake City Court", portfolio))
 
+
+
 #### JOIN HCV FILES ####
 # Clean up mismatching variables
 sha4_2004_2006 <- sha4_2004_2006 %>%
@@ -909,8 +913,12 @@ if (UW == TRUE) {
                   assist_eitc)
 }
 
-#### Append data ####
-sha <- bind_rows(sha_ph, sha_hcv)
+
+#### APPEND DATA ####
+sha <- bind_rows(sha_ph, sha_hcv) %>% 
+  mutate_at(vars(contains("name"), contains("unit"), 
+                 prog_type, vouch_type, portfolio, cost_pha), 
+            list(~ toupper(.)))
 
 
 ### Fix up conflicting and missing income
@@ -1001,11 +1009,30 @@ sha <- sha %>%
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
 # Check for suffixes in first names and move them to the lnamesuf/hh_lnamesuf columns
+suffix <- c(" JR", " SR"," II", " IV", " III", " LLL", " 2ND", " 111", " JR.")
+
 sha <- sha %>%
-  mutate(hh_lnamesuf = ifelse(str_locate(hh_fname, c(" JR", " SR")) > 0, str_trim(substring(hh_fname, str_locate(hh_fname, c(" JR", " SR")))), NA),
-         hh_fname = ifelse(str_locate(hh_fname, c(" JR", " SR")) > 0, str_trim(substring(hh_fname, 1, str_locate(hh_fname, c(" JR", " SR")))), NA),
-         lnamesuf = ifelse(str_locate(fname, c(" JR", " SR")) > 0, str_trim(substring(fname, str_locate(fname, c(" JR", " SR")))), NA),
-         fname = ifelse(str_locate(fname, c(" JR", " SR")) > 0, str_trim(substring(fname, 1, str_locate(fname, c(" JR", " SR")))), NA))
+  mutate(hh_lnamesuf = ifelse(str_detect(hh_fname, paste(suffix, collapse="|")), 
+                              str_trim(str_sub(hh_fname, 
+                                               str_locate(hh_fname, paste(suffix, collapse="|"))[,1],
+                                               str_locate(hh_fname, paste(suffix, collapse="|"))[,2])), 
+                              hh_lnamesuf),
+         hh_fname = ifelse(str_detect(hh_fname, paste(suffix, collapse="|")), 
+                           str_trim(str_sub(hh_fname, 
+                                            1,
+                                            str_locate(hh_fname, paste(suffix, collapse="|"))[,1])), 
+                           hh_fname),
+         lnamesuf = ifelse(str_detect(fname, paste(suffix, collapse="|")), 
+                           str_trim(str_sub(fname, 
+                                            str_locate(fname, paste(suffix, collapse="|"))[,1],
+                                            str_locate(fname, paste(suffix, collapse="|"))[,2])), 
+                           lnamesuf),
+         fname = ifelse(str_detect(fname, paste(suffix, collapse="|")), 
+                        str_trim(str_sub(fname, 
+                                         1,
+                                         str_locate(fname, paste(suffix, collapse="|"))[,1])), 
+                        fname))
+
 # Check for households with >1 people listed as HoH
 multi_hoh <- sha %>%
   group_by(hh_id_temp) %>%
