@@ -1168,13 +1168,24 @@ if(sql == TRUE) {
   if (dbExistsTable(db_apde51, tbl_id_meta)) {
     dbRemoveTable(db_apde51, tbl_id_meta)
   }
-  
-  dbWriteTable(db_apde51, tbl_id_meta, sha, overwrite = T,
+  # Was having network issues trying to write the entire table at once so split it up
+  dbWriteTable(db_apde51, tbl_id_meta, sha[1:250000,], overwrite = T,
                field.types = c(
                  act_date = "date",
                  admit_date = "date",
-                 dob = "date"
+                 dob = "date",
+                 reexam_date = "date",
+                 mtw_admit_date = "date",
+                 list_date = "date",
+                 move_in_date = "date",
+                 next_review_date = "date"
                ))
+  dbWriteTable(db_apde51, tbl_id_meta, sha[250001:500000,], 
+               overwrite = F, append = T)
+  dbWriteTable(db_apde51, tbl_id_meta, sha[500001:900000,], 
+               overwrite = F, append = T)
+  dbWriteTable(db_apde51, tbl_id_meta, sha[900001:1228936,], 
+               overwrite = F, append = T)
   rm(tbl_id_meta)
 }
 
