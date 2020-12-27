@@ -34,7 +34,9 @@ library(RCurl)
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
-METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 
@@ -43,29 +45,28 @@ set_data_envr(METADATA,"combined")
 if(sql == TRUE) {
   db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
   # This takes ~65 seconds
-  tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_sha")
-  system.time(sha <- DBI::dbReadTable(db_apde51, tbl_id_meta))
+  system.time(sha <- DBI::dbReadTable(db_apde51, DBI::Id(schema = "stage", table = "pha_sha")))
 
   # This takes ~40 seconds
-  tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_kcha")
-  system.time(kcha_long <- DBI::dbReadTable(db_apde51, tbl_id_meta))
+  system.time(kcha_long <- DBI::dbReadTable(db_apde51, DBI::Id(schema = "stage", table = "pha_kcha")))
 }
 
 #### Fix up variable formats ####
 # Vars mtw_admit_date & move_in_date missing in UW files
 # Switched to catch-all terms to accommodate differences in UW/PHSKC files
 sha <- sha %>% mutate_at(vars(contains("date"), contains("dob")),
-                         funs(as.Date(., format = "%Y-%m-%d")))
+                         list(~ as.Date(., format = "%Y-%m-%d")))
+sha <- sha %>% mutate_at(vars(contains("zip")), list(~ as.character(.)))
 
-sha <- sha %>% mutate(bdrm_voucher = as.numeric(bdrm_voucher))
+sha <- sha %>% mutate_at(vars(unit_year, bdrm_voucher), 
+                         list(~ as.numeric(.)))
+
 
 kcha_long <- kcha_long %>% mutate_at(vars(act_date, admit_date, dob, hh_dob),
-                                     funs(as.Date(., format = "%Y-%m-%d")))
+                                     list(~ as.Date(., format = "%Y-%m-%d")))
+kcha_long <- kcha_long %>% mutate_at(vars(contains("zip"), unit_type), list(~ as.character(.)))
 
-if (UW == F) {
-  # Not sure if UW has this field. If so, can remove the if statement.
-  kcha_long <- kcha_long %>% mutate(list_zip = as.numeric(list_zip))
-}
+
   
 
 #### Make variable to track where data came from ####
@@ -82,10 +83,12 @@ pha <- bind_rows(kcha_long, sha)
 
 #### Clean up data ####
 ### Lots of variables have white space
-pha <- trim_f(pha, relcode, unit_add, unit_apt, unit_apt2, 
-              unit_city, unit_state, contains("name"), 
-              prog_type, vouch_type, property_name, 
-              property_type, portfolio, cost_pha)
+pha <- pha %>%
+  mutate_at(vars(relcode, unit_add, unit_apt, unit_apt2, 
+                 unit_city, unit_state, contains("name"), 
+                 prog_type, vouch_type, property_name, 
+                 property_type, portfolio, cost_pha),
+            list(~str_trim(.)))
 
 
 ### Fix up inconsistent capitalization in key variables
@@ -93,7 +96,7 @@ pha <- trim_f(pha, relcode, unit_add, unit_apt, unit_apt2,
 pha <- pha %>% mutate_at(vars(contains("name"), contains("unit"), 
                               prog_type, vouch_type, property_name, 
                               property_type, portfolio, cost_pha), 
-                         funs(toupper))
+                         list(~ toupper(.)))
 
 
 ### Relative code
@@ -103,18 +106,22 @@ pha <- pha %>%
 
 ### Social security numbers
 pha <- pha %>%
-  # Some SSNs are HUD/PHA-generated IDs so make two fields
+  # Some SSNs are HUD/PHA-generated IDs so make two fields (_c and _new)
   # (note that conversion of legitimate SSN to numeric strips out 
   # leading zeros and removes rows with characters)
+  # Need to restore leading zeros
   # Remove dashes first
-  mutate_at(vars(ssn, hh_ssn), funs(str_replace_all(., "-", ""))) %>%
+  mutate_at(vars(ssn, hh_ssn), list(~ str_replace_all(., "-", ""))) %>%
   mutate(ssn_c = ifelse(str_detect(ssn, "[:alpha:]"), ssn, ""),
          hh_ssn_c = ifelse(str_detect(hh_ssn, "[:alpha:]"), hh_ssn, "")) %>%
-  mutate_at(vars(ssn, hh_ssn), funs(new = round(as.numeric(.), digits = 0)))
+  mutate_at(vars(ssn, hh_ssn), 
+            list(new = ~ str_pad(round(as.numeric(.), digits = 0),
+                                 width = 9, side = "left", pad = "0")))
 
 # ID junk SSNs and IDs
 pha <- junk_ssn_num(pha, ssn_new)
 pha <- junk_ssn_char(pha, ssn_c)
+
 
 ### Billed agency (just fix up KCHA and other common ones)
 pha <- pha %>%
@@ -157,46 +164,55 @@ pha <- pha %>%
 # the mname field (and the initials are not always the same)
 # Need to talk with PHAs to determine best approach
 pha <- pha %>% mutate(
-  fname_new = ifelse(
-    str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]"), str_sub(fname, 1, -3), fname),
-  mname_new = 
-    ifelse(str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") & 
-             is.na(mname), str_sub(fname, -1), 
-           ifelse(str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") &
-                    !is.na(mname), 
-                  paste(str_sub(fname, -1), mname, sep = " "), mname)))
+  fname_new = ifelse(str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]"), 
+                     str_sub(fname, 1, -3), 
+                     fname),
+  mname_new = case_when(
+    str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") & is.na(mname) ~ str_sub(fname, -1),
+    str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") &
+      !is.na(mname) ~ paste(str_sub(fname, -1), mname, sep = " "),
+    TRUE ~ mname))
 
 ### Last name suffix
-# Need to look for suffixes in last name if wanting to merge with SHA data
-suffix3 <- c(" JR", " SR"," II", " IV")
-suffix4 <- c(" III", " LLL", " 2ND", " 111", " JR.")
+# Need to look for suffixes in first and last name if wanting to merge with SHA data
+suffix <- c(" JR", " SR"," II", " IV", " III", " LLL", " 2ND", " 111", " JR.")
 
 pha <- pha %>%
-  # Suffixes in last names
-  mutate(
-    lnamesuf_new = ifelse(str_detect(str_sub(lname, -3, -1), paste(suffix3, collapse="|")),
-                          str_sub(lname, -2, -1), ""),
-    lname_new = ifelse(str_detect(str_sub(lname, -3, -1), paste(suffix3, collapse="|")), 
-                       str_sub(lname, 1, -4), lname),
-    lnamesuf_new = ifelse(str_detect(str_sub(lname, -4, -1), paste(suffix4, collapse = "|")),
-                          str_sub(lname, -3, -1), lnamesuf_new),
-    lname_new = ifelse(str_detect(str_sub(lname, -4, -1), paste(suffix4, collapse = "|")),
-                       str_sub(lname, 1, -5), lname_new),
-    
-    # Suffixes in first names
-    lnamesuf_new = ifelse(str_detect(str_sub(fname_new, -3, -1), 
-                                     paste(suffix3, collapse="|")),
-                          str_sub(fname_new, -2, -1), lnamesuf_new),
-    fname_new = ifelse(str_detect(str_sub(fname_new, -3, -1), paste(suffix3, collapse="|")),
-                       str_sub(fname_new, 1, -4), fname_new),
-    lnamesuf_new = ifelse(str_detect(str_sub(fname_new, -4, -1), paste(suffix4, collapse="|")),
-                          str_sub(fname_new, -3, -1), lnamesuf_new),
-    fname_new = ifelse(str_detect(str_sub(fname_new, -4, -1), paste(suffix4, collapse="|")),
-                       str_sub(fname_new, 1, -5), fname_new),
-    
-    # Remove any punctuation or NAs
-    lnamesuf_new = str_replace_all(lnamesuf_new, pattern = "[:punct:]|[:blank:]", replacement = ""),
-    lnamesuf_new = ifelse(is.na(lnamesuf_new), "", lnamesuf_new)
+  # Suffixes in first names
+  mutate(lnamesuf_new = 
+           case_when(str_detect(fname_new, paste(suffix, collapse="|")) & is.na(lnamesuf) ~ 
+                       str_trim(str_sub(fname_new, 
+                                        str_locate(fname_new, paste(suffix, collapse="|"))[,1],
+                                        str_locate(fname_new, paste(suffix, collapse="|"))[,2])),
+                     str_detect(fname_new, paste(suffix, collapse="|")) & !is.na(lnamesuf) ~ 
+                       paste(lnamesuf, str_trim(str_sub(fname_new, 
+                                                        str_locate(fname_new, paste(suffix, collapse="|"))[,1],
+                                                        str_locate(fname_new, paste(suffix, collapse="|"))[,2]))),
+                     TRUE ~ lnamesuf),
+         fname_new = ifelse(str_detect(fname_new, paste(suffix, collapse="|")), 
+                        str_trim(str_sub(fname_new, 
+                                         1,
+                                         str_locate(fname_new, paste(suffix, collapse="|"))[,1])), 
+                        fname),
+         # Suffixes in last names
+         lnamesuf_new = 
+           case_when(str_detect(lname, paste(suffix, collapse="|")) & is.na(lnamesuf) ~ 
+                       str_trim(str_sub(lname, 
+                                        str_locate(lname, paste(suffix, collapse="|"))[,1],
+                                        str_locate(lname, paste(suffix, collapse="|"))[,2])),
+                     str_detect(lname, paste(suffix, collapse="|")) & !is.na(lnamesuf) ~ 
+                       paste(lnamesuf, str_trim(str_sub(lname, 
+                                                        str_locate(lname, paste(suffix, collapse="|"))[,1],
+                                                        str_locate(lname, paste(suffix, collapse="|"))[,2]))),
+                     TRUE ~ lnamesuf),
+         lname_new = ifelse(str_detect(lname, paste(suffix, collapse="|")), 
+                        str_trim(str_sub(lname, 
+                                         1,
+                                         str_locate(lname, paste(suffix, collapse="|"))[,1])), 
+                        lname),
+         # Remove any punctuation or NAs
+         lnamesuf_new = str_replace_all(lnamesuf_new, pattern = "[:punct:]|[:blank:]", replacement = ""),
+         lnamesuf_new = ifelse(is.na(lnamesuf_new), "", lnamesuf_new)
   )
 
 #### Set up variables for matching ####
@@ -265,9 +281,9 @@ rm(pha_suffix)
 # Count the number of genders recorded for an individual (doesn't work for SSN = NA or 0)
 # Need to figure out how to ID most common or most recent last name for SSNs like 0 or NA
 pha <- pha %>%
-  mutate(gender_new = as.numeric(car::recode(gender, c("'F' = 1; 'female' = 1; 'Female' = 1; 
-                                                       'M' = 2; 'male  ' = 2; 'Male  ' = 2; 
-                                                       'NULL' = NA; else = NA"))))
+  mutate(gender_new = case_when(str_detect(str_trim(toupper(gender)), "^F$|^FEMALE$") ~ 1L,
+                                str_detect(str_trim(toupper(gender)), "^M|^MALE$") ~ 2L,
+                                TRUE ~ NA_integer_))
 
 pha <- setDT(pha)
 pha[, gender_new_cnt := if_else(ssn_new_junk == 0 | ssn_c_junk == 0, .N, as.integer(0)),
