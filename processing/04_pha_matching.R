@@ -33,26 +33,29 @@ library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
 library(lubridate) # used to manipulate dates
 library(RecordLinkage) # used to clean up duplicates in the data
-library(phonics) # used to extract phonetic version of names
-library(RJSONIO)
-library(RCurl)
+#library(phonics) # used to extract phonetic version of names
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
 eval(parse(text = script))
-METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 if (sql == TRUE) {
 #### Bring in data ####
 # Assumes pha_combining.R has been run at some point
-pha <- readRDS(file = paste0(housing_path, pha_fn))
+pha <- readRDS(file = file.path(housing_path, pha_fn))
 }
 
 ### Remove duplicate records in preparation for matching
 pha_dedup <- pha %>%
-  select(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, lname_new, fname_new:lnamesuf_new, 
-         lname_trim:fname_phon, lname_rec, fname_new_cnt:lnamesuf_new_cnt,
-         dob, dob_y:dob_cnt, gender_new, gender_new_cnt) %>%
+  select(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, 
+         lname_new, fname_new, mname_new, lname_new, lnamesuf_new, 
+         lname_trim, fname_trim, lname_phon, fname_phon, 
+         lname_rec, fname_new_cnt, mname_new_cnt, lnamesuf_new_cnt,
+         dob, dob_y, dob_mth, dob_d, dob_cnt, 
+         gender_new, gender_new_cnt) %>%
   distinct(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, lname_new, lnamesuf_new, 
            fname_new, mname_new, lname_rec, fname_new_cnt, mname_new_cnt,
            lnamesuf_new_cnt, dob, dob_y, dob_mth, dob_d, dob_cnt, gender_new, gender_new_cnt,
@@ -67,13 +70,12 @@ pha_dedup <- pha %>%
 # 05) Block on soundex lname, soundex fname, and DOB; match SSN, mname, gender, and lname suffix
 # 06) Block on soundex lname, soundex fname, and DOB; match combined SSN/HUD ID, mname, gender, and lname suffix
 
-#### Match #01 - block on SSN, soundex lname, and DOB year; match fname, mname, lname suffix, gender, and other DOB elements ####
+#### Match #01 - block on SSN, soundex lname, soundex fname, and DOB year; match mname, lname suffix, gender, and other DOB elements ####
 match1 <- compare.dedup(
-  pha_dedup, blockfld = c("ssn_new", "lname_trim", "dob_y"),
+  pha_dedup, blockfld = c("ssn_new", "lname_phon", "fname_phon", "dob_y"),
   strcmp = c("mname_new", "dob_mth", "dob_d", "gender_new", "lnamesuf_new"),
-  phonetic = c("lname_trim", "fname_trim"), phonfun = soundex,
-  exclude = c("ssn_c", "ssn_new_junk", "ssn_c_junk", "lname_new", "lname_phon", 
-              "fname_new", "fname_phon", "dob", "lname_rec", "fname_new_cnt", 
+  exclude = c("ssn_c", "ssn_new_junk", "ssn_c_junk", "lname_new", "lname_trim", 
+              "fname_new", "fname_trim", "dob", "lname_rec", "fname_new_cnt", 
               "mname_new_cnt", "lnamesuf_new_cnt", "dob_cnt", "gender_new_cnt"))
 
 # Using EpiLink approach
@@ -83,25 +85,17 @@ summary(classify1)
 pairs1 <- getPairs(classify1, single.rows = FALSE)
 
 
-# Fix formattings
+# Fix formatting
 pairs1 <- pairs1 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob = as.Date(dob, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new, ssn_new_junk, ssn_c_junk, dob_y, dob_mth, dob_d, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, dob_y, dob_mth, dob_d,  ssn_new_junk, ssn_c_junk,
                  fname_new_cnt, mname_new_cnt, lnamesuf_new_cnt, gender_new, 
                  gender_new_cnt, dob_cnt, Weight), 
-            funs(as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_c, lname_new, fname_new, mname_new, lnamesuf_new, lname_rec, 
-                 lname_trim, lname_phon, fname_trim, fname_phon), 
-            funs(as.character(.))
-  ) %>%
+            list(~ as.numeric(.))) %>%
+  mutate(dob = as.Date(dob, origin = "1970-01-01")) %>%
   filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair
+  # Propagate weight to both rows in a pair
   group_by(pair) %>%
   mutate(Weight = last(Weight)) %>%
   ungroup()
@@ -113,26 +107,26 @@ pairs1_full <- pairs1_full[ssn_new_junk == 0 | ssn_c_junk == 0]
 pairs1_full <- pairs1_full[, ':=' (
               # Use most recent name (this field should be the same throughout)
               lname_new_m1 = lname_rec,
-              # Take most common first name (for ties, the first ocurrance is used)
+              # Take most common first name (for ties, the first occurrence is used)
               fname_new_m1 = fname_new[which.max(fname_new_cnt)],
               # Take most common middle name (character(0) accounts for groups with no middle name)
-              # (for ties, the first ocurrance is used)
+              # (for ties, the first occurrence is used)
               mname_new_m1 = ifelse(identical(mname_new[which.max(mname_new_cnt)], character(0)),
                                     "", mname_new[which.max(mname_new_cnt)]),
               # Take most common last name suffix (character(0) accounts for groups with no suffix)
-              # (for ties, the first ocurrance is used)
+              # (for ties, the first occurrence is used)
               lnamesuf_new_m1 = ifelse(identical(lnamesuf_new[which.max(lnamesuf_new_cnt)], character(0)),
                                        "", lnamesuf_new[which.max(lnamesuf_new_cnt)]),
               # Take most common gender (character(0) accounts for groups with missing genders)
-              # (for ties, the first ocurrance is used)
+              # (for ties, the first occurrence is used)
               gender_new_m1 = ifelse(identical(gender_new[which.max(gender_new_cnt)], character(0)),
                                      "", gender_new[which.max(gender_new_cnt)]),
               # Take most common DOB (character(0) accounts for groups with missing DOBs)
-              # (for ties, the first ocurrance is used)
+              # (for ties, the first occurrence is used)
               dob_m1 = as.Date(ifelse(identical(dob[which.max(dob_cnt)], character(0)),
                                       "", dob[which.max(dob_cnt)]), origin = "1970-01-01"),
               # Keep track of most common variables for future matches
-              # If identical, the first ocurrance is used
+              # If identical, the first occurrence is used
               lname_rec_m1 = lname_rec,
               fname_new_cnt_m1 = fname_new_cnt[which.max(fname_new_cnt)],
               mname_new_cnt_m1 = ifelse(identical(mname_new_cnt[which.max(mname_new_cnt)], character(0)),
@@ -148,13 +142,15 @@ pairs1_full <- pairs1_full[, ':=' (
                                   NA,
                                   dob_cnt[which.max(dob_cnt)]),
               # Keep track of other variables for future matches
-              lname_trim_m1 = lname_trim,
-              lname_phon_m1 = lname_phon,
+              lname_trim_m1 = str_replace_all(lname_rec, "[:punct:]|[:digit:]|[:blank:]|`", ""),
               fname_trim_m1 = fname_trim[which.max(fname_new_cnt)],
               fname_phon_m1 = fname_phon[which.max(fname_new_cnt)],
               ssn_new_junk_m1 = ssn_new_junk,
               ssn_c_junk_m1 = ssn_c_junk), 
             by = "pair"]
+# Add in soundex version now the new trim lname is made
+pairs1_full <- pairs1_full[, lname_phon_m1 := RecordLinkage::soundex(lname_trim_m1)]
+
 pairs1_full <- pairs1_full[, list(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk,
                                   lname_new, fname_new, mname_new, lnamesuf_new,
                                   gender_new, dob, lname_new_m1, fname_new_m1, mname_new_m1, 
@@ -168,6 +164,7 @@ pairs1_full <- unique(pairs1_full,
                                          "fname_new", "mname_new", "dob", 
                                          "gender_new"))
 pairs1_full <- setDF(pairs1_full)
+
 
 # Make cleaner data for next deduplication process
 pha_complete <- left_join(pha_dedup, pairs1_full, 
@@ -205,11 +202,10 @@ pha_new <- pha_complete %>%
 
 #### Match #02 - Repeat match 01 but block on HUD ID instead of SSN ####
 match2 <- compare.dedup(
-  pha_new, blockfld = c("ssn_c", "lname_trim_m1", "dob_y_m1"),
+  pha_new, blockfld = c("ssn_c", "lname_phon_m1", "fname_phon_m1", "dob_y_m1"),
   strcmp = c("mname_new_m1", "dob_mth_m1", "dob_d_m1", "gender_new_m1", "lnamesuf_new_m1"),
-  phonetic = c("lname_trim_m1", "fname_trim_m1"), phonfun = soundex,
   exclude = c("ssn_new", "ssn_new_junk_m1", "ssn_c_junk_m1", "lname_new_m1", 
-              "lname_phon_m1", "fname_new_m1", "fname_phon_m1", "dob_m1", 
+              "lname_trim_m1", "fname_new_m1", "fname_trim_m1", "dob_m1", 
               "lname_rec_m1", "fname_new_cnt_m1", "mname_new_cnt_m1", 
               "lnamesuf_new_cnt_m1", "dob_cnt_m1", "gender_new_cnt_m1"))
 
@@ -221,24 +217,16 @@ pairs2 <- getPairs(classify2, single.rows = FALSE)
 
 
 pairs2 <- pairs2 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob_m1 = as.Date(dob_m1, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new, ssn_new_junk_m1, ssn_c_junk_m1, dob_y_m1, dob_mth_m1, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, ssn_new_junk_m1, ssn_c_junk_m1, dob_y_m1, dob_mth_m1, 
                  dob_d_m1, fname_new_cnt_m1, mname_new_cnt_m1, lnamesuf_new_cnt_m1, 
                  gender_new_m1, dob_cnt_m1, gender_new_cnt_m1, Weight), 
-            funs(as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_c, lname_new_m1, fname_new_m1, mname_new_m1, lname_rec_m1, 
-                 lname_trim_m1, lname_phon_m1, lnamesuf_new_m1, fname_trim_m1, 
-                 fname_phon_m1), funs(as.character(.))
-  ) %>%
+            list(~ as.numeric(as.character(.)))) %>%
+  mutate(dob_m1 = as.Date(dob_m1, origin = "1970-01-01")) %>%
   # Remove blank row
   filter(!(id == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair
+  # Propagate weight to both rows in a pair
   group_by(pair) %>%
   mutate(Weight = last(Weight)) %>%
   ungroup()
@@ -272,13 +260,13 @@ pairs2_full[, ':='
               dob_cnt_m2 = ifelse(identical(dob_cnt_m1[which.max(dob_cnt_m1)], character(0)),
                                   NA,
                                   dob_cnt_m1[which.max(dob_cnt_m1)]),
-              lname_trim_m2 = lname_trim_m1,
-              lname_phon_m2 = lname_phon_m1,
+              lname_trim_m2 = str_replace_all(lname_rec_m1, "[:punct:]|[:digit:]|[:blank:]|`", ""),
               fname_trim_m2 = fname_trim_m1[which.max(fname_new_cnt_m1)],
               fname_phon_m2 = fname_phon_m1[which.max(fname_new_cnt_m1)],
               ssn_new_junk_m2 = ssn_new_junk_m1,
               ssn_c_junk_m2 = ssn_c_junk_m1),
             by = "pair"]
+pairs2_full <- pairs2_full[, lname_phon_m2 := RecordLinkage::soundex(lname_trim_m2)]
 pairs2_full <- pairs2_full[, list(ssn_new, ssn_c, lname_new_m1, fname_new_m1, 
                                   mname_new_m1, lnamesuf_new_m1, gender_new_m1, 
                                   dob_m1, ssn_new_junk_m1, ssn_c_junk_m1, 
@@ -333,39 +321,63 @@ pha_new2 <- pha_complete2 %>%
 match3 <- compare.dedup(
   pha_new2, blockfld = c("ssn_new", "dob_y_m2"),
   strcmp = c("mname_new_m2", "dob_mth_m2", "dob_d_m2", "gender_new_m2", "lnamesuf_new_m2"),
-  phonetic = c("lname_trim_m2", "fname_trim_m2"), phonfun = soundex,
-  exclude = c("ssn_c", "ssn_new_junk_m2", "ssn_c_junk_m2", "lname_new_m2", 
-              "lname_phon_m2", "fname_new_m2", "fname_phon_m2", "dob_m2", 
-              "lname_rec_m2", "fname_new_cnt_m2", "mname_new_cnt_m2", 
+  exclude = c("ssn_c", "ssn_new_junk_m2", "ssn_c_junk_m2", 
+              "lname_new_m2", "lname_trim_m2", "lname_phon_m2", 
+              "fname_new_m2", "fname_trim_m2", "fname_phon_m2", 
+              "dob_m2", "lname_rec_m2", "fname_new_cnt_m2", "mname_new_cnt_m2", 
               "lnamesuf_new_cnt_m2", "dob_cnt_m2", "gender_new_cnt_m2"))
 
 
+####
+# As of 2020-12, it is not possible to supply columns to the phonetic option when
+# calling compare.dedup (not sure if the issue is the RecordLinkage package or 
+# something about R v4)
+# Need to manually indicate if the phonetic sound is a match
+####
+
+# First pull out the pairs
+match3_pairs <- match3$pairs
+
+# Use mapply to check each ID pairing for soundex matches
+soundex_chk <- function(x, y) {
+  out <- c(lname_phon_m2 = ifelse(match3$data$lname_phon_m2[x] == match3$data$lname_phon_m2[y], 1L, 0L),
+           fname_phon_m2 = ifelse(match3$data$fname_phon_m2[x] == match3$data$fname_phon_m2[y], 1L, 0L))
+  out
+}
+
+match3_pairs <- cbind(match3_pairs, 
+                      bind_rows(mapply(soundex_chk, x = match3_pairs$id1, y = match3_pairs$id2, SIMPLIFY = F))) %>%
+  select(id1:dob_d_m2, lname_phon_m2, fname_phon_m2, is_match)
+
+# Add back to match3
+match3$pairs <- match3_pairs
+
+
+# Do the same for frequencies
+match3$frequencies <- c(match3$frequencies, 
+                        lname_phon_m2 = 1 / length(unique(match3$data$lname_phon_m2)),
+                        fname_phon_m2 = 1 / length(unique(match3$data$fname_phon_m2)))
+
+
+### Back to the normal code
 # Using EpiLink approach
 match3_tmp <- epiWeights(match3)
-classify3 <- epiClassify(match3_tmp, threshold.upper = 0.38)
+classify3 <- epiClassify(match3_tmp, threshold.upper = 0.5)
 summary(classify3)
 pairs3 <- getPairs(classify3, single.rows = FALSE)
 
 
-# Fix formattings
+# Fix formatting
 pairs3 <- pairs3 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob_m2 = as.Date(dob_m2, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new, ssn_new_junk_m2, ssn_c_junk_m2, dob_y_m2, dob_mth_m2, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, ssn_new_junk_m2, ssn_c_junk_m2, dob_y_m2, dob_mth_m2, 
                  dob_d_m2, fname_new_cnt_m2, mname_new_cnt_m2, lnamesuf_new_cnt_m2, 
                  gender_new_m2, dob_cnt_m2, gender_new_cnt_m2, Weight), 
-            funs(as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_c, lname_new_m2, fname_new_m2, mname_new_m2, lname_rec_m2, 
-                 lname_trim_m2, lname_phon_m2, lnamesuf_new_m2, fname_trim_m2, 
-                 fname_phon_m2), funs(as.character(.))
-  ) %>%
+            list(~ as.numeric(as.character(.)))) %>%
+  mutate(dob_m2 = as.Date(dob_m2, origin = "1970-01-01")) %>%
   filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair
+  # Propagate weight to both rows in a pair
   group_by(pair) %>%
   mutate(Weight = last(Weight)) %>%
   ungroup()
@@ -373,7 +385,7 @@ pairs3 <- pairs3 %>%
 
 # Clean data based on matches and set up matches for relevant rows
 pairs3_full <- setDT(pairs3)
-pairs3_full <- pairs3_full[ssn_new_junk_m2 == 0 & Weight > 0.38]
+pairs3_full <- pairs3_full[ssn_new_junk_m2 == 0 & Weight >= 0.5]
 pairs3_full[, ':=' 
             (lname_new_m3 = lname_rec_m2,
               fname_new_m3 = fname_new_m2[which.max(fname_new_cnt_m2)],
@@ -399,13 +411,13 @@ pairs3_full[, ':='
               dob_cnt_m3 = ifelse(identical(dob_cnt_m2[which.max(dob_cnt_m2)], character(0)),
                                   NA,
                                   dob_cnt_m2[which.max(dob_cnt_m2)]),
-              lname_trim_m3 = lname_trim_m2,
-              lname_phon_m3 = lname_phon_m2,
+              lname_trim_m3 = str_replace_all(lname_rec_m2, "[:punct:]|[:digit:]|[:blank:]|`", ""),
               fname_trim_m3 = fname_trim_m2[which.max(fname_new_cnt_m2)],
               fname_phon_m3 = fname_phon_m2[which.max(fname_new_cnt_m2)],
               ssn_new_junk_m3 = ssn_new_junk_m2,
               ssn_c_junk_m3 = ssn_c_junk_m2),
             by = "pair"]
+pairs3_full <- pairs3_full[, lname_phon_m3 := RecordLinkage::soundex(lname_trim_m3)]
 pairs3_full <- pairs3_full[, list(ssn_new, ssn_c, lname_new_m2, fname_new_m2, 
                                   mname_new_m2, lnamesuf_new_m2, gender_new_m2, 
                                   dob_m2, ssn_new_junk_m2, ssn_c_junk_m2, 
@@ -463,13 +475,45 @@ pha_new3 <- pha_complete3 %>%
 match4 <- compare.dedup(
   pha_new3, blockfld = c("ssn_c", "dob_y_m3"),
   strcmp = c("mname_new_m3", "dob_mth_m3", "dob_d_m3", "gender_new_m3", "lnamesuf_new_m3"),
-  phonetic = c("lname_trim_m3", "fname_trim_m3"), phonfun = soundex,
-  exclude = c("ssn_new", "ssn_new_junk_m3", "ssn_c_junk_m3", "lname_new_m3", 
-              "lname_phon_m3", "fname_new_m3", "fname_phon_m3", "dob_m3", 
-              "lname_rec_m3", "fname_new_cnt_m3", "mname_new_cnt_m3", 
+  exclude = c("ssn_new", "ssn_new_junk_m3", "ssn_c_junk_m3", 
+              "lname_new_m3", "lname_trim_m3", "lname_phon_m3", 
+              "fname_new_m3", "fname_trim_m3", "fname_phon_m3", 
+              "dob_m3", "lname_rec_m3", "fname_new_cnt_m3", "mname_new_cnt_m3", 
               "lnamesuf_new_cnt_m3", "dob_cnt_m3", "gender_new_cnt_m3"))
 
 
+####
+# As of 2020-12, it is not possible to supply columns to the phonetic option when
+# calling compare.dedup (not sure if the issue is the RecordLinkage package or 
+# something about R v4)
+# Need to manually indicate if the phonetic sound is a match
+####
+
+# First pull out the pairs
+match4_pairs <- match4$pairs
+
+# Use mapply to check each ID pairing for soundex matches
+soundex_chk <- function(x, y) {
+  out <- c(lname_phon_m3 = ifelse(match4$data$lname_phon_m3[x] == match4$data$lname_phon_m3[y], 1L, 0L),
+           fname_phon_m3 = ifelse(match4$data$fname_phon_m3[x] == match4$data$fname_phon_m3[y], 1L, 0L))
+  out
+}
+
+match4_pairs <- cbind(match4_pairs, 
+                      bind_rows(mapply(soundex_chk, x = match4_pairs$id1, y = match4_pairs$id2, SIMPLIFY = F))) %>%
+  select(id1:dob_d_m3, lname_phon_m3, fname_phon_m3, is_match)
+
+# Add back to match4
+match4$pairs <- match4_pairs
+
+
+# Do the same for frequencies
+match4$frequencies <- c(match4$frequencies, 
+                        lname_phon_m3 = 1 / length(unique(match4$data$lname_phon_m3)),
+                        fname_phon_m3 = 1 / length(unique(match4$data$fname_phon_m3)))
+
+
+### Back to the normal code
 # Using EpiLink approach
 match4_tmp <- epiWeights(match4)
 classify4 <- epiClassify(match4_tmp, threshold.upper = 0.4)
@@ -477,25 +521,17 @@ summary(classify4)
 pairs4 <- getPairs(classify4, single.rows = FALSE)
 
 
-# Fix formattings
+# Fix formatting
 pairs4 <- pairs4 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob_m3 = as.Date(dob_m3, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new, ssn_new_junk_m3, ssn_c_junk_m3, dob_y_m3, dob_mth_m3, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, ssn_new_junk_m3, ssn_c_junk_m3, dob_y_m3, dob_mth_m3, 
                  dob_d_m3, fname_new_cnt_m3, mname_new_cnt_m3, lnamesuf_new_cnt_m3, 
                  gender_new_m3, dob_cnt_m3, gender_new_cnt_m3, Weight), 
-            funs(as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_c, lname_new_m3, fname_new_m3, mname_new_m3, lname_rec_m3, 
-                 lname_trim_m3, lname_phon_m3, lnamesuf_new_m3, fname_trim_m3, fname_phon_m3), 
-            funs(as.character(.))
-  ) %>%
+            list(~ as.numeric(as.character(.)))) %>%
+  mutate(dob_m3 = as.Date(dob_m3, origin = "1970-01-01")) %>%
   filter(!(id == "" & ssn_new == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair
+  # Propagate weight to both rows in a pair
   group_by(pair) %>%
   mutate(Weight = last(Weight)) %>%
   ungroup()
@@ -503,7 +539,7 @@ pairs4 <- pairs4 %>%
 
 # Clean data based on matches and set up matches for relevant rows
 pairs4_full <- pairs4 %>%
-  filter(ssn_c != "" & ssn_c_junk_m3 == 0 & Weight > 0.4) %>%
+  filter(ssn_c != "" & ssn_c_junk_m3 == 0 & Weight >= 0.4) %>%
   group_by(pair) %>%
   mutate(
     # See match 1 above for details on this block of code
@@ -535,8 +571,8 @@ pairs4_full <- pairs4 %>%
     dob_cnt_m4 = ifelse(identical(dob_cnt_m3[which.max(dob_cnt_m3)], character(0)),
                         NA,
                         dob_cnt_m3[which.max(dob_cnt_m3)]),
-    lname_trim_m4 = lname_trim_m3,
-    lname_phon_m4 = lname_phon_m3,
+    lname_trim_m4 = str_replace_all(lname_rec_m3, "[:punct:]|[:digit:]|[:blank:]|`", ""),
+    lname_phon_m4 = RecordLinkage::soundex(lname_trim_m4),
     fname_trim_m4 = fname_trim_m3[which.max(fname_new_cnt_m3)],
     fname_phon_m4 = fname_phon_m3[which.max(fname_new_cnt_m3)],
     ssn_new_junk_m4 = ssn_new_junk_m3,
@@ -597,18 +633,17 @@ pha_ssn <- pha %>%
   ungroup()
 
 pha_new4 <- left_join(pha_new4, pha_ssn, by = c("ssn_new"))
-rm(pha_ssn) 
+rm(pha_ssn)
 
 
 match5 <- compare.dedup(
-  pha_new4, blockfld = c("lname_trim_m4", "fname_trim_m4","dob_m4"),
-  strcmp = c("ssn_new","mname_new_m4", "gender_new_m4", "lnamesuf_new_m4"),
-  phonetic = c("lname_trim_m4", "fname_trim_m4"), phonfun = soundex,
-  exclude = c("ssn_c", "ssn_new_junk_m4", "ssn_c_junk_m4", "lname_new_m4", 
-              "lname_phon_m4", "fname_new_m4", "fname_phon_m4", "dob_y_m4", 
-              "dob_mth_m4", "dob_d_m4", "lname_rec_m4", "fname_new_cnt_m4", 
-              "mname_new_cnt_m4", "lnamesuf_new_cnt_m4", "dob_cnt_m4", 
-              "gender_new_cnt_m4", "ssn_new_cnt"))
+  pha_new4, blockfld = c("lname_phon_m4", "fname_phon_m4", "dob_m4"),
+  strcmp = c("ssn_new", "mname_new_m4", "gender_new_m4", "lnamesuf_new_m4"),
+  exclude = c("ssn_c", "ssn_new_junk_m4", "ssn_c_junk_m4", 
+              "lname_new_m4", "lname_trim_m4",  "fname_new_m4", "fname_trim_m4",  
+              "dob_y_m4",  "dob_mth_m4", "dob_d_m4", 
+              "lname_rec_m4", "fname_new_cnt_m4", "mname_new_cnt_m4", 
+              "lnamesuf_new_cnt_m4", "dob_cnt_m4", "gender_new_cnt_m4", "ssn_new_cnt"))
 
 # Using EpiLink approach
 match5_tmp <- epiWeights(match5)
@@ -617,25 +652,17 @@ summary(classify5)
 pairs5 <- getPairs(classify5, single.rows = FALSE)
 
 
-# Fix formattings
+# Fix formatting
 pairs5 <- pairs5 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob_m4 = as.Date(dob_m4, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new, ssn_new_junk_m4, ssn_c_junk_m4, dob_y_m4, dob_mth_m4, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, ssn_new_junk_m4, ssn_c_junk_m4, dob_y_m4, dob_mth_m4, 
                  dob_d_m4, fname_new_cnt_m4, mname_new_cnt_m4, lnamesuf_new_cnt_m4, 
                  gender_new_m4, dob_cnt_m4, gender_new_cnt_m4, Weight), 
-            funs(as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_c, lname_new_m4, fname_new_m4, mname_new_m4, lname_rec_m4, 
-                 lname_trim_m4, lname_phon_m4, lnamesuf_new_m4, fname_trim_m4, fname_phon_m4), 
-            funs(as.character(.))
-  ) %>%
+            list(~ as.numeric(as.character(.)))) %>%
+  mutate(dob_m4 = as.Date(dob_m4, origin = "1970-01-01")) %>%
   filter(!(id == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair and find pairs where at least one SSN is non-junk
+  # Propagate weight to both rows in a pair and find pairs where at least one SSN is non-junk
   group_by(pair) %>%
   mutate(Weight = last(Weight),
          ssn_reg = ifelse(first(ssn_new_junk_m4) == 0 | last(ssn_new_junk_m4) == 0, 
@@ -832,7 +859,7 @@ summary(classify6)
 pairs6 <- getPairs(classify6, single.rows = FALSE)
 
 
-# Fix formattings
+# Fix formatting
 pairs6 <- pairs6 %>%
   mutate(
     # Add ID to each pair
@@ -843,13 +870,13 @@ pairs6 <- pairs6 %>%
   mutate_at(vars(id, ssn_new_m5, ssn_id_cnt, ssn_new_junk_m5, ssn_c_junk_m5, 
                  dob_y_m5, dob_mth_m5, dob_d_m5, fname_new_cnt_m5, mname_new_cnt_m5,
                  lnamesuf_new_cnt_m5, gender_new_m5, dob_cnt_m5, gender_new_cnt_m5, Weight), 
-            funs(as.numeric(as.character(.)))
+            list(~ as.numeric(as.character(.)))
   ) %>%
   mutate_at(vars(ssn_id, ssn_c, lname_new_m5, fname_new_m5, mname_new_m5, lname_rec_m5, lname_trim_m5, lname_phon_m5,
-                 lnamesuf_new_m5, fname_trim_m5, fname_phon_m5), funs(as.character(.))
+                 lnamesuf_new_m5, fname_trim_m5, fname_phon_m5), list(~ as.character(.))
   ) %>%
   filter(!(id == "" & Weight == "")) %>%
-  # Propogate weight to both rows in a pair and find pairs where at least one SSN is non-junk
+  # Propagate weight to both rows in a pair and find pairs where at least one SSN is non-junk
   group_by(pair) %>%
   mutate(Weight = last(Weight)) %>%
   ungroup()

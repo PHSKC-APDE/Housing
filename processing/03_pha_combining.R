@@ -28,8 +28,6 @@ library(housing) # contains many useful functions for cleaning
 library(odbc) # Used to connect to SQL server
 library(data.table) # Used to manipulate data
 library(tidyverse) # Used to manipulate data
-library(RJSONIO)
-library(RCurl)
 
 
 script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
@@ -50,6 +48,7 @@ if(sql == TRUE) {
   # This takes ~40 seconds
   system.time(kcha_long <- DBI::dbReadTable(db_apde51, DBI::Id(schema = "stage", table = "pha_kcha")))
 }
+
 
 #### Fix up variable formats ####
 # Vars mtw_admit_date & move_in_date missing in UW files
@@ -112,8 +111,8 @@ pha <- pha %>%
   # Need to restore leading zeros
   # Remove dashes first
   mutate_at(vars(ssn, hh_ssn), list(~ str_replace_all(., "-", ""))) %>%
-  mutate(ssn_c = ifelse(str_detect(ssn, "[:alpha:]"), ssn, ""),
-         hh_ssn_c = ifelse(str_detect(hh_ssn, "[:alpha:]"), hh_ssn, "")) %>%
+  mutate(ssn_c = ifelse(str_detect(ssn, "[:alpha:]"), ssn, NA),
+         hh_ssn_c = ifelse(str_detect(hh_ssn, "[:alpha:]"), hh_ssn, NA)) %>%
   mutate_at(vars(ssn, hh_ssn), 
             list(new = ~ str_pad(round(as.numeric(.), digits = 0),
                                  width = 9, side = "left", pad = "0")))
@@ -171,6 +170,7 @@ pha <- pha %>% mutate(
     str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") & is.na(mname) ~ str_sub(fname, -1),
     str_detect(str_sub(fname, -2, -1), "[:space:][A-Z]") &
       !is.na(mname) ~ paste(str_sub(fname, -1), mname, sep = " "),
+    mname == "" ~ NA_character_,
     TRUE ~ mname))
 
 ### Last name suffix
@@ -188,6 +188,7 @@ pha <- pha %>%
                        paste(lnamesuf, str_trim(str_sub(fname_new, 
                                                         str_locate(fname_new, paste(suffix, collapse="|"))[,1],
                                                         str_locate(fname_new, paste(suffix, collapse="|"))[,2]))),
+                     lnamesuf == "" ~ NA_character_,
                      TRUE ~ lnamesuf),
          fname_new = ifelse(str_detect(fname_new, paste(suffix, collapse="|")), 
                         str_trim(str_sub(fname_new, 
@@ -204,15 +205,14 @@ pha <- pha %>%
                        paste(lnamesuf, str_trim(str_sub(lname, 
                                                         str_locate(lname, paste(suffix, collapse="|"))[,1],
                                                         str_locate(lname, paste(suffix, collapse="|"))[,2]))),
-                     TRUE ~ lnamesuf),
+                     TRUE ~ lnamesuf_new),
          lname_new = ifelse(str_detect(lname, paste(suffix, collapse="|")), 
                         str_trim(str_sub(lname, 
                                          1,
                                          str_locate(lname, paste(suffix, collapse="|"))[,1])), 
                         lname),
-         # Remove any punctuation or NAs
-         lnamesuf_new = str_replace_all(lnamesuf_new, pattern = "[:punct:]|[:blank:]", replacement = ""),
-         lnamesuf_new = ifelse(is.na(lnamesuf_new), "", lnamesuf_new)
+         # Remove any punctuation
+         lnamesuf_new = str_replace_all(lnamesuf_new, pattern = "[:punct:]|[:blank:]", replacement = "")
   )
 
 #### Set up variables for matching ####
@@ -226,8 +226,8 @@ pha <- pha %>%
     lname_trim = str_replace_all(lname_new, "[:punct:]|[:digit:]|[:blank:]|`", ""),
     fname_trim = str_replace_all(fname_new, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
     # Make soundex versions of names for matching/grouping
-    lname_phon = phonics::soundex(lname_trim),
-    fname_phon = phonics::soundex(fname_trim),
+    lname_phon = RecordLinkage::soundex(lname_trim),
+    fname_phon = RecordLinkage::soundex(fname_trim),
     # Make truncated first and last names for matching/grouping (alternative to soundex)
     lname3 = substr(lname_trim, 1, 3),
     fname3 = substr(fname_trim, 1, 3)
