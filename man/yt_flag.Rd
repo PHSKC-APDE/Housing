@@ -4,8 +4,7 @@
 \alias{yt_flag}
 \title{Flags people who live at Yesler Terrace.}
 \usage{
-yt_flag(df, unit = NULL, prop_id = NULL, prop_name = NULL,
-  address = NULL)
+yt_flag(df, unit = NULL, prop_id = NULL, prop_name = NULL, address = NULL)
 }
 \arguments{
 \item{df}{A data frame}
@@ -17,11 +16,11 @@ been matched to Medicaid data.}
 \item{prop_id}{A named variable that specifies the property IDs used in 
 housing data. Default is property_id.}
 
+\item{prop_name}{A named variable that specifies the property name used in 
+housing data. Default is property_name.}
+
 \item{address}{A named varaible that specifies the unit address. 
 Default is unit_add_h.}
-
-\item{prop_id}{A named variable that specifies the property name used in 
-housing data. Default is property_name.}
 }
 \description{
 \code{yt_flag} creates a set of flags specific to SHA's Yesler Terrace.

@@ -31,18 +31,23 @@ junk_ssn_num <- function(df, id = NULL) {
   junk_name <- paste0(quo_name(id_quo), "_junk")
   
   df <- df %>% 
-  mutate(
-    # Seem to need to copy the variable here, some issue with quosures
-    temp = !!id_quo,
-    !!junk_name :=
-      ifelse(is.na(temp) | temp < 1000000 | temp >= 900000000 |
-               (temp >= 666000000 & temp <= 666999999) |
-               temp %in% c(123456789, 900000000, 333333333,
-                           555555555, 888888888) |
-               str_sub(as.character(temp), -4, -1) == "0000" |
-               str_sub(as.character(temp), 1, 3) == "999", 
-             1, 0)
-         ) %>%
+    mutate(
+      # Seem to need to copy the variable here, some issue with quosures
+      temp = as.numeric(!!id_quo),
+      !!junk_name :=
+        case_when(is.na(temp) ~ 1L,
+                  temp < 1000000 | temp >= 900000000 |
+                    (temp >= 666000000 & temp <= 666999999) |
+                    temp %in% c(10010101, 11223333, 111111111, 112234455, 
+                                111119999, 123456789, 222111212, 
+                                333333333, 444444444, 
+                                555115555, 555555555, 555555566,
+                                699999999,  
+                                888888888, 898989898, 898888899) |
+                    str_sub(as.character(temp), -4, -1) == "0000" |
+                    str_sub(as.character(temp), 1, 3) == "999" ~ 1L,
+                  TRUE ~ 0L)
+    ) %>%
     select(-temp)
 }
 
@@ -67,8 +72,9 @@ junk_ssn_char <- function(df, id = NULL) {
       # Seem to need to copy the variable here, some issue with quosures
       temp = !!id_quo,
       !!junk_name := 
-             ifelse(str_detect(temp, "XXX-|XXXX|A00-0|A000") | temp == "" |
-                      is.na(temp), 1, 0)) %>%
+             case_when(is.na(temp) ~ 1L,
+                       str_detect(temp, "XXX-|XXXX|A00-0|A000") | temp == "" ~ 1L,
+                       TRUE ~ 0L)) %>%
     select(-temp)
 }
 
@@ -88,13 +94,17 @@ junk_ssn_all <- function(df, id = NULL) {
     mutate(
       # Seem to need to copy the variable here, some issue with quosures
       temp = !!id_quo,
+      temp_num = as.numeric(temp),
       !!junk_name :=
-        ifelse(is.na(temp) | temp == "" |
-                 (is.numeric(temp) & 
-                    (temp < 1000000 | temp >= 900000000 | 
-                       temp %in% c(123456789, 900000000, 333333333, 
-                                   555555555, 888888888) |
-                       (temp >= 666000000 & temp <= 666999999))) |
+        ifelse(is.na(temp) | temp == "" | 
+                 temp %in% c(010010101, 011223333, 111111111, 112234455, 
+                             111119999, 123456789, 222111212, 
+                             333333333, 444444444, 
+                             555115555, 555555555, 555555566,
+                             699999999,  
+                             888888888, 898989898, 898888899) |
+                 (!is.na(temp_num) & (temp_num < 1000000 | temp_num >= 900000000 | 
+                    (temp_num >= 666000000 & temp_num <= 666999999))) |
                  (is.character(temp) & 
                     (str_sub(temp, -4, -1) == "0000" |
                        str_sub(temp, 1, 3) == "999" |

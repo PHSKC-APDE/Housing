@@ -7,7 +7,7 @@
 overlap(df, ...)
 }
 \arguments{
-\item{df}{A data frame}
+\item{df}{A data frame OR data table}
 
 \item{...}{Arguments used to identify elements to check for matches}
 }
