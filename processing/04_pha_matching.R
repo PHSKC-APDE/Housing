@@ -663,10 +663,13 @@ pairs5 <- pairs5 %>%
   mutate(dob_m4 = as.Date(dob_m4, origin = "1970-01-01")) %>%
   filter(!(id == "" & Weight == "")) %>%
   # Propagate weight to both rows in a pair and find pairs where at least one SSN is non-junk
+  # and pairs where both SSNs are non-junk (which actually are less likely to be a match it seems)
   group_by(pair) %>%
   mutate(Weight = last(Weight),
          ssn_reg = ifelse(first(ssn_new_junk_m4) == 0 | last(ssn_new_junk_m4) == 0, 
-                          1, 0)) %>%
+                          1, 0),
+         ssn_both = ifelse(first(ssn_new_junk_m4) == 0 & last(ssn_new_junk_m4) == 0,
+                           1, 0)) %>%
   ungroup()
 
 
@@ -675,8 +678,14 @@ pairs5 <- pairs5 %>%
 
 # Clean data based on matches and set up matches for relevant rows
 pairs5_full <- setDT(pairs5)
-pairs5_full <- pairs5_full[(Weight >= 0.2 & !(dob_mth_m4 == 1 & dob_d_m4 == 1) & ssn_reg == 1) | 
-                             (Weight >= 0.8218 & (dob_mth_m4 == 1 & dob_d_m4 == 1) & ssn_reg == 1)]
+pairs5_full <- pairs5_full[(Weight >= 0.9021 & !(dob_mth_m4 == 1 & dob_d_m4 == 1) & 
+                              ssn_reg == 1 & !is.na(ssn_both) & ssn_both == 1) | 
+                             (Weight >= 0.5 & !(dob_mth_m4 == 1 & dob_d_m4 == 1) & 
+                                ssn_reg == 1 & (is.na(ssn_both) | ssn_both == 0)) | 
+                             (Weight >= 0.9134 & dob_mth_m4 == 1 & dob_d_m4 == 1 & 
+                                ssn_reg == 1 & !is.na(ssn_both) & ssn_both == 1) | 
+                             (Weight >= 0.5 & dob_mth_m4 == 1 & dob_d_m4 == 1 & 
+                                ssn_reg == 1 & (is.na(ssn_both) | ssn_both == 0))]
 pairs5_full[, ':=' 
             (# See match 1 above for details on this block of code (exceptions noted below)
               ssn_new_m5 = case_when(
@@ -755,8 +764,8 @@ pairs5_full[, ':='
             ), by = "pair"]
 pairs5_full[, ':='
                (# Make soundex versions of names for matching/grouping
-                 lname_phon_m5 = soundex(lname_trim_m5),
-                 fname_phon_m5 = soundex(fname_trim_m5),
+                 lname_phon_m5 = RecordLinkage::soundex(lname_trim_m5),
+                 fname_phon_m5 = RecordLinkage::soundex(fname_trim_m5),
                  # Cannot assume junk SSN flags apply, need to reset
                  ssn_new_junk_m5 = case_when(
                    is.na(first(ssn_new_cnt)) ~ last(ssn_new_junk_m4),
@@ -817,21 +826,26 @@ pha_new5 <- pha_complete5 %>%
 
 #### Match #06 - block on soundex lname, soundex fname, and DOB; match combined SSN/HUD ID, mname, gender, and lname suffix ####
 # Next make combined SSN/HUD ID variable (there are no overlaps between the two initially)
-pha_complete5 <- pha_complete5 %>% mutate(
-  ssn_id = ifelse(ssn_new_junk_m5 == 0, ssn_new_m5,
-                  ifelse(ssn_c != "" & ssn_c_junk_m5 == 0, ssn_c,
-                         NA)))
+pha_complete5 <- pha_complete5 %>% 
+  mutate(ssn_id = case_when(ssn_new_junk_m5 == 0 ~ ssn_new_m5,
+                            ssn_c != "" & ssn_c_junk_m5 == 0 ~ ssn_c,
+                            TRUE ~ ssn_new_m5),
+         ssn_id_source = ifelse(ssn_id == ssn_new_m5, "ssn", "ssn_c"))
+pha_complete5 <- junk_ssn_all(pha_complete5, id = ssn_id)
 
-pha_new5 <- pha_new5 %>% mutate(
-  ssn_id = ifelse(ssn_new_junk_m5 == 0, ssn_new_m5,
-                  ifelse(ssn_c != "" & ssn_c_junk_m5 == 0, ssn_c,
-                         NA)))
+pha_new5 <- pha_new5 %>% 
+  mutate(ssn_id = case_when(ssn_new_junk_m5 == 0 ~ ssn_new_m5,
+                            ssn_c != "" & ssn_c_junk_m5 == 0 ~ ssn_c,
+                            TRUE ~ ssn_new_m5),
+         ssn_id_source = ifelse(ssn_id == ssn_new_m5, "ssn", "ssn_c"))
+pha_new5 <- junk_ssn_all(pha_new5, id = ssn_id)
+
 
 ### Identify which is the 'correct' SSN/ID
 # Prioritize numeric SSNs over IDs
 # Then take most common
 pha_ssn <- pha_complete5 %>%
-  filter(!is.na(ssn_id)) %>%
+  filter(!is.na(ssn_id) & ssn_id_junk == 0) %>%
   group_by(ssn_id) %>%
   summarise(ssn_id_cnt = n()) %>%
   ungroup()
@@ -840,13 +854,12 @@ pha_new5 <- left_join(pha_new5, pha_ssn, by = c("ssn_id"))
 rm(pha_ssn) 
 
 
-
 match6 <- compare.dedup(
-  pha_new5, blockfld = c("lname_trim_m5", "fname_trim_m5","dob_m5"),
-  strcmp = c("ssn_id","mname_new_m5", "gender_new_m5", "lnamesuf_new_m5"),
-  phonetic = c("lname_trim_m5", "fname_trim_m5"), phonfun = soundex,
-  exclude = c("ssn_new_m5", "ssn_c", "ssn_id_cnt", "ssn_new_junk_m5", "ssn_c_junk_m5", 
-              "lname_new_m5", "lname_phon_m5", "fname_new_m5", "fname_phon_m5", 
+  pha_new5, blockfld = c("lname_phon_m5", "fname_phon_m5","dob_m5"),
+  strcmp = c("ssn_id", "mname_new_m5", "gender_new_m5", "lnamesuf_new_m5"),
+  exclude = c("ssn_id_source", "ssn_new_m5", "ssn_c", "ssn_id_cnt", 
+              "ssn_id_junk", "ssn_new_junk_m5", "ssn_c_junk_m5", 
+              "lname_new_m5", "lname_trim_m5", "fname_new_m5", "fname_trim_m5", 
               "dob_y_m5", "dob_mth_m5", "dob_d_m5", "lname_rec_m5", 
               "fname_new_cnt_m5", "mname_new_cnt_m5", "lnamesuf_new_cnt_m5", 
               "dob_cnt_m5", "gender_new_cnt_m5"))
@@ -861,111 +874,119 @@ pairs6 <- getPairs(classify6, single.rows = FALSE)
 
 # Fix formatting
 pairs6 <- pairs6 %>%
-  mutate(
-    # Add ID to each pair
-    pair = rep(seq(from = 1, to = nrow(.)/3), each = 3),
-    dob_m5 = as.Date(dob_m5, origin = "1970-01-01")
-  ) %>%
-  # Fix up formatting by removing factors
-  mutate_at(vars(id, ssn_new_m5, ssn_id_cnt, ssn_new_junk_m5, ssn_c_junk_m5, 
+  # Add ID to each pair
+  mutate(pair = rep(seq(from = 1, to = nrow(.)/3), each = 3)) %>%
+  mutate_at(vars(id, ssn_id_cnt, ssn_new_junk_m5, ssn_c_junk_m5, 
                  dob_y_m5, dob_mth_m5, dob_d_m5, fname_new_cnt_m5, mname_new_cnt_m5,
                  lnamesuf_new_cnt_m5, gender_new_m5, dob_cnt_m5, gender_new_cnt_m5, Weight), 
-            list(~ as.numeric(as.character(.)))
-  ) %>%
-  mutate_at(vars(ssn_id, ssn_c, lname_new_m5, fname_new_m5, mname_new_m5, lname_rec_m5, lname_trim_m5, lname_phon_m5,
-                 lnamesuf_new_m5, fname_trim_m5, fname_phon_m5), list(~ as.character(.))
-  ) %>%
+            list(~ as.numeric(as.character(.)))) %>%
+  mutate(dob_m5 = as.Date(dob_m5, origin = "1970-01-01")) %>%
   filter(!(id == "" & Weight == "")) %>%
   # Propagate weight to both rows in a pair and find pairs where at least one SSN is non-junk
   group_by(pair) %>%
-  mutate(Weight = last(Weight)) %>%
+  mutate(Weight = last(Weight),
+         ssn_source_both = ifelse(first(ssn_id_source) == "ssn" & last(ssn_id_source) == "ssn",
+                                  1, 0),
+         ssn_reg = ifelse(first(ssn_id_junk) == 0 | last(ssn_id_junk) == 0, 
+                          1, 0),
+         ssn_both = ifelse(first(ssn_id_junk) == 0 & last(ssn_id_junk) == 0,
+                           1, 0)) %>%
   ungroup()
 
 
 # Clean data based on matches and set up matches for relevant rows
 # Keep as nested ifelse because it carried through middle initials better than case_when
+  
+
 pairs6_full <- pairs6 %>%
-  filter((Weight >= 0.2 & !(dob_mth_m5 == 1 & dob_d_m5 == 1)) | 
-           (Weight >= 0.8211 & (dob_mth_m5 == 1 & dob_d_m5 == 1))  
-  ) %>%
+  filter(str_detect(lname_new_m5, "YWCA", negate = T)) %>%
+  filter((Weight >= 0.71 & ssn_source_both == 1 & ssn_reg == 1 & ssn_both == 1) |
+           (Weight >= 0.4 & is.na(ssn_source_both)) |
+           (Weight >= 0.4 & ssn_source_both == 1 & ssn_reg == 1 & ssn_both == 0)) %>%
+  # Need to temporarily set some _cnt fields to 0 in case both are NA in a group, in which 
+  # case the which.max command fails
+  mutate_at(vars(ends_with("_cnt"), ends_with("_cnt_m5")), list(~ ifelse(is.na(.), 0, .))) %>%
   group_by(pair) %>%
   mutate(
     # See match 1 above for details on this block of code (exceptions noted below)
-    ssn_id_m6 = ifelse(is.na(first(ssn_id_cnt)), last(ssn_id), 
-                       ifelse(is.na(last(ssn_id_cnt)), first(ssn_id),
-                              ssn_id[which.max(ssn_id_cnt)])),
+    # Some SSNs have leading zeros so we want the full SSN
+    ssn_id_m6 = case_when(first(ssn_id_cnt) == 0 & last(ssn_id_cnt) == 0 ~ NA_character_,
+                          is.na(first(ssn_id_cnt)) ~ last(ssn_id), 
+                          is.na(last(ssn_id_cnt)) ~ first(ssn_id),
+                          first(str_sub(ssn_new_m5, 1, 2) == "00") & 
+                            first(str_sub(ssn_new_m5, 3, 6)) == last(str_sub(ssn_new_m5, 1, 4)) ~ last(ssn_id),
+                          first(str_sub(ssn_new_m5, 1, 1) == "0") & 
+                            first(str_sub(ssn_new_m5, 2, 6)) == last(str_sub(ssn_new_m5, 1, 5)) ~ last(ssn_id),
+                          TRUE ~ ssn_id[which.max(ssn_id_cnt)]),
     # Can no longer assume lname_rec is the same on both rows because of junk SSNs.
     # Now look for non-missing rows and decide what to do when both rows are non-missing
     # Currently taking the lname associated with the most common fname, taking the first row when ties occur
-    lname_new_m6 = ifelse(is.na(first(lname_rec_m5)), last(lname_rec_m5), 
-                          ifelse(is.na(last(lname_rec_m5)), first(lname_rec_m5),
-                                 lname_rec_m5[which.max(fname_new_cnt_m5)])),
+    lname_new_m6 = case_when(first(fname_new_cnt_m5) == 0 & last(fname_new_cnt_m5) == 0 ~ NA_character_,
+                             is.na(first(lname_rec_m5)) ~ last(lname_rec_m5), 
+                             is.na(last(lname_rec_m5)) ~ first(lname_rec_m5),
+                             TRUE ~ lname_rec_m5[which.max(fname_new_cnt_m5)]),
     # Now need to rule out missing counts for other name variables
-    fname_new_m6 = ifelse(is.na(first(fname_new_cnt_m5)), last(fname_new_m5), 
-                          ifelse(is.na(last(fname_new_cnt_m5)), first(fname_new_m5),
-                                 fname_new_m5[which.max(fname_new_cnt_m5)])),
-    mname_new_m6 = ifelse(is.na(first(mname_new_cnt_m5)), last(mname_new_m5), 
-                          ifelse(is.na(last(mname_new_cnt_m5)),
-                                 first(mname_new_m5), 
-                                 ifelse(identical(mname_new_m5[which.max(mname_new_cnt_m5)], character(0)), "",
-                                        mname_new_m5[which.max(mname_new_cnt_m5)]))),
-    lnamesuf_new_m6 = ifelse(is.na(first(lnamesuf_new_cnt_m5)), last(lnamesuf_new_m5), 
-                             ifelse(is.na(last(lnamesuf_new_cnt_m5)),
-                                    first(lnamesuf_new_m5), 
-                                    ifelse(identical(lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)], character(0)), "",
-                                           lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)]))),
-    gender_new_m6 = ifelse(is.na(first(gender_new_cnt_m5)), last(gender_new_m5), 
-                           ifelse(is.na(last(gender_new_cnt_m5)),
-                                  first(gender_new_m5), 
-                                  ifelse(identical(gender_new_m5[which.max(gender_new_cnt_m5)], character(0)), "",
-                                         gender_new_m5[which.max(gender_new_cnt_m5)]))),
-    dob_m6 = as.Date(ifelse(is.na(first(dob_cnt_m5)), last(dob_m5), 
-                            ifelse(is.na(last(dob_cnt_m5)),
-                                   first(dob_m5), 
-                                   ifelse(identical(dob_m5[which.max(dob_cnt_m5)], character(0)), "",
-                                          dob_m5[which.max(dob_cnt_m5)]))), origin = "1970-01-01"),
+    fname_new_m6 = case_when(first(fname_new_cnt_m5) == 0 & last(fname_new_cnt_m5) == 0 ~ NA_character_,
+                             is.na(first(fname_new_cnt_m5)) ~ last(fname_new_m5), 
+                             is.na(last(fname_new_cnt_m5)) ~ first(fname_new_m5),
+                             TRUE ~ fname_new_m5[which.max(fname_new_cnt_m5)]),
+    mname_new_m6 = case_when(first(mname_new_cnt_m5) == 0 & last(mname_new_cnt_m5) == 0 ~ NA_character_,
+                             is.na(first(mname_new_cnt_m5)) ~ last(mname_new_m5), 
+                             is.na(last(mname_new_cnt_m5)) ~ first(mname_new_m5), 
+                             identical(mname_new_m5[which.max(mname_new_cnt_m5)], character(0)) ~ NA_character_,
+                             TRUE ~ mname_new_m5[which.max(mname_new_cnt_m5)]),
+    lnamesuf_new_m6 = case_when(first(lnamesuf_new_cnt_m5) == 0 & last(lnamesuf_new_cnt_m5) == 0 ~ NA_character_,
+                                is.na(first(lnamesuf_new_cnt_m5)) ~ last(lnamesuf_new_m5), 
+                                is.na(last(lnamesuf_new_cnt_m5)) ~ first(lnamesuf_new_m5), 
+                                identical(lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)], character(0)) ~ NA_character_,
+                                TRUE ~ lnamesuf_new_m5[which.max(lnamesuf_new_cnt_m5)]),
+    gender_new_m6 = case_when(first(gender_new_cnt_m5) == 0 & last(gender_new_cnt_m5) == 0 ~ NA_real_,
+                              is.na(first(gender_new_cnt_m5)) ~ last(gender_new_m5), 
+                              is.na(last(gender_new_cnt_m5)) ~ first(gender_new_m5), 
+                              identical(gender_new_m5[which.max(gender_new_cnt_m5)], character(0)) ~ NA_real_,
+                              TRUE ~ gender_new_m5[which.max(gender_new_cnt_m5)]),
+    dob_m6 = as.Date(case_when(first(dob_cnt_m5) == 0 & last(dob_cnt_m5) == 0 ~ NA_Date_,
+                               is.na(first(dob_cnt_m5)) ~ last(dob_m5), 
+                               is.na(last(dob_cnt_m5)) ~ first(dob_m5), 
+                               identical(dob_m5[which.max(dob_cnt_m5)], character(0)) ~ NA_Date_,
+                               TRUE ~ dob_m5[which.max(dob_cnt_m5)]), origin = "1970-01-01"),
     # Reset lname_rec to match current lname using the logic above
     lname_rec_m6 = lname_new_m6,
-    fname_new_cnt_m6 = ifelse(is.na(first(fname_new_cnt_m5)), last(fname_new_cnt_m5), 
-                              ifelse(is.na(last(fname_new_cnt_m5)), 
-                                     first(fname_new_cnt_m5),
-                                     fname_new_cnt_m5[which.max(fname_new_cnt_m5)])),
-    mname_new_cnt_m6 = ifelse(is.na(first(mname_new_cnt_m5)), last(mname_new_cnt_m5), 
-                              ifelse(is.na(last(mname_new_cnt_m5)),
-                                     first(mname_new_cnt_m5), 
-                                     ifelse(identical(mname_new_cnt_m5[which.max(mname_new_cnt_m5)], character(0)),
-                                            NA,
-                                            mname_new_cnt_m5[which.max(mname_new_cnt_m5)]))),
-    lnamesuf_new_cnt_m6 = ifelse(is.na(first(lnamesuf_new_cnt_m5)), last(lnamesuf_new_cnt_m5), 
-                                 ifelse(is.na(last(lnamesuf_new_cnt_m5)),
-                                        first(lnamesuf_new_cnt_m5), 
-                                        ifelse(identical(lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)], character(0)),
-                                               NA,
-                                               lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)]))),
-    gender_new_cnt_m6 = ifelse(is.na(first(gender_new_cnt_m5)), last(gender_new_cnt_m5), 
-                               ifelse(is.na(last(gender_new_cnt_m5)),
-                                      first(gender_new_cnt_m5), 
-                                      ifelse(identical(gender_new_cnt_m5[which.max(gender_new_cnt_m5)], character(0)),
-                                             NA,
-                                             gender_new_cnt_m5[which.max(gender_new_cnt_m5)]))),
-    dob_cnt_m6 = ifelse(is.na(first(dob_cnt_m5)), last(dob_cnt_m5), 
-                                ifelse(is.na(last(dob_cnt_m5)),
-                                       first(dob_cnt_m5), 
-                                       ifelse(identical(dob_cnt_m5[which.max(dob_cnt_m5)], character(0)), "",
-                                              dob_cnt_m5[which.max(dob_cnt_m5)]))),
+    fname_new_cnt_m6 = case_when(is.na(first(fname_new_cnt_m5)) ~ last(fname_new_cnt_m5), 
+                                 is.na(last(fname_new_cnt_m5)) ~ first(fname_new_cnt_m5),
+                                 TRUE ~ fname_new_cnt_m5[which.max(fname_new_cnt_m5)]),
+    mname_new_cnt_m6 = case_when(is.na(first(mname_new_cnt_m5)) ~ last(mname_new_cnt_m5), 
+                                 is.na(last(mname_new_cnt_m5)) ~ first(mname_new_cnt_m5), 
+                                 identical(mname_new_cnt_m5[which.max(mname_new_cnt_m5)], character(0)) ~ NA_real_,
+                                 TRUE ~ mname_new_cnt_m5[which.max(mname_new_cnt_m5)]),
+    lnamesuf_new_cnt_m6 = case_when(is.na(first(lnamesuf_new_cnt_m5)) ~ last(lnamesuf_new_cnt_m5), 
+                                    is.na(last(lnamesuf_new_cnt_m5)) ~ first(lnamesuf_new_cnt_m5), 
+                                    identical(lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)], character(0)) ~ NA_real_,
+                                    TRUE ~ lnamesuf_new_cnt_m5[which.max(lnamesuf_new_cnt_m5)]),
+    gender_new_cnt_m6 = case_when(is.na(first(gender_new_cnt_m5)) ~ last(gender_new_cnt_m5), 
+                                  is.na(last(gender_new_cnt_m5)) ~ first(gender_new_cnt_m5), 
+                                  identical(gender_new_cnt_m5[which.max(gender_new_cnt_m5)], character(0)) ~ NA_real_,
+                                  TRUE ~ gender_new_cnt_m5[which.max(gender_new_cnt_m5)]),
+    dob_cnt_m6 = case_when(is.na(first(dob_cnt_m5)) ~ last(dob_cnt_m5),
+                           is.na(last(dob_cnt_m5)) ~ first(dob_cnt_m5), 
+                           identical(dob_cnt_m5[which.max(dob_cnt_m5)], character(0)) ~ NA_real_,
+                           TRUE ~ dob_cnt_m5[which.max(dob_cnt_m5)]),
     # Easier to recreate the trim and phonetic variables than apply the logic above
     lname_trim_m6 = str_replace_all(lname_new_m6, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
     fname_trim_m6 = str_replace_all(fname_new_m6, pattern = "[:punct:]|[:digit:]|[:blank:]|`", replacement = ""),
     # Make soundex versions of names for matching/grouping
-    lname_phon_m6 = soundex(lname_trim_m6),
-    fname_phon_m6 = soundex(fname_trim_m6)
+    lname_phon_m6 = RecordLinkage::soundex(lname_trim_m6),
+    fname_phon_m6 = RecordLinkage::soundex(fname_trim_m6)
     # Don't make new junk SSN/ID flags, recreate from ssn_id_m6 later
   ) %>%
   ungroup() %>%
+  # Put counts back to NA if they were switched to 0
+  mutate_at(vars(ends_with("_cnt")), list(~ ifelse(. == 0, NA_integer_, .))) %>%
   select(ssn_new_m5, ssn_c, ssn_id, ssn_id_m6, ssn_new_junk_m5, ssn_c_junk_m5,
          lname_new_m5:dob_m5, lname_new_m6:fname_phon_m6) %>%
   distinct(ssn_new_m5, ssn_c, ssn_id, lname_new_m5, fname_new_m5, mname_new_m5, 
            dob_m5, gender_new_m5, .keep_all = TRUE)
+
 
 # Add to full dedup set and make cleaner data for next deduplication process
 pha_complete6 <- left_join(pha_complete5, pairs6_full, 
@@ -1002,11 +1023,14 @@ pha_new6 <- pha_complete6 %>%
 
 #### MERGE FINAL DEDUPLICATED DATA BACK TO ORIGINAL ####
 pha_clean <- pha_complete6 %>%
-  select(ssn_new:lnamesuf_new, lname_rec:gender_new_cnt, ssn_new_m5, ssn_id_m6:dob_d_m6) %>%
+  select(ssn_new, ssn_c, ssn_new_junk, ssn_c_junk, lname_new, lnamesuf_new, lname_rec,
+         fname_new, mname_new, fname_new_cnt, mname_new_cnt, lnamesuf_new_cnt,
+         dob, dob_cnt, gender_new, gender_new_cnt, 
+         ssn_new_m5, ssn_id_m6:dob_d_m6) %>%
   right_join(., pha, by = c("ssn_new", "ssn_c", "ssn_new_junk", "ssn_c_junk",
-                            "lname_new", "lnamesuf_new", "fname_new", "mname_new", 
-                             "lname_rec", "fname_new_cnt", "mname_new_cnt", "lnamesuf_new_cnt", "dob",
-                             "dob_y", "dob_mth", "dob_d", "dob_cnt", "gender_new", "gender_new_cnt"))
+                            "lname_new", "lnamesuf_new", "lname_rec", "fname_new", "mname_new", 
+                             "fname_new_cnt", "mname_new_cnt", "lnamesuf_new_cnt", 
+                            "dob", "dob_cnt", "gender_new", "gender_new_cnt"))
 
 
 #### Trim extraneous variables ####
@@ -1052,44 +1076,46 @@ pha_clean <- pha_clean %>%
     sha_source, kcha_source, eop_source
   )
 } else {
-pha_clean <- pha_clean %>%
-  select(
-    # Person demographics
-    ssn_new:lnamesuf_new, dob, gender_new, citizen, disability, relcode, 
-    ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_num,
-    # don't keep mbr_id for now as there are some individuals with multiple IDs on the same date
-    # Head of household demographics
-    hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob,
-    # Household details
-    hh_size, hh_id, 
-    # Previous experience
-    list_date, list_zip, list_homeless, housing_act,
-    # Action and subsidy details
-    act_type, act_date:admit_date, reexam_date, subsidy_id, vouch_num, cert_id,
-    increment, increment_old, repayment, repay_amount,
-    # Program details
-    agency, agency_new, portability, cost_pha, major_prog, prog_type, 
-    vouch_type, noncit_subsidy, sroyn,
-    # Unit details
-    property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
-    unit_type, unit_year, access_unit, access_req, access_rec, bed_cnt, 
-    moving_in, move_in_date,
-    # Rent details
-    rent_type:bdrm_voucher, cost_month, rent_owner:tb_rent_ceiling,
-    # Asset and income details
-    incasset_id, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
-    asset_val, asset_inc,
-    inc_fixed, inc_vary, inc, inc_excl, inc_adj_fixed, inc_adj_vary, inc_adj,
-    hh_inc_fixed, hh_inc_adj_fixed, hh_inc, 
-    hh_inc_vary, hh_inc_adj_vary, 
-    hh_inc_tot, hh_inc_adj, hh_inc_deduct, hh_inc_tot_adj,
-    # FSS and MTW details + assistance
-    fss, fss_cat, mtw_self_suff, mtw_admit_date,
-    assist_tanf:assist_eitc, child_care_srvc,
-    reimbursed_med, med_dis_thresh, med_dis_allowance,
-    # Process details
-    sha_source, kcha_source, eop_source
-  )
+  pha_clean <- pha_clean %>%
+    select(
+      # Person demographics
+      ssn_new:lnamesuf_new, fname_new, mname_new, dob, gender_new, citizen, 
+      disability, relcode, ssn_id_m6:dob_m6, race, r_white:r_hisp, mbr_num,
+      # don't keep mbr_id for now as there are some individuals with multiple IDs on the same date
+      # Head of household demographics
+      hh_ssn, hh_ssn_new, hh_ssn_c, hh_lname:hh_mname, hh_lnamesuf, hh_dob, hh_gender,
+      # Household details
+      hh_size, hh_id, 
+      # Previous experience
+      start_pha, list_date, list_zip, list_homeless, housing_act,
+      # Action and subsidy details
+      act_type, act_date:admit_date, reexam_date, next_review_date, recert_sched,
+      subsidy_id, vouch_num, cert_id,
+      increment, increment_old, repayment, repay_amount,
+      # Program details
+      agency, agency_new, portability, cost_pha, major_prog, prog_type, 
+      vouch_type, noncit_subsidy, sroyn,
+      # Unit details
+      property_id, property_name, property_type, portfolio, unit_id, unit_add:unit_zip,
+      unit_type, unit_style, unit_year, access_unit, access_req, access_rec, bed_cnt, 
+      moving_in, move_in_date,
+      # Rent details
+      rent_type:bdrm_voucher, cost_month, min_rent, rent_contract, voucher_pymt_std, 
+      utility_reimbursement, rent_owner:tb_rent_ceiling,
+      # Asset and income details
+      incasset_id, hh_asset_val, hh_asset_inc, hh_asset_impute, hh_asset_inc_final,
+      asset_val, asset_inc,
+      inc_fixed, inc_vary, inc, inc_excl, inc_adj_fixed, inc_adj_vary, inc_adj,
+      hh_inc_fixed, hh_inc_adj_fixed, hh_inc, 
+      hh_inc_vary, hh_inc_adj_vary, 
+      hh_inc_tot, hh_inc_adj, hh_inc_deduct, hh_inc_tot_adj,
+      # FSS and MTW details + assistance
+      fss, fss_cat, mtw_self_suff, mtw_admit_date,
+      assist_tanf:assist_eitc, child_care_srvc,
+      reimbursed_med, med_dis_thresh, med_dis_allowance,
+      # Process details
+      sha_source, kcha_source, eop_source
+    )
 }
 # With some variables stripped out, can reduce the number of rows
 pha_clean <- pha_clean %>% distinct()
@@ -1102,11 +1128,11 @@ pha_clean <- pha_clean %>% distinct()
 # rows for the same HoH
 pha_clean <- pha_clean %>%
   mutate(
-    hh_ssn_id_m6 = ifelse(mbr_num == 1 & ssn_id_m6 != "", ssn_id_m6, ""),
-    hh_lname_m6 = ifelse(mbr_num == 1 & lname_new_m6 != "", lname_new_m6, hh_lname),
-    hh_lnamesuf_m6 = ifelse(mbr_num == 1 & lnamesuf_new_m6 != "", lnamesuf_new_m6, hh_lnamesuf),
-    hh_fname_m6 = ifelse(mbr_num == 1 & fname_new_m6 != "", fname_new_m6, hh_fname),
-    hh_mname_m6 = ifelse(mbr_num == 1 & mname_new_m6 != "", mname_new_m6, hh_mname),
+    hh_ssn_id_m6 = ifelse(mbr_num == 1 & ssn_id_m6 != "" & !is.na(ssn_id_m6), ssn_id_m6, NA_character_),
+    hh_lname_m6 = ifelse(mbr_num == 1 & lname_new_m6 != "" & !is.na(lname_new_m6), lname_new_m6, hh_lname),
+    hh_lnamesuf_m6 = ifelse(mbr_num == 1 & lnamesuf_new_m6 != "" & !is.na(lnamesuf_new_m6), lnamesuf_new_m6, hh_lnamesuf),
+    hh_fname_m6 = ifelse(mbr_num == 1 & fname_new_m6 != "" & !is.na(fname_new_m6), fname_new_m6, hh_fname),
+    hh_mname_m6 = ifelse(mbr_num == 1 & mname_new_m6 != "" & !is.na(mname_new_m6), mname_new_m6, hh_mname),
     hh_dob_m6 = as.Date(ifelse(mbr_num == 1 & !is.na(dob_m6), dob_m6, hh_dob), origin = "1970-01-01")
   )
 
@@ -1114,10 +1140,11 @@ pha_clean <- pha_clean %>%
 # Set up another temporary household ID based on slightly modified original HoH characteristics
 # Need to use date and addresses too because the cleanup didn't catch everything
 # Result is some inconsistency in HoH name over time but the overall numbers should work
-pha_clean$hh_id_temp <- group_indices(pha_clean, major_prog, hh_ssn_new, hh_ssn_c, 
-                                         hh_lname, hh_lnamesuf, hh_fname, hh_dob, 
-                                         unit_add, unit_apt, unit_apt2, unit_city, 
-                                         act_date, act_type)
+pha_clean <- pha_clean %>%
+  group_by(major_prog, hh_ssn_new, hh_ssn_c, hh_lname, hh_lnamesuf, 
+           hh_fname, hh_dob, unit_add, unit_apt, unit_apt2, unit_city, act_date, act_type) %>%
+  mutate(hh_id_temp = cur_group_id()) %>%
+  ungroup()
 
 # Limit to just the cleaned up HH variables
 pha_clean_hh <- pha_clean %>%
@@ -1136,7 +1163,10 @@ pha_clean <- left_join(pha_clean, pha_clean_hh, by = c("hh_id_temp")) %>%
 
 
 ### Make a new household ID based on head of household characteristics
-pha_clean$hh_id_new <- group_indices(pha_clean, hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6)
+pha_clean <- pha_clean %>%
+  group_by(hh_ssn_id_m6, hh_lname_m6, hh_fname_m6, hh_dob_m6) %>%
+  mutate(hh_id_new = cur_group_id()) %>%
+  ungroup()
 
 ### Make new flags for junk SSNs
 pha_clean <- junk_ssn_all(pha_clean, ssn_id_m6)
@@ -1153,8 +1183,10 @@ pha_clean <- pha_clean %>% filter(!(lname_new_m6 == "DUFUS" & fname_new_m6 == "I
 
 
 ### Make IDs and reorder
-pha_clean$pid <- group_indices(pha_clean, ssn_id_m6, lname_new_m6, 
-                               fname_new_m6, dob_m6)
+pha_clean <- pha_clean %>%
+  group_by(ssn_id_m6, lname_new_m6, fname_new_m6, dob_m6) %>%
+  mutate(pid = cur_group_id()) %>%
+  ungroup()
 pha_clean <- pha_clean %>% select(pid, ssn_new:hh_id_new)
 
 if (UW == FALSE) {
