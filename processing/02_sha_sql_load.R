@@ -23,6 +23,14 @@
 # 
 ###############################################################################
 
+
+
+### AREAS FOR QA CHECKS WHEN THE ETL PROCESS IS REVAMPED ####
+# Check act type is present and converted to numeric (and check counts)
+# Check structure of key demographics (e.g., gender, race) and associated counts
+
+
+
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
@@ -38,7 +46,7 @@ library(RecordLinkage)
 library(phonics)
 library(stringr)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- file.path(here::here(), "processing")
@@ -156,8 +164,8 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
-         header = TRUE, stringsAsFactors = FALSE)
+fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv")), 
+         header = TRUE)
 ###
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
 if (UW == TRUE) {
@@ -252,6 +260,32 @@ sha6_2019_2019 <- setnames(sha6_2019_2019, fields$PHSKC[match(names(sha6_2019_20
     sha5a_2018_2018 <- setnames(sha5a_2018_2018, fields$common_name[match(names(sha5a_2018_2018), fields$sha_hcv_2006_2018)])
     sha5b_2018_2018 <- setnames(sha5b_2018_2018, fields$common_name[match(names(sha5b_2018_2018), fields$sha_hcv_2006_2018)])
     sha6_2019_2019 <- setnames(sha6_2019_2019, fields$common_name[match(names(sha6_2019_2019), fields$sha_2019)])
+    
+    # Need to fix up action type for SHA in 2019
+    sha6_2019_2019 <- sha6_2019_2019 %>%
+      mutate(act_type = recode(act_type, 
+                               "Annual Recertification" = 2,
+                               "Annual Reexamination" = 2,
+                               "Annual Reexamination Searching" = 9,
+                               "End Participation" = 6,
+                               "Expiration of Voucher" = 11,
+                               "FSS/WtW Addendum Only" = 8,
+                               "Gross Rent Change" = 17,
+                               "Historical Adjustment" = 14,
+                               "Interim Reexamination" = 3,
+                               "Issuance of Voucher" = 10,
+                               "Move In" = 1,
+                               "Move Out" = 6,
+                               "New Admission" = 1,
+                               "Other Change of Unit" = 7,
+                               "Port-Out Update (Not Submitted To MTCS)" = 16,
+                               "Portability Move-in" = 4,
+                               "Portability Move-out" = 5,
+                               "Termination" = 6,
+                               "Unit Transfer" = 7,
+                               "Void" = 15,
+                               .default = NA_real_))
+      
   }
 }
 

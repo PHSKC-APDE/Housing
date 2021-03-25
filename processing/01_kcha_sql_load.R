@@ -76,7 +76,7 @@ if(!require(phonics)){
   require(phonics)
 }
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- "local path"

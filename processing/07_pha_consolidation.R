@@ -33,15 +33,19 @@ library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 if (UW == TRUE) {
-  print("don't need to load")} else {  
-#### Bring in data and sort ####
-pha_cleanadd <- readRDS(file.path(housing_path, pha_cleanadd_fn))
+  print("don't need to load")
+  } else {  
+    #### Bring in data and sort ####
+    pha_cleanadd <- readRDS(file.path(housing_path, pha_cleanadd_fn))
+  }
+
+
 pha_cleanadd_sort <- pha_cleanadd %>% arrange(pid, act_date, agency_new, prog_type)
 
 
@@ -109,8 +113,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
       subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" & 
         is.na(vouch_type) ~ "",
       # The rest
-      TRUE ~ ""
-    )
+      TRUE ~ "")
     )
 
 
@@ -125,6 +128,9 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 #### Begin consolidation ####
 # New approach to tracking which rows are dropped
 # Assign a different drop code for each instance and track in a list of all rows
+# Note that a blank address has a geo_hash of 8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104
+#   because the zip code is recorded as 0
+
 # Drop types:
 # 01 = missing action dates
 # 02 = duplicate rows due to multiple EOP types (6 and 11)
@@ -144,7 +150,9 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
 pha_cleanadd_sort <- pha_cleanadd_sort %>% mutate(row = row_number())
 # Set up list of all rows to track
 drop_track <- pha_cleanadd_sort %>% 
-  select(row, pid, ssn_new:dob, agency_prog_concat, unit_concat, act_date, 
+  select(row, pid, ssn_new:dob, agency_prog_concat, 
+         unit_add_new, unit_apt_new, unit_city_new, unit_state_new, unit_zip_new,
+         geo_hash_clean, geo_blank, act_date, 
          act_type, sha_source, cost_pha)
 
 ### Find the latest action date for a given program (will be useful later)
@@ -152,10 +160,10 @@ drop_track <- pha_cleanadd_sort %>%
 # Ignore the warning produced, this will be addressed when rows with no action date are dropped
 pha_cleanadd_sort <- setDT(pha_cleanadd_sort)
 pha_cleanadd_sort[, max_date := max(act_date, na.rm = T),
-                  by = .(pid, agency_prog_concat, unit_concat, cost_pha)]
+                  by = .(pid, agency_prog_concat, geo_hash_clean, cost_pha)]
 
 ### Count the number of unique address a person had 
-pha_cleanadd_sort[, add_num := uniqueN(unit_concat), by = "pid"]
+pha_cleanadd_sort[, add_num := uniqueN(geo_hash_clean), by = "pid"]
 
 
 #### Make port in and out variables (will be refined further after additional row consolidation) ####
@@ -166,7 +174,7 @@ pha_cleanadd_sort[, port_in := ifelse(
     (agency_new == "KCHA" & cost_pha != "" & cost_pha != "WA002") |
     (agency_new == "SHA" & cost_pha != "" & cost_pha != "WA001" &
        # SHA seems to point to another billed PHA even when the person has ported out from SHA to another PHA, need to ignore this
-       !(agency_new == "SHA" & (is.na(unit_concat) | str_detect(unit_concat, "PORT OUT")) & 
+       !(agency_new == "SHA" & (str_detect(unit_add_new, "PORT OUT")) & 
            act_type %in% c(5, 16))),
   # The portability flag seems unreliable so ignoring for now
   #| (portability %in% c("Y", "Yes") & !is.na(portability)),
@@ -178,10 +186,10 @@ pha_cleanadd_sort[, port_in := ifelse(
 # the person is in another housing authority.
 pha_cleanadd_sort[, ':=' (
   port_out_kcha = case_when(
-    agency_new == "KCHA" & (str_detect(unit_concat, "PORTABLE") | act_type == 5) ~ 1,
+    agency_new == "KCHA" & (str_detect(unit_add_new, "PORTABLE") | act_type == 5) ~ 1,
     TRUE ~ 0),
   port_out_sha = case_when(
-    agency_new == "SHA" & (str_detect(unit_concat, "PORT OUT") | act_type == 5) ~ 1,
+    agency_new == "SHA" & (str_detect(unit_add_new, "PORT OUT") | act_type == 5) ~ 1,
     agency_new == "SHA" & act_type == 16 & cost_pha != "" ~ 1,
     TRUE ~ 0
   )
@@ -219,9 +227,9 @@ pha_cleanadd_sort[, ':=' (port_out_kcha = ifelse(
   agency_new == "SHA" & cost_pha == "WA002" & 
     # SHA seems to point to another billed PHA even when the person has 
     # ported out from SHA to another PHA, need to ignore this
-    !((is.na(unit_concat) | str_detect(unit_concat, "PORT OUT")) & 
-        act_type %in% c(5, 16)), 1, port_out_kcha),
+    !(str_detect(unit_add_new, "PORT OUT") & act_type %in% c(5, 16)), 1, port_out_kcha),
   port_out_sha = ifelse(agency_new == "KCHA" & cost_pha == "WA001", 1, port_out_sha))]
+
 
 #### Remove missing dates (droptype = 1) ####
 time_start <- Sys.time()
@@ -235,6 +243,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort[drop != 1]
 dfsize_head - nrow(pha_cleanadd_sort)
 time_end <- Sys.time()
 print(paste0("Drop #1 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
+
 
 #### Clean up duplicate rows - multiple EOP types (droptype == 2) ####
 # Some duplicate rows where there is both an EOP action (#6) and an
@@ -250,7 +259,7 @@ repeat {
   
   pha_cleanadd_sort[, drop := 
                       if_else(pid == lag(pid, 1) & 
-                                unit_concat == lag(unit_concat, 1) &
+                                geo_hash_clean == lag(geo_hash_clean, 1) &
                                 agency_prog_concat == lag(agency_prog_concat, 1) &
                                 cost_pha == lag(cost_pha, 1) &
                                 act_date == lag(act_date, 1) &
@@ -276,6 +285,7 @@ dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 time_end <- Sys.time()
 print(paste0("Drop #2 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
+
 #### Clean up duplicate rows - cert IDs etc. (droptype == 3) ####
 # Some duplicate rows are because of multiple incomes/assets information 
 # reported at the same action date 
@@ -287,7 +297,7 @@ dfsize_head <- nrow(pha_cleanadd_sort)
 setorder(pha_cleanadd_sort, pid, agency_prog_concat, act_date, cost_pha)
 pha_cleanadd_sort[, drop := 
                     if_else(pid == lead(pid, 1) & 
-                              unit_concat == lead(unit_concat, 1) &
+                              geo_hash_clean == lead(geo_hash_clean, 1) &
                               agency_prog_concat == lead(agency_prog_concat, 1) &
                               act_date == lead(act_date, 1) &
                               act_type == lead(act_type, 1) &
@@ -305,15 +315,17 @@ dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 time_end <- Sys.time()
 print(paste0("Drop #3 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
+
 #### Drop rows with missing address data that are not port outs (droptype = 4) ####
 time_start <- Sys.time()
 dfsize_head <- nrow(pha_cleanadd_sort)
 pha_cleanadd_sort[, drop := case_when(
   # Start with non-port-out rows with act_type == 10 or 16)
-  is.na(unit_concat) & 
+  geo_blank == 1 & 
     (act_type == 10 | (act_type == 16 & !(port_out_kcha == 1 | port_out_sha == 1))) ~ 4,
   # Also drop people who were only at KCHA and only had missing addresses
-  agency_new == "KCHA" & add_num == 1 & is.na(unit_concat) ~ 4,
+  agency_new == "KCHA" & add_num == 1 & 
+    geo_blank == 1 ~ 4,
   TRUE ~ 0
 )]
 # Pull out drop tracking and merge
@@ -327,16 +339,17 @@ dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 time_end <- Sys.time()
 print(paste0("Drop #4 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
+
 #### Find when a person is in both KCHA and SHA data due to port ins/outs (droptype = 5) ####
 # First find rows with the same program/date but one row is missing the 
 # cost_pha field (makes the steps below work better)
 time_start <- Sys.time()
 dfsize_head <- nrow(pha_cleanadd_sort)
-setorder(pha_cleanadd_sort, pid, act_date, agency_prog_concat, unit_concat, cost_pha)
+setorder(pha_cleanadd_sort, pid, act_date, agency_prog_concat, geo_hash_clean, cost_pha)
 pha_cleanadd_sort[, drop := if_else(pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
                                       act_date == lead(act_date, 1) &
                                       agency_prog_concat == lead(agency_prog_concat, 1) & 
-                                      unit_concat == lead(unit_concat, 1) &
+                                      geo_hash_clean == lead(geo_hash_clean, 1) &
                                       cost_pha == "" & lead(cost_pha != ""), 5, 0)]
 # Pull out drop tracking and merge
 drop_temp <- pha_cleanadd_sort %>% select(row, drop)
@@ -351,37 +364,35 @@ pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
 # However, cost_pha is not consistently used so do not rely on solely that (also use action types and port flags)
 repeat {
   dfsize <-  nrow(pha_cleanadd_sort)
-  setorder(pha_cleanadd_sort, pid, act_date, agency_prog_concat, unit_concat)
+  setorder(pha_cleanadd_sort, pid, act_date, agency_prog_concat, geo_hash_clean)
   # Need to check to pairs in both directions because sometimes the SHA date is just before the KCHA one and
   # relying on an alphabetical sort will fail
   # NB. There are some differences between the agencies that require slightly different code
-  pha_cleanadd_sort[, drop := if_else(
-    (pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
-       abs(act_date - lead(act_date, 1)) <= 31 &
-       agency_new == "KCHA" & lead(agency_new, 1) == "SHA" &
-       lead(port_out_kcha, 1) == 1 &
-       !act_type %in% c(5, 6)) | 
-      (pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
-         abs(act_date - lag(act_date, 1)) <= 31 &
-         agency_new == "KCHA" & lag(agency_new, 1) == "SHA" &
-         (unit_concat == lag(unit_concat, 1) | is.na(unit_concat) |
-            is.na(unit_concat) | lag(port_out_kcha, 1) == 1) &
-         ((act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4)) | 
-            !act_type %in% c(1, 4, 5, 6))) |
-      (pid == lead(pid, 1) & !is.na(lead(pid, 1)) &
-         abs(act_date - lead(act_date, 1)) <= 31 &
-         agency_new == "SHA" & lead(agency_new, 1) == "KCHA" &
-         (unit_concat == lead(unit_concat, 1) | is.na(unit_concat) |
-            lead(port_out_sha, 1) == 1) & !act_type %in% c(5, 6)) |
-      (pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
-         abs(act_date - lag(act_date, 1)) <= 31 &
-         agency_new == "SHA" & lag(agency_new, 1) == "KCHA" &
-         (unit_concat == lag(unit_concat, 1) | is.na(unit_concat) |
-            lag(port_out_sha, 1) == 1) &
-         ((act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4)) |
-            !act_type %in% c(1, 4, 5, 6) |
-            (act_type %in% c(5) & cost_pha == "WA002"))),
-    5, 0)]
+  pha_cleanadd_sort[, drop := case_when(
+    pid == lead(pid, 1) & !is.na(lead(pid, 1)) & 
+      abs(act_date - lead(act_date, 1)) <= 31 &
+      agency_new == "KCHA" & lead(agency_new, 1) == "SHA" &
+      lead(port_out_kcha, 1) == 1 &
+      !act_type %in% c(5, 6) ~ 5,
+    pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+      abs(act_date - lag(act_date, 1)) <= 31 &
+      agency_new == "KCHA" & lag(agency_new, 1) == "SHA" &
+      (geo_hash_clean == lag(geo_hash_clean, 1) | geo_blank == 1 | lag(port_out_kcha, 1) == 1) &
+      ((act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4)) | 
+         !act_type %in% c(1, 4, 5, 6)) ~ 5,
+    pid == lead(pid, 1) & !is.na(lead(pid, 1)) &
+      abs(act_date - lead(act_date, 1)) <= 31 &
+      agency_new == "SHA" & lead(agency_new, 1) == "KCHA" &
+      (geo_hash_clean == lead(geo_hash_clean, 1) | geo_blank == 1 | lead(port_out_sha, 1) == 1) & 
+      !act_type %in% c(5, 6) ~ 5,
+    pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
+      abs(act_date - lag(act_date, 1)) <= 31 &
+      agency_new == "SHA" & lag(agency_new, 1) == "KCHA" &
+      (geo_hash_clean == lag(geo_hash_clean, 1) | geo_blank == 1 | lag(port_out_sha, 1) == 1) &
+      ((act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4)) |
+         !act_type %in% c(1, 4, 5, 6) |
+         (act_type %in% c(5) & cost_pha == "WA002")),
+    TRUE ~ 0)]
   # Pull out drop tracking and merge
   drop_temp <- pha_cleanadd_sort %>% select(row, drop)
   drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
@@ -400,6 +411,7 @@ dfsize_head - nrow(pha_cleanadd_sort) # Track how many rows were dropped
 time_end <- Sys.time()
 print(paste0("Drop #5 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
+
 #### Get rid of blank addresses when there is an address for the same date (droptype = 6) ####
 # NO LONGER within a given program/subtype/spec voucher etc.
 # Requiring an exact program match was leaving too many that should be dropped
@@ -408,10 +420,8 @@ dfsize_head <- nrow(pha_cleanadd_sort)
 repeat {
   dfsize <-  nrow(pha_cleanadd_sort)
   pha_cleanadd_sort[, drop := if_else(
-    (pid == lead(pid, 1) & act_date == lead(act_date, 1) & 
-       is.na(unit_concat) & !is.na(lead(unit_concat, 1)) |
-       (pid == lag(pid, 1) & act_date == lag(act_date, 1) &
-          is.na(unit_concat) & !is.na(lag(unit_concat, 1)))),
+    (pid == lead(pid, 1) & act_date == lead(act_date, 1) & geo_blank == 1 & lead(geo_blank, 1) != 1) |
+      (pid == lag(pid, 1) & act_date == lag(act_date, 1) & geo_blank == 1 & lag(geo_blank, 1) != 1),
     6, 0)]
   # Pull out drop tracking and merge
   drop_temp <- pha_cleanadd_sort %>% select(row, drop)
@@ -564,7 +574,7 @@ print(paste0("Drop #7 took ", round(difftime(time_end, time_start, units = "secs
 # If so, take the mid-point between that individual's last action date and the
 # next date for the household as the EOP for that person. This section identifies
 # the next household action date.
-# Existing max_date is made from agency_prog_concat, unit_concat, and cost_pha.
+# Existing max_date is made from agency_prog_concat, geo_hash_clean, and cost_pha.
 # Need to just use agency_prog_concat here to avoid missing move outs
 pha_cleanadd_sort[, max_date2 := max(act_date, na.rm = T),
                   by = .(pid, agency_prog_concat)]
@@ -599,6 +609,7 @@ pha_cleanadd_sort <- merge(pha_cleanadd_sort, act_dates_merge,
 rm(max_date)
 rm(hh_act_dates)
 rm(act_dates_merge)
+
 
 #### Different agencies with the same or similar action date (droptype = 8) ####
 # At this point in the row consolidation there are some residual rows recording port outs when they are also showing in the other PHA
@@ -682,12 +693,13 @@ pha_cleanadd_sort[, drop := case_when(
     ((agency_new == "KCHA" & 
         (act_date - lag(act_date, 1) <= 365 |
            (act_date - lag(act_date, 1) > 365 &
-              (is.na(unit_concat) | unit_concat == lag(unit_concat, 1))))) |
-       (agency_new == "SHA" & is.na(unit_concat))) ~ 9,
+              (geo_blank == 1 | geo_hash_clean == lag(geo_hash_clean, 1))))) |
+       (agency_new == "SHA" & geo_blank == 1)) ~ 9,
   # For erroneous EOPs in SHA data, drop the row with the EOP in it
   pid == lead(pid, 1) & act_type == 6 & agency_new == "SHA" &
-    !is.na(unit_concat) &
-    unit_concat == lead(unit_concat, 1) & !is.na(lead(unit_concat)) ~ 9,
+    geo_blank != 1 &
+    geo_hash_clean == lead(geo_hash_clean, 1) & 
+    lead(geo_blank, 1) != 1 ~ 9,
   TRUE ~ 0
 )]
 # Pull out drop tracking and merge
@@ -701,6 +713,7 @@ dfsize_head - nrow(pha_cleanadd_sort)
 time_end <- Sys.time()
 print(paste0("Drop #9 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
 
+
 #### Remove annual reexaminations/intermediate visits within a given address + program (droptype = 10) ####
 # Want to avoid capturing the first or last row for a person at a given address
 # NB: now sorting by date before agency in order to reduce chances of 
@@ -710,7 +723,7 @@ dfsize_head <- nrow(pha_cleanadd_sort)
 setorder(pha_cleanadd_sort, pid, act_date, agency_prog_concat)
 pha_cleanadd_sort[, drop := if_else(
   pid == lag(pid, 1) & pid == lead(pid, 1) & !is.na(lag(pid, 1)) & !is.na(lead(pid, 1)) &
-    unit_concat == lag(unit_concat, 1) & unit_concat == lead(unit_concat, 1) &
+    geo_hash_clean == lag(geo_hash_clean, 1) & geo_hash_clean == lead(geo_hash_clean, 1) &
     # Checking for prog_type and agency_new matches
     agency_prog_concat == lag(agency_prog_concat, 1) & agency_prog_concat == lead(agency_prog_concat, 1) &
     # Check that port outs are in the same place (or one is missing)
@@ -722,7 +735,7 @@ pha_cleanadd_sort[, drop := if_else(
        (cost_pha == "" & lag(cost_pha, 1) == lead(cost_pha, 1)) |
        (cost_pha == lag(cost_pha, 1) & lead(cost_pha, 1) == "" &
           cost_pha == lead(cost_pha, 2) &
-          pid == lead(pid, 2) & unit_concat == lead(unit_concat, 2) &
+          pid == lead(pid, 2) & geo_hash_clean == lead(geo_hash_clean, 2) &
           agency_prog_concat == lead(agency_prog_concat, 2))) &
     # Check that a person didn't exit the program then come in again at the same address
     !(act_type %in% c(1, 4, 5, 6)),
@@ -890,7 +903,7 @@ pha_cleanadd_sort[, ':=' (
   # Any change in agency/program/address/PHA billed = act date
   startdate = as.Date(ifelse(pid != lag(pid, 1) | is.na(lag(pid, 1)) | 
                                agency_prog_concat != lag(agency_prog_concat, 1) |
-                               unit_concat != lag(unit_concat, 1) | cost_pha != lag(cost_pha, 1),
+                               geo_hash_clean != lag(geo_hash_clean, 1) | cost_pha != lag(cost_pha, 1),
                              act_date, NA), origin = "1970-01-01"),
   # Last row for a person or change in agency/program = 
   #   exit date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
@@ -905,8 +918,8 @@ pha_cleanadd_sort[, ':=' (
         agency_prog_concat != lead(agency_prog_concat, 1) |
         cost_pha != lead(cost_pha, 1) ~ pmin(today(), act_date + dyears(add_yr),
                                              act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
-      unit_concat != lead(unit_concat, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
-      unit_concat != lead(unit_concat, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
+      geo_hash_clean != lead(geo_hash_clean, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
+      geo_hash_clean != lead(geo_hash_clean, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
     , origin = "1970-01-01")
 )]
 
@@ -1116,11 +1129,11 @@ pha_cleanadd_sort <- pha_cleanadd_sort[order(pid, startdate, enddate, agency_pro
 pha_cleanadd_sort[, drop := ifelse(
   pid == lag(pid, 1) & !is.na(lag(pid, 1)) &
     lag(enddate, 1) >= startdate & startdate == enddate & act_type %in% c(5, 6) &
-    !((agency_prog_concat == lag(agency_prog_concat, 1) & is.na(unit_concat)) | 
-        unit_concat == lag(unit_concat, 1) |
-        (is.na(unit_concat) & agency_new == "KCHA" &
-           ((prog_type == "TBS8" & lag(prog_type, 1) == "PORT") |
-              prog_type == lag(prog_type, 1)))),
+    !((agency_prog_concat == lag(agency_prog_concat, 1) & geo_blank == 1) | 
+        geo_hash_clean == lag(geo_hash_clean, 1) |
+        (geo_blank == 1 & agency_new == "KCHA" & 
+           ((prog_type == "TBS8" & lag(prog_type, 1) == "PORT") | prog_type == lag(prog_type, 1)))
+      ),
   13, drop)]
 
 
@@ -1134,6 +1147,7 @@ pha_cleanadd_sort <- pha_cleanadd_sort[drop == 0 | is.na(drop)]
 dfsize_head - nrow(pha_cleanadd_sort)
 time_end <- Sys.time()
 print(paste0("Drop #13 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
+
 
 ### Truncate overlapping dates
 # Assume that most recent program/agency is the one to count 

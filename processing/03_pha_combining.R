@@ -30,7 +30,7 @@ library(data.table) # Used to manipulate data
 library(tidyverse) # Used to manipulate data
 
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- file.path(here::here(), "processing")
@@ -298,6 +298,5 @@ saveRDS(pha, file = file.path(housing_path, pha_fn))
 #### Clean up ####
 rm(kcha_long)
 rm(sha)
-rm(suffix3)
-rm(suffix4)
+rm(suffix)
 gc()
