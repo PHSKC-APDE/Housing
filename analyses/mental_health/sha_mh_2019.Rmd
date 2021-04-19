@@ -1,0 +1,67 @@
+---
+title: "Mental health and substance use among SHA residents in 2019"
+author: "Alastair Matheson"
+date: "April 18, 2021"
+output: html_document
+---
+
+<style type="text/css">
+
+h1 { color: DarkBlue;}
+h2 { color: DarkBlue;}
+h3 { color: DarkBlue;}
+h4 { color: DarkBlue;}
+code.r{ /* Code block */
+    font-size: 12px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 14px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(knitr.table.format = "html") 
+```
+
+The data below summarize mental health and substance use among Seattle Housing Authority Residents in 2019.
+
+The data below are produced using the combined SHA/Medicaid data. Note the following:
+
+* Analyses were restricted to people aged <65 who were enrolled in Medicaid while living at SHA in 2019 and were not dual enrolled (i.e., they were also not enrolled in Medicare at the same time). This is because Medicare data are not available for 2019.
+* No information is available for people with other forms of health insurance.
+* The total number of people included was `r length(unique(sha_19_mh_sud$id_apde))`.
+* Small numbers (0-9) are suppressed to preserve confidentiality.
+* **The data below are preliminary and have not undergone extensive quality assurance**
+
+
+## Any mental health claim by demographics
+```{r anymh, echo=FALSE, warning=FALSE}
+knitr::kable(any_mh, 
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F, position = "left")
+```
+
+
+## Any mental health-related ED visit by demographics
+```{r anymhed, echo=FALSE, warning=FALSE}
+knitr::kable(any_mh_ed, 
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F, position = "left")
+```
+
+## Any substance use health claim by demographics
+```{r anysud, echo=FALSE, warning=FALSE}
+knitr::kable(any_sud, 
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F, position = "left")
+```
+
+
+## Any substance use-related ED visit by demographics
+```{r anysuded, echo=FALSE, warning=FALSE}
+knitr::kable(any_sud_ed, 
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F, position = "left")
+```
