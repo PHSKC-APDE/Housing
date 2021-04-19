@@ -51,6 +51,7 @@ i2015 <- interval(start = "2015-01-01", end = "2015-12-31")
 i2016 <- interval(start = "2016-01-01", end = "2016-12-31")
 i2017 <- interval(start = "2017-01-01", end = "2017-12-31")
 i2018 <- interval(start = "2018-01-01", end = "2018-12-31")
+i2018 <- interval(start = "2019-01-01", end = "2019-12-31")
 
 # Person-time in housing, needs to be done separately to avoid errors
 pt_temp_h <- pha_mcaid_join[, .(pid2, startdate_h, enddate_h)]
@@ -63,7 +64,8 @@ pt_temp_h[, ':=' (
   pt15_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2015) / ddays(1)) + 1,
   pt16_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2016) / ddays(1)) + 1,
   pt17_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2017) / ddays(1)) + 1,
-  pt18_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2018) / ddays(1)) + 1
+  pt18_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2018) / ddays(1)) + 1,
+  pt19_h = (lubridate::intersect(interval(start = startdate_h, end = enddate_h), i2019) / ddays(1)) + 1
 )]
 
 pha_mcaid_final <- merge(pha_mcaid_join, pt_temp_h, by = c("pid2", "startdate_h", "enddate_h"), all.x = T)
@@ -81,13 +83,14 @@ pt_temp_m[, ':=' (
   pt15_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2015) / ddays(1)) + 1,
   pt16_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2016) / ddays(1)) + 1,
   pt17_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2017) / ddays(1)) + 1,
-  pt18_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2018) / ddays(1)) + 1
+  pt18_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2018) / ddays(1)) + 1,
+  pt19_m = (lubridate::intersect(interval(start = startdate_m, end = enddate_m), i2019) / ddays(1)) + 1
 )]
 
 pha_mcaid_final[pt_temp_m, on = .(pid2, startdate_m, enddate_m),
                 ':=' (pt12_m = i.pt12_m, pt13_m = i.pt13_m, pt14_m = i.pt14_m,
                       pt15_m = i.pt15_m, pt16_m = i.pt16_m, pt17_m = i.pt17_m,
-                      pt18_m = i.pt18_m)]
+                      pt18_m = i.pt18_m, pt19_m = i.pt19_m)]
 rm(pt_temp_m)
 
 
@@ -99,7 +102,8 @@ pha_mcaid_final[, ':=' (
   pt15 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2015) / ddays(1)) + 1,
   pt16 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2016) / ddays(1)) + 1,
   pt17 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2017) / ddays(1)) + 1,
-  pt18 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2018) / ddays(1)) + 1
+  pt18 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2018) / ddays(1)) + 1,
+  pt19 = (lubridate::intersect(interval(start = startdate_c, end = enddate_c), i2019) / ddays(1)) + 1
 )]
 
 
@@ -112,7 +116,8 @@ pha_mcaid_final[, ':=' (
   age15 = floor(lubridate::interval(start = dob_c, end = ymd(20151231)) / years(1)),
   age16 = floor(lubridate::interval(start = dob_c, end = ymd(20161231)) / years(1)),
   age17 = floor(lubridate::interval(start = dob_c, end = ymd(20171231)) / years(1)),
-  age18 = floor(lubridate::interval(start = dob_c, end = ymd(20181231)) / years(1))
+  age18 = floor(lubridate::interval(start = dob_c, end = ymd(20181231)) / years(1)),
+  age19 = floor(lubridate::interval(start = dob_c, end = ymd(20191231)) / years(1))
 )]
 
 # Remove negative ages - no, keep for now
@@ -145,7 +150,8 @@ pha_mcaid_final[, ':=' (
   length15 = floor(lubridate::interval(start = start_housing, end = ymd(20151231)) / years(1)),
   length16 = floor(lubridate::interval(start = start_housing, end = ymd(20161231)) / years(1)),
   length17 = floor(lubridate::interval(start = start_housing, end = ymd(20171231)) / years(1)),
-  length18 = floor(lubridate::interval(start = start_housing, end = ymd(20181231)) / years(1))
+  length18 = floor(lubridate::interval(start = start_housing, end = ymd(20181231)) / years(1)),
+  length19 = floor(lubridate::interval(start = start_housing, end = ymd(20191231)) / years(1))
 )]
 
 

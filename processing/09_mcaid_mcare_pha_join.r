@@ -299,9 +299,9 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       #-- Expand out rows to separate out overlaps ----
       temp_ext <- setDT(temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)])
       
-      temp2 <- temp %>% filter(id_apde == 408970) ## DELETE LATER
-      temp_ext <- temp2[rep(seq(nrow(temp2)), temp2$repnum), 1:ncol(temp2)]
-      
+      # temp2 <- temp %>% filter(id_apde == 408970) ## DELETE LATER
+      # temp_ext <- temp2[rep(seq(nrow(temp2)), temp2$repnum), 1:ncol(temp2)]
+      # 
       
       #-- Process the expanded data ----
       temp_ext[, rownum_temp := rowid(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm)]
@@ -579,21 +579,40 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       #-- clean up ----
       rm(linked, pha, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo)
       
-##### Write elig_demo to SQL ----
+##### WRITE ELIG_DEMO TO SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config_demo <- yaml::yaml.load(RCurl::getURL(yaml.elig))
+  table_config_demo <- yaml::yaml.load(httr::content(httr::GET(yaml.elig)))
 
   # Ensure columns are in same order in R & SQL & that we drop extraneous variables
   keep.elig <- names(table_config_demo$vars)
   elig <- elig[, ..keep.elig]
   
   # Write table to SQL
-  dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table), 
-               value = as.data.frame(elig),
-               overwrite = T, append = F, 
-               field.types = unlist(table_config_demo$vars))
+  # Split into smaller tables to avoid SQL connection issues
+  start <- 1L
+  max_rows <- 100000L
+  cycles <- ceiling(nrow(elig)/max_rows)
+  
+  lapply(seq(start, cycles), function(i) {
+    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+    end_row <- min(nrow(elig), max_rows * i)
+    
+    message("Loading cycle ", i, " of ", cycles)
+    if (i == 1) {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table),
+                   value = as.data.frame(elig[start_row:end_row]),
+                   overwrite = T, append = F,
+                   field.types = unlist(table_config_demo$vars))
+    } else {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table),
+                   value = as.data.frame(elig[start_row:end_row]),
+                   overwrite = F, append = T)
+    }
+  })
+  
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -740,10 +759,10 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   DBI::dbExecute(conn = db_apde51, qa.values2)
   
   
-##### Write elig_timevar to SQL ----
+##### WRITE ELIG_TIMEVAR TO SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config_timevar <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
+  table_config_timevar <- yaml::yaml.load(httr::content(httr::GET(yaml.timevar)))
 
   # Ensure columns are in same order in R & SQL & are limited those specified in the YAML
   keep.timevars <- names(table_config_timevar$vars)
@@ -752,11 +771,30 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   setcolorder(timevar, names(table_config_timevar$vars))
   
   # Write table to SQL
-  dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table), 
-               value = as.data.frame(timevar),
-               overwrite = T, append = F, 
-               field.types = unlist(table_config_timevar$vars))
+  # Split into smaller tables to avoid SQL connection issues
+  start <- 1L
+  max_rows <- 100000L
+  cycles <- ceiling(nrow(timevar)/max_rows)
+  
+  lapply(seq(start, cycles), function(i) {
+    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+    end_row <- min(nrow(timevar), max_rows * i)
+    
+    message("Loading cycle ", i, " of ", cycles)
+    if (i == 1) {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table),
+                   value = as.data.frame(timevar[start_row:end_row]),
+                   overwrite = T, append = F,
+                   field.types = unlist(table_config_timevar$vars))
+    } else {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table),
+                   value = as.data.frame(timevar[start_row:end_row]),
+                   overwrite = F, append = T)
+    }
+  })
+
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -920,13 +958,11 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
     
     # Load to final schema (permissions should be in place but not working)
     # Use SQL code file for now
-    
-    
-    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51",  
+        alter_schema_f(conn = db_apde51, 
                    from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_demo")
     
-    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51", 
+    alter_schema_f(conn = db_apde51, 
                    from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_timevar")
     
