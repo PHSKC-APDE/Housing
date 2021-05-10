@@ -628,7 +628,7 @@ if (UW == T) {
 
 
 ### clean up a bit
-rm(adds_specific, adds_clean, adds_already_clean, adds_ref, adds_final)
+rm(adds_specific, adds_clean, adds_already_clean, adds_to_clean, adds_ref, adds_final)
 
 
 #### Merge KCHA development data now that addresses are clean #####
@@ -709,5 +709,4 @@ rm(secondary)
 rm(secondary_init)
 rm(new_addresses)
 rm(pha_recoded)
-rm(pha_cleanadd)
 gc()

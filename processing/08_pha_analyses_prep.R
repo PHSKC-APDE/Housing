@@ -165,7 +165,7 @@ if(UW == TRUE) {
 pha_longitudinal <- pha_cleanadd_sort_dedup[, ..cols_select]
 
 
-###@ Set up time in housing for each row and note when there was a gap in coverage ####
+#### Set up time in housing for each row and note when there was a gap in coverage ####
 pha_longitudinal <- pha_longitudinal[order(pid, startdate, enddate)]
 pha_longitudinal[, ':=' (
   cov_time = interval(start = startdate, end = enddate) / ddays(1) + 1,

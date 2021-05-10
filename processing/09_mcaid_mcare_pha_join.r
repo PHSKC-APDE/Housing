@@ -60,24 +60,25 @@ yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/pro
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/alter_schema.R")
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
 
-##### Connect to the servers #####
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-db_claims51 <- dbConnect(odbc(), "PHClaims51")
 
-##### ------------------ ####
 ##### Load data from SQL #####
-  ### Medicaid-Medicare-Public Housing ID crosswalk ----
-  xwalk <- setDT(odbc::dbGetQuery(db_claims51, "SELECT id_apde, pid FROM [PHClaims].[final].[xwalk_apde_mcaid_mcare_pha]"))
-  
-  ### Public Housing ----
-  # use stage schema for now but switch to final once QA approach is sorted
-  pha <- setDT(odbc::dbGetQuery(db_apde51, "SELECT 
+### Public Housing ----
+# use stage schema for now but switch to final once QA approach is sorted
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+pha <- setDT(odbc::dbGetQuery(db_apde51, "SELECT 
         pid, start_housing, startdate, enddate, dob_m6, 
         gender_new_m6,
         race_new, r_aian_new, r_asian_new, r_black_new, r_nhpi_new, r_white_new, r_hisp_new,
         unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
+        geo_hash_clean, geo_hash_geocode, 
         agency_new, operator_type, portfolio_final, subsidy_type, vouch_type_final
                                 FROM [PH_APDEStore].[stage].[pha] WHERE enddate >= '2012-01-01'"))
+
+
+  ### Medicaid-Medicare-Public Housing ID crosswalk ----
+  db_claims51 <- dbConnect(odbc(), "PHClaims51")
+  xwalk <- setDT(odbc::dbGetQuery(db_claims51, "SELECT id_apde, pid FROM [PHClaims].[final].[xwalk_apde_mcaid_mcare_pha]"))
+  
   
   ### Joint Medicaid-Medicare elig_demo ----
   elig.mm <- setDT(odbc::dbGetQuery(db_claims51, "SELECT * FROM [PHClaims].[final].[mcaid_mcare_elig_demo]"))
@@ -89,7 +90,7 @@ db_claims51 <- dbConnect(odbc(), "PHClaims51")
   
   ### Geo ref table ----
   ref.geo <- setDT(odbc::dbGetQuery(db_claims51, "
-  SELECT geo_add1_clean, geo_city_clean, geo_state_clean, geo_zip_clean, 
+  SELECT geo_add1_clean, geo_city_clean, geo_state_clean, geo_zip_clean, geo_hash_geocode, 
   geo_zip_centroid, geo_street_centroid, geo_countyfp10 AS geo_county_code,
   geo_tractce10 AS geo_tract_code, geo_hra_id AS geo_hra_code, 
   geo_school_geoid10 AS geo_school_code 
@@ -159,7 +160,8 @@ pha <- merge(pha, ref.geo,
 # ascribe ever KC residence status
 pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
 
-##### Create Mcaid-Mcare-PHA elig_demo -----
+
+##### CREATE MCAID-MCARE-PHA ELIG_DEMO -----
   ### Create PHA elig_demo (most recent row per id) ----
   elig.pha <- copy(pha)
   setorder(elig.pha, id_apde, -from_date) 
@@ -222,7 +224,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       rm(elig.mm, elig.mm.linked, elig.mm.solo, elig.pha, elig.pha.linked, elig.pha.solo, linked)
       
       
-##### Create Mcaid-Mcare-PHA elig_timevar -----
+##### CREATE MCAID-MCARE-PHA ELIG_TIMEVAR -----
   ### Create PHA elig_timevar ----
       timevar.pha <- copy(pha)
       timevar.pha <- timevar.pha[, .(id_apde, from_date, to_date, 
@@ -556,7 +558,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
       #-- Add KC flag based on zip code or FIPS code as appropriate----  
-      kc.zips <- fread(kc.zips.url)
+      kc.zips <- data.table::fread("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv")
       timevar[, geo_kc := 0]
       timevar[geo_county_code=="033", geo_kc := 1]
       timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
@@ -578,6 +580,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
 
       #-- clean up ----
       rm(linked, pha, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo)
+      
       
 ##### WRITE ELIG_DEMO TO SQL ----
   ### Write to SQL ----

@@ -121,9 +121,10 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,fkmtw5800,fkmtw5800,,,,,,incasset_id
 ,fkinf5800,fkinf5800,,,,,,incasset_id
 ,pkhsum,pkhsum,pk_hsum,,,,,incasset_id
-,propertyid,propertyid,propertyid,buildingid,,Project.Code,,property_id
+,propertyid,propertyid,propertyid,,,Project.Code,,property_id
 ,,projectid,project_id,,Project_ID,,,property_id
 ,,,projectid,,projectid,,,property_id
+,,,,buildingid,,,,building_id
 ,,,certificationuniqueidshafield,hhcertid,,certificationid,,cert_id
 ,,,certificationuniqueidshafield,,,,,cert_id
 ,,,hohuniqueidentifier,,,householdid,Household ID,hh_id

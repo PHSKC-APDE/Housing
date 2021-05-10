@@ -113,12 +113,11 @@ if (UW == TRUE){
   sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
 }
 
-sha_prog_codes <- read.xlsx(file.path(
-  sha_path, sha_prog_codes_fn), 2)
+sha_prog_codes <- read.xlsx(file.path(sha_path, sha_prog_codes_fn), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(file.path(
-  sha_path, sha_prog_codes_fn), 1)
+sha_portfolio_codes  <- read.csv(file.path(sha_path, sha_portfolio_codes_fn)) %>%
+  mutate(building_name = ifelse(building_name == "", NA_character_, building_name))
 
 
 
@@ -136,8 +135,9 @@ if (add_2018 == TRUE) {
               sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
               sha5a_2018_2018 = sha5a_2018_2018, sha5b_2018_2018 = sha5b_2018_2018,
               sha6_2019_2019 = sha6_2019_2019,
-              sha_prog_codes = sha_prog_codes, 
-              sha_portfolio_codes = sha_portfolio_codes)
+              sha_prog_codes = sha_prog_codes
+              #, sha_portfolio_codes = sha_portfolio_codes # Don't need to deduplicate or rename here
+              )
 } else {
   dfs <- list(sha1a_2004_2006 = sha1a_2004_2006, sha1b_2004_2006 = sha1b_2004_2006, 
               sha1c_2004_2006 = sha1c_2004_2006, 
@@ -146,8 +146,9 @@ if (add_2018 == TRUE) {
               sha3a_2012_2017 = sha3a_2012_2017, sha3b_2012_2017 = sha3b_2012_2017,
               sha4_2004_2006 = sha4_2004_2006, 
               sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
-              sha_prog_codes = sha_prog_codes, 
-              sha_portfolio_codes = sha_portfolio_codes)
+              sha_prog_codes = sha_prog_codes
+              #, sha_portfolio_codes = sha_portfolio_codes # Don't need to deduplicate or rename here
+              )
 }
 
 
@@ -654,8 +655,7 @@ if (add_2018 == T) {
            r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
     )
   sha6_2019_2019 <- sha6_2019_2019 %>%
-    mutate(property_id = as.character(property_id),
-           act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
+    mutate(act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
            r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
     )
   
@@ -784,6 +784,7 @@ sha3 <- sha3 %>%
          unit_zip = as.numeric(unit_zip),)
 
 
+### Append data and drop data fields not being used (data from SHA are blank)
 if (UW == TRUE) {
   sha6uw <- sha6uw %>% mutate(sha_source = "sha6uw")
   
@@ -791,11 +792,11 @@ if (UW == TRUE) {
     mutate(subs_type = as.character(subs_type),
            unit_zip = as.character(unit_zip),
            rent_tenant = as.numeric(rent_tenant))
-
-  # Append data and drop data fields not being used (data from SHA are blank)
+  
   sha_ph <- bind_rows(sha1, sha2, sha3, sha6uw)
 } else if (add_2018 == T) {
   sha6 <- sha6 %>% mutate(sha_source = "sha6")
+  
   sha_ph <- bind_rows(sha1, sha2, sha3, sha6) %>%
     select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 } else {
@@ -806,16 +807,28 @@ if (UW == TRUE) {
 
 # Fix more formats
 sha_ph <- sha_ph %>%
-  mutate(property_id = case_when(
-    as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)) ~ paste0("00", property_id),
-    as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & 
-      !is.na(as.numeric(property_id)) ~ paste0("0", property_id),
-    TRUE ~ property_id)
-  ) %>%
-  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
+  mutate_at(vars(contains("date"), dob, hh_dob, start_pha), funs(as.Date(., format = "%m/%d/%Y")))
 
 # Join with portfolio data
-sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
+# First join on propertyid then on building_id for the 2019 data
+sha_ph <- left_join(sha_ph, 
+                    distinct(sha_portfolio_codes, property_id, prog_type, portfolio), 
+                    by = "property_id") %>%
+  mutate(prog_type = ifelse(is.na(prog_type.x), prog_type.y, prog_type.x)) %>%
+  select(-prog_type.x, -prog_type.y) %>%
+  left_join(., 
+            distinct(sha_portfolio_codes, building_id, building_name, property_name, portfolio), 
+            by = c("building_id", "property_name" = "building_name")) %>%
+  mutate(property_name = case_when(!is.na(property_name.y) ~ property_name.y,
+                                   TRUE ~ property_name),
+         portfolio = case_when(
+           is.na(portfolio.x) & !is.na(portfolio.y) ~ portfolio.y,
+           # Fix up a few special cases that didn't join)
+           sha_source == "sha6" & property_name == "Yesler Terrace" ~ "Yesler Terrace",
+           sha_source == "sha6" & prog_type == "Collaborative Housing" & is.na(portfolio.y) ~ "Collaborative Housing",
+           TRUE ~ portfolio.x)
+         ) %>%
+  select(-portfolio.x, -portfolio.y, -property_name.y)
 
 # Rename specific portfolio
 sha_ph <- mutate(sha_ph, 
@@ -931,6 +944,8 @@ if (UW == TRUE) {
 
 sha_hcv <- bind_rows(sha4, sha5)
 
+
+
 #### JOIN PH AND HCV COMBINED FILES ####
 # Clean up mismatching variables
 if (UW == TRUE) {
@@ -960,6 +975,10 @@ sha <- bind_rows(sha_ph, sha_hcv) %>%
 # fill in gaps (rather than mutate, which is slow)
 # Data recorded in the HH fields do not add up to the calculated HH income
 # Need to standardize, calculated data seems more accurate
+
+#### NOTE: NEED TO REDO THIS SECTION FOR THE 2019 DATA ####
+# 2019 income data sits in hh_inc already
+
 
 # Temporarily switch to data.table because it's ~50 times faster
 hh_inc_y <- setDT(sha)
@@ -1177,7 +1196,7 @@ rm(mbr_miss_join)
 
 
 
-### Transfer over data to rows with missing programs and vouchers
+#### Transfer over data to rows with missing programs and vouchers ####
 # (not all rows were joined earlier and it is easier to clean up at this point 
 # once duplicate rows are deleted)
 sha <- setDT(sha)
@@ -1208,6 +1227,7 @@ if(sql == TRUE) {
                  act_date = "date",
                  admit_date = "date",
                  dob = "date",
+                 hh_dob = "date",
                  reexam_date = "date",
                  mtw_admit_date = "date",
                  list_date = "date",

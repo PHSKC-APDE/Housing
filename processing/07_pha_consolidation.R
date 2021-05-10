@@ -35,7 +35,9 @@ library(data.table) # Used to manipulate data
 
 script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
-METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 if (UW == TRUE) {
@@ -55,27 +57,27 @@ pha_cleanadd_sort <- pha_cleanadd %>% arrange(pid, act_date, agency_new, prog_ty
 pha_cleanadd_sort <- pha_cleanadd_sort %>%
   mutate(
     # Hard vs. TBS8 units (subsidy type)
-    subsidy_type = ifelse(prog_type %in% c("TBS8", "TENANT BASED VOUCHER", "PORT"),
-                          "TENANT BASED/SOFT UNIT", "HARD UNIT"),
+    subsidy_type = case_when(
+      prog_type %in% c("TBS8", "PORT", "TENANT BASED", "TENANT BASED VOUCHER") ~ "TENANT BASED/SOFT UNIT",
+      prog_type == "COLLABORATIVE HOUSING" & (subs_type != "HCV" | is.na(subs_type)) ~ "HARD UNIT",
+      prog_type %in% c("PH", "SHA OWNED AND MANAGED", "SHA OWNED/MANAGED") ~ "HARD UNIT",
+      is.na(prog_type) & subs_type == "HCV" ~ "TENANT BASED/SOFT UNIT",
+      TRUE ~ NA_character_),
     # Finalize portfolios
     portfolio_final = case_when(
-      agency_new == "SHA" & 
-        prog_type %in% c("SHA, OWNED/MANAGED", "SHA OWNED/MANAGED") ~ portfolio,
+      agency_new == "SHA" & subsidy_type == "HARD UNIT" ~ portfolio,
       agency_new == "KCHA" & !is.na(property_type) ~ property_type,
-      TRUE ~ ""
-    ),
+      TRUE ~ ""),
     # Make operator variable
     operator_type = case_when(
       subsidy_type == "HARD UNIT" & 
-        (portfolio_final != "" | prog_type %in% c("PH", "SHA OWNED/MANAGED") |
+        (portfolio_final != "" | prog_type %in% c("PH", "SHA OWNED AND MANAGED", "SHA OWNED/MANAGED") |
            (vouch_type == "SHA OWNED PROJECT-BASED" & !is.na(vouch_type))) ~ "PHA OPERATED",
-      subsidy_type == "HARD UNIT" & !is.na(prog_type) & 
-        (portfolio_final == "" | is.na(portfolio_final)) &
-        ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" &
+      subsidy_type == "HARD UNIT" & !is.na(prog_type) & (portfolio_final == "" | is.na(portfolio_final)) &
+        ((agency_new == "SHA" & prog_type == "COLLABORATIVE HOUSING" & 
             (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type))) |
            (agency_new == "KCHA" & prog_type != "PH")) ~ "NON-PHA OPERATED",
-      TRUE ~ ""
-    ),
+      TRUE ~ ""),
     # Reorganize voucher types
     vouch_type_final =  case_when(
       # Special types (some in hard units also)
@@ -88,27 +90,33 @@ pha_cleanadd_sort <- pha_cleanadd_sort %>%
       # Other soft units
       subsidy_type == "TENANT BASED/SOFT UNIT" & 
         vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PH REDEVELOPMENT", 
+                          "PROJECT-BASED - LOCAL",
                           "PROJECT-BASED - REPLACEMENT HOUSING",
-                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "SOUND FAMILIES", 
+                          "SUPPORTIVE HOUSING",
                           "TENANT BASED VOUCHER") ~ "GENERAL TENANT-BASED VOUCHER",
       subsidy_type == "TENANT BASED/SOFT UNIT" & 
         is.na(vouch_type) ~ "GENERAL TENANT-BASED VOUCHER",
       # Partner vouchers
       subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" &
         vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PH REDEVELOPMENT", 
+                          "PROJECT-BASED - LOCAL",
                           "PROJECT-BASED - REPLACEMENT HOUSING",
-                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "SOUND FAMILIES", 
+                          "SUPPORTIVE HOUSING",
                           "TENANT BASED VOUCHER") ~ "PARTNER PROJECT-BASED VOUCHER",
       subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" & 
         is.na(vouch_type) ~ "PARTNER PROJECT-BASED VOUCHER",
       # PHA operated vouches
       subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" &
         vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                          "PH REDEVELOPMENT", "PROJECT-BASED - LOCAL",
+                          "PH REDEVELOPMENT", 
+                          "PROJECT-BASED - LOCAL",
                           "PROJECT-BASED - REPLACEMENT HOUSING",
-                          "SOUND FAMILIES", "SUPPORTIVE HOUSING",
+                          "SOUND FAMILIES", 
+                          "SUPPORTIVE HOUSING",
                           "TENANT BASED VOUCHER") ~ "PHA OPERATED VOUCHER",
       subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" & 
         is.na(vouch_type) ~ "",
