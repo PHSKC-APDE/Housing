@@ -21,8 +21,8 @@ library(glue) # Used to safely make SQL queries
 
 
 ##### Connect to the SQL servers #####
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
@@ -2006,7 +2006,6 @@ DBI::dbWriteTable(db_extractstore51,
 #### MOVE DATA TO 50 SERVER ####
 # Set up connections
 db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
-db_extractstore50 <- dbConnect(odbc(), "PHExtractStore50")
 
 # If the Tableau workbook and data pass internal QA, move to external WIP file
 # for partners to QA
