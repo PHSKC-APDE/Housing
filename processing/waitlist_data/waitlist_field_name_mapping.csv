@@ -1,51 +1,148 @@
-sha_2017,kcha,common_name
-HouseholdMemberID,,mbr_num
-HeadOfHouseholdID,,hh_mbr_num
-HeadOfHouseholdID2,,hh_mbr_num2
-HOH_SSN,,hh_ssn
-LastName,,lname
-FirstName,,fname
-MiddleInitial,,mname
-DOB,,dob
-Gender,,gender
-Relationship,,relcode
-SSN,,ssn
-IsDisabled,,disability
-IsWhite,,r_white
-IsAfricanAmerican,,r_black
-IsNativeAmerican,,r_aian
-IsAsian,,r_asian
-IsHawaiianPacificIslander,,r_nhpi
-Ethnicity,,r_hisp
-IsEnglishPrimaryLanguage,,lang_eng
-PrimaryLanguage,,lang
-IsInterpreterNeeded,,lang_interpreter
-EducationLevel,,education
-IsHouseholdMemberVeteran,,veteran
-RN,,rn
-MailingAddress1,,unit_add
-MailingApartment,,unit_apt
-MailingAddress2,,unit_apt2
-MailingCity,,unit_city
-MailingState,,unit_state
-MailingZip,,unit_zip
-SleptLastNightLocation,,current_housing
-IsPayingRent,,paying_rent
-IsHousingSubsidyRecipient,,subs_recipient
-HousingSubsidyDescription,,subs_type
-IsDisabilityIncomeRecipient,,inc_disability
-IsWageRecipient,,inc_wage
-IsSocialSecurityPensionRecipient,,inc_pension
-IsSSIWashingtonAgedBlindDisabledRecipient,,inc_ssi
-IsTANFRecipient,,inc_tanf
-IsOtherIncomeRecipient,,inc_other
-OtherIncomeDescription,,inc_other_type
-AnnualHouseholdIncome,,hh_inc_tot
-HouseholdCount,,hh_size
-FinalizationDate,,date_finalization
-osEntityPK,,os_entity_pk
-Is.On.Waitlist,,waitlist
-Is.On.Issuance,,issuance
-Is.On.LeaseUp,,lease_up
-Increment.Leased.Up,,increment
-Leased.Up.Under.Standard.TBV,,hcv_standard
+sha_2017,kcha_2017,common_name,explanation
+HeadOfHouseholdID,appnumber,app_num,Application number (one per household)
+HouseholdMemberID,memberrecid,app_mbr_num,Individual ID associated with applicant (not unique for SHA)
+,membernumber,mbr_num,Household member number
+,,hh_mbr_num,Head of household ID1
+HeadOfHouseholdID2,,hh_mbr_num2,Head of household ID2 (seems to be a straight duplicate of HeadOfHouseholdID)
+HOH_SSN,,hh_ssn,Head of household Social Security Number
+LastName,lname,lname,Last name
+FirstName,fname,fname,First name
+MiddleInitial,mi,mname,Middile initial
+,fullname,name,Collated first and last name
+DOB,dob,dob,Date of birth
+,age,age,Age (assume calculated at time of application)
+,cmto_under15,cmto_under15,Candidate for Moving to Opportunity - aged under 15?
+,cmto_under13,cmto_under13,Candidate for Moving to Opportunity - aged under 13?
+Gender,sex,gender,Gender
+Relationship,relationship,relcode,Relationship to head of household
+SSN,ssn,ssn,Social Security Number
+,nossn,ssn_missing,Flag to indicate missing SSN
+,dup_ssn,ssn_dup,Flag to indicate duplicate SSN?
+IsDisabled,disabled,disability,Disability flag
+,non_elderly_disabled,non_elderly_disabled,Flag to indicate non-elderly disabled individual
+IsWhite,white,r_white,Race - White
+IsAfricanAmerican,black,r_black,Race - Black
+IsNativeAmerican,indian,r_aian,Race - American Indian/Alaskan Native
+IsAsian,asian,r_asian,Race - Asian
+IsHawaiianPacificIslander,pacislnd,r_nhpi,Race - Native Hawaiian/Pacific Islander
+Ethnicity,hispanic,r_hisp,Race - Latinx
+,multi_racial,r_multi,Race - multiple
+,race_ethnicity,r_eth,Race - collapsed race/ethnicity (not sure of algorithm used to generate this)
+IsEnglishPrimaryLanguage,,lang_eng,Flag to indicate English is primary language
+PrimaryLanguage,primarylanguage,lang,Primary language
+IsInterpreterNeeded,translationneeded,lang_interpreter,Interpret required
+EducationLevel,,education,Education level
+IsHouseholdMemberVeteran,usveteran,veteran,Veteran flag
+RN,,rn,Unclear what this refers to
+,addr,unit_add,Current address - street address
+,aptnum,unit_apt,Current address - apartment number
+,city,unit_city,Current address - city
+,state,unit_state,Current address - state
+,zip,unit_zip,Current address - ZIP
+,COUNTY_ZIP,unit_zip_county,Current address - county based on ZIP
+,PO_BOX,unit_po_box,Flag to indicate address is a PO box?
+,NO_ADDR,unit_missing,Flag to indicate address is missing?
+MailingAddress1,mailaddr,mail_add,Mailing address - street address
+MailingApartment,mailaptnum,mail_apt,Mailing address - apartment number
+MailingAddress2,,mail_apt2,Mailing address - street address 2
+MailingCity,mailcity,mail_city,Mailing address - city
+MailingState,mailstate,mail_state,Mailing address - state
+MailingZip,mailzip,mail_zip,Mailing address - ZIP
+SleptLastNightLocation,,current_housing,Current housing situation
+,liveown,live_own,In past 12 months stayed in residence owned by household
+,liverent,live_rent,In past 12 months stayed in unsubsidized private rental
+,liverentsubsidy,live_rentsubsidy,In past 12 months stayed in subsidized private rental
+,liveph,live_ph,In past 12 months stayed in public housing
+,livefriend,live_friend,In past 12 months stayed with friends or family members
+,livestreet,live_street,"In past 12 months stayed in a car, RV, or tent outside"
+,liveshelter,live_shelter,In past 12 months stayed in an emergency or homeless shelter
+,livetransition,live_transition,In past 12 months stayed in transitional or supportive housing
+,livenursing,live_nursing,"In past 12 months stayed in a nursing home, institutional care setting, or group home"
+,liveother,live_other,In past 12 months stayed in another setting
+,liveothertype,live_other_type,In past 12 months stayed in another setting - details
+,liveother_category,live_other_type_cat,In past 12 months stayed in another setting - categorized (note not all free-text entries map to a category)
+IsPayingRent,rentingnow,paying_rent,Paying rent at current residence
+,rentmonthly,rent_monthly,Amount of monthly rent paid
+IsHousingSubsidyRecipient,rentsubsidy,subs_recipient,Receiving a housing subsidy or living in subsidized housing
+HousingSubsidyDescription,rentsubsidytype,subs_type,Type of housing subsidy currently receiving
+,ulilelectric,util_electric,Monthly utility costs - electricity
+,utilgas,util_gas,Monthly utility costs - gas
+,utilwater,util_water,Monthly utility costs - water
+,utilsewer,util_sewer,Monthly utility costs - sewer
+,utiltrash,util_trash,Monthly utility costs - trash
+IsDisabilityIncomeRecipient,,inc_disability,Flag to indicate household receives income from disability
+IsWageRecipient,,inc_wage,Flag to indicate household receives income from wages
+IsSocialSecurityPensionRecipient,,inc_pension,Flag to indicate household receives income from pensions
+IsSSIWashingtonAgedBlindDisabledRecipient,,inc_ssi,Flag to indicate household receives income from SSI
+IsTANFRecipient,,inc_tanf,Flag to indicate household receives income from TANF
+IsOtherIncomeRecipient,,inc_other,Flag to indicate household receives income from other sources
+OtherIncomeDescription,,inc_other_type,Details of other income type/explanation for income
+,earnedincome,inc_earned,Annual household income from wages
+,benefitincome,inc_benefit,Annual household income from benefits
+,otherincome,inc_other,Annual household income from other sources
+,income_source,inc_category,Categories of household income (permutations of the three sources)
+AnnualHouseholdIncome,hhincome,hh_inc_tot,Total annual gross household income
+HouseholdCount,householdsize,hh_size,Household size
+,adults_total,adults_total,Total number of adults in household
+,senior_total,senior_total,Total number of seniors (62+) in household
+,minors_total,minors_total,Total number of minors in household
+,elderly_total,elderly_total,Total number of elderly (62+) in household - seems to be a duplicate of senior_total
+,disabled_total,disabled_total,Total number of disabled individuals in household
+,non_elderly_disabled_total,non_elderly_disabled_total,Total number of non-elderly disabled individuals in household
+,veteran_total,veteran_total,Total number of verteans in household
+,kids_nokids,kids_nokids,Flag to indicate presence of minors in household
+,housing_situation_total,housing_situation_total,Unclear what this refers to
+,homeless,homeless,Flag to indicate homelessness?
+,householdtype,household_type,"Category of head of household: elderly, non-elderly disabled, non-elderly non-disabled"
+,singleparent,single_parent,Flag to indicate single parent household
+,ami_percent,ami_percent,Percent of area median income
+,ami_category,ami_category,Percent of area median income - categorized
+,assets50k,assets50k,Household has assets valued over $50k
+,qualifyincome_n,qualify_income,Household has annual gross income below threshold - numeric recode
+,qualifyhomeless_n,qualify_homeless,Household has no regular nighttime residence - numeric recode
+,qualifyrentburden_n,qualify_rentburden,Household pays 50+% of income on housing - numeric recode
+,qualifydisplaced_n,qualify_displaced,"Household displaced by domestic violence, trafficking, natural disaster, etc. - numeric recode"
+,qualifysubstandard_n,qualify_substandard,Household lives in a dilapidated or unsafe unit - numeric recode
+,qualifyspc_n,qualify_spc,Household is in shelter plus care program - numeric recode
+,qualifyminor,qualify_minor,Household has 1+ member aged under 18
+,qualifyelderly,qualify_elderly,Household has 1+ member aged 62+
+,qualifydisabled,qualify_disabled,Household has 1+ member with disability
+,qualifyheadadult,qualify_headadult,Household head is aged 18+
+,total_preferences,total_preferences,Unclear what this refers to
+,waitlist_2015,waitlist_2015,Applied for/placed on the 2015 waitlist?
+FinalizationDate,,date_finalization,
+osEntityPK,,os_entity_pk,
+Is.On.Waitlist,Final_Waitlist,waitlist,Flag to indicate household was placed on waitlist
+Is.On.Issuance,,issuance,Flag to indicate household was issued a voucher?
+Is.On.LeaseUp,,lease_up,Flag to indicate household leased up
+Increment.Leased.Up,,increment,
+Leased.Up.Under.Standard.TBV,,hcv_standard,
+,qualifyincome,drop1,Already have the recoded version so drop the Y/N version
+,qualifyhomeless,drop2,Already have the recoded version so drop the Y/N version
+,qualifyrentburden,drop3,Already have the recoded version so drop the Y/N version
+,qualifydisplaced,drop4,Already have the recoded version so drop the Y/N version
+,qualifysubstandard,drop5,Already have the recoded version so drop the Y/N version
+,qualifyspc,drop6,Already have the recoded version so drop the Y/N version
+,phone,drop7,Not adding phone or email data to final dataset so drop
+,phonevm,drop8,Not adding phone or email data to final dataset so drop
+,phonetext,drop9,Not adding phone or email data to final dataset so drop
+,workphone,drop10,Not adding phone or email data to final dataset so drop
+,workphonevm,drop11,Not adding phone or email data to final dataset so drop
+,workphonetext,drop12,Not adding phone or email data to final dataset so drop
+,msgphone,drop13,Not adding phone or email data to final dataset so drop
+,msgphonevm,drop14,Not adding phone or email data to final dataset so drop
+,msgphonetext,drop15,Not adding phone or email data to final dataset so drop
+,email,drop16,Not adding phone or email data to final dataset so drop
+,preferredcontactphone,drop17,Not adding phone or email data to final dataset so drop
+,preferredcontacttext,drop18,Not adding phone or email data to final dataset so drop
+,preferredcontactemail,drop19,Not adding phone or email data to final dataset so drop
+,preferredcontactmail,drop20,Not adding phone or email data to final dataset so drop
+,altcontactname,drop21,Not using alternative contact details so drop
+,altcontactphone,drop22,Not using alternative contact details so drop
+,altcontactemail,drop23,Not using alternative contact details so drop
+,altcontactorganization,drop24,Not using alternative contact details so drop
+,altcontactrelationship,drop25,Not using alternative contact details so drop
+,altcontactaddr,drop26,Not using alternative contact details so drop
+,altcontactcity,drop27,Not using alternative contact details so drop
+,altcontactstate,drop28,Not using alternative contact details so drop
+,altcontactzip,drop29,Not using alternative contact details so drop
