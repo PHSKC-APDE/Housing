@@ -1490,7 +1490,7 @@ health_events_combined_pop <- health_events_combined_pop %>%
 
 
 
-### Create portfolio specific comparisons and join back to main data
+### Create portfolio specific comparisons and join back to main data ####
 rest_pha <- health_events_combined_pop %>%
   filter((agency == "KCHA" | agency == "SHA") & category1 == "portfolio" & 
            !is.na(group1) & category2 == "total") %>%
@@ -1582,7 +1582,9 @@ health_events_pop_final_suppressed <- health_events_pop_final_suppressed %>%
               . == "voucher" ~ "Voucher type",
               . == "zip" ~ "ZIP code",
               TRUE ~ .))) %>%
-  mutate_at(vars(group1, group2), list(~ case_when(. == "overall" ~ "Overall", TRUE ~ .)))
+  mutate_at(vars(group1, group2), list(~ case_when(. == "overall" ~ "Overall", TRUE ~ .))) %>%
+  # Add timestamp for load
+  mutate(run_date = Sys.time())
 
 
 #### WRITE DATA ####
@@ -1991,7 +1993,8 @@ acute_cause <- bind_rows(acute_cause_nonpha, acute_cause_nonpha_mcaid,
     rank_flag = ifelse(is.na(claim_cnt), "+", NA_character_)
   ) %>%
   ungroup() %>%
-  select(-rank_max)
+  select(-rank_max) %>%
+  mutate(run_date = Sys.time())
 
 
 ### Write to SQL
@@ -2011,7 +2014,7 @@ db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
 # for partners to QA
 
 # Note: this approach assumes no differences between the WIP and production table structures
-# If there are differences, load from R instead (but break up loads into chunks to avoid netowrk issues)
+# If there are differences, load from R instead (but break up loads into chunks to avoid network issues)
 
 DBI::dbExecute(db_extractstore51,
                "DELETE FROM [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_enrollment]")

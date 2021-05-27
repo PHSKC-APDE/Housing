@@ -503,7 +503,8 @@ if (UW == FALSE) {
         is.na(geo_add1_clean) & !is.na(geo_po_box_clean) ~ geo_po_box_clean,
         TRUE ~ geo_add1_clean),
         geo_add2_clean = case_when(
-          is.na(geo_add2_clean) & !is.na(geo_po_box_clean) & !is.na(geo_add1_clean) ~ geo_po_box_clean,
+          is.na(geo_add2_clean) & !is.na(geo_po_box_clean) & !is.na(geo_add1_clean) & 
+            geo_add1_clean != geo_po_box_clean ~ geo_po_box_clean,
           !is.na(geo_add2_clean) & !is.na(geo_po_box_clean) & !is.na(geo_add1_clean) ~ paste(geo_add2_clean, geo_po_box_clean, sep = " "),
           TRUE ~ geo_add2_clean),
         geo_po_box_clean = as.numeric(ifelse(!is.na(geo_po_box_clean), 1, 0))
