@@ -29,7 +29,6 @@ library(claims) # Used to aggregate data
 ##### Connect to the SQL servers #####
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
-db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
@@ -70,7 +69,7 @@ mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar %>%
 # Used for chronic disease denominator and enrollment analyses
 
 # Set up calendar years
-years <- seq(2012, 2018)
+years <- seq(2012, 2019)
 
 allocated <- bind_rows(lapply(seq_along(years), function(x) {
   
@@ -191,8 +190,8 @@ mcaid_mcare_pha_elig_calyear[, last_run := Sys.time()]
 
 
 #### WRITE DATA TO SQL SERVER ####
-table_config_stage <- yaml::yaml.load(RCurl::getURL(
-  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml"))
+table_config_stage <- yaml::yaml.load(httr::content(httr::GET(
+  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml")))
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
 
 
@@ -206,11 +205,29 @@ mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear[, names(table_confi
 # data.table::setcolorder(mcaid_mcare_pha_elig_calyear, names(table_config_stage$vars))
 
 # Load to SQL
-DBI::dbWriteTable(db_apde51,
-                  name = DBI::Id(schema = "stage", table = "mcaid_mcare_pha_elig_calyear"),
-                  value = mcaid_mcare_pha_elig_calyear,
-                  append = F, overwrite = T,
-                  field.types = unlist(table_config_stage$vars))
+# Split into smaller tables to avoid SQL connection issues
+start <- 1L
+max_rows <- 100000L
+cycles <- ceiling(nrow(mcaid_mcare_pha_elig_calyear)/max_rows)
+
+lapply(seq(start, cycles), function(i) {
+  start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+  end_row <- min(nrow(mcaid_mcare_pha_elig_calyear), max_rows * i)
+  
+  message("Loading cycle ", i, " of ", cycles)
+  if (i == 1) {
+    dbWriteTable(db_apde51,
+                 name = DBI::Id(schema = table_config_stage$schema, table = table_config_stage$table),
+                 value = as.data.frame(mcaid_mcare_pha_elig_calyear[start_row:end_row]),
+                 overwrite = T, append = F,
+                 field.types = unlist(table_config_stage$vars))
+  } else {
+    dbWriteTable(db_apde51,
+                 name = DBI::Id(schema = table_config_stage$schema, table = table_config_stage$table),
+                 value = as.data.frame(mcaid_mcare_pha_elig_calyear[start_row:end_row]),
+                 overwrite = F, append = T)
+  }
+})
 
 
 ### Add index
@@ -231,3 +248,5 @@ rm(housing_path, years)
 rm(table_config_stage)
 rm(mcaid_mcare_pha_elig_demo, mcaid_mcare_pha_elig_timevar)
 rm(mcaid_mcare_pha_elig_calyear, allocated, pt_rows)
+rm(full_criteria)
+rm(cycles, max_rows, start)

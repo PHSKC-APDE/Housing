@@ -31,6 +31,7 @@ library(broom) # Calculates CIs for GEE models
 library(ipw) # Used to make marginal structural models
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing"
+manuscript_path <- "C:/Users/mathesal/King County/CDIP - Yesler_Terrace/Presentations, Papers, Conferences/2019 health outcomes paper"
 
 #### Connect to the SQL server ####
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
@@ -534,7 +535,7 @@ yt_ed_sum <- bind_rows(yt_ed_sum_all, yt_ed_sum_avoid, yt_ed_sum_unavoid) %>%
 
 
 # YT vs SS, only all ED and no CI (used in journal article)
-ggplot(data = yt_ed_sum_all, aes(x = year)) +
+manuscript_ed_plot <- ggplot(data = yt_ed_sum_all, aes(x = year)) +
   geom_line(aes(y = rate, linetype = yt), size = 1.3) +
   # ggtitle("Emergency department visit rates (unadjusted)") +
   xlab("Year") +
@@ -548,11 +549,25 @@ ggplot(data = yt_ed_sum_all, aes(x = year)) +
         legend.title = element_blank(),
         legend.text = element_text(size = 12),
         legend.position = "bottom",
-        panel.background = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        legend.box.background = element_rect(fill = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
         panel.grid.major = element_line(color = "grey40"),
         panel.grid.major.x = element_blank(),
+        plot.background = element_rect(fill = "transparent", color = NA),
         strip.text.y = element_text(size = 11)
   )
+
+manuscript_ed_plot
+
+# Save plot and file associated with it
+ggsave(manuscript_ed_plot, 
+       filename = file.path(manuscript_path, "ed_plot.png"),
+       bg = "transparent")
+write.csv(yt_ed_sum_all, 
+          file = file.path(manuscript_path, "ed_plot_data.csv"), 
+          row.names = F)
+
 
 
 # YT vs SS, broken out by ED type

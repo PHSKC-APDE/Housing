@@ -33,7 +33,7 @@ library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/jmhernan/Housing/uw_test/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
@@ -53,7 +53,7 @@ pha_cleanadd_sort_dedup <- setDT(pha_cleanadd_sort_dedup)
 }
 
 
-### Strip out some variables that no longer have meaning 
+#### Strip out some variables that no longer have meaning ####
 # (e.g., act_date, act_type, household size (this will need to be remade))
 if(UW == TRUE) {
   cols_select <- c(
@@ -130,10 +130,11 @@ if(UW == TRUE) {
     "agency_new", "major_prog", "prog_type", "subsidy_type", "operator_type", 
     "vouch_type_final", "agency_prog_concat",
     # Old address info
-    "unit_add", "unit_apt", "unit_apt2", "unit_city", "unit_state", "unit_zip",
+    "unit_add", "unit_apt", "unit_apt2", "unit_city", 
+    "unit_state", "unit_zip", "geo_hash_raw",
     # New address info
     "unit_add_new", "unit_apt_new", "unit_city_new", "unit_state_new", 
-    "unit_zip_new", "unit_concat",
+    "unit_zip_new", "geo_hash_clean", "geo_hash_geocode", "geo_blank",
     # Property/portfolio info
     "property_id", "property_name", "property_type", "portfolio", "portfolio_final",
     # Unit info
@@ -164,7 +165,7 @@ if(UW == TRUE) {
 pha_longitudinal <- pha_cleanadd_sort_dedup[, ..cols_select]
 
 
-### Set up time in housing for each row and note when there was a gap in coverage
+#### Set up time in housing for each row and note when there was a gap in coverage ####
 pha_longitudinal <- pha_longitudinal[order(pid, startdate, enddate)]
 pha_longitudinal[, ':=' (
   cov_time = interval(start = startdate, end = enddate) / ddays(1) + 1,
@@ -180,7 +181,7 @@ setnafill(pha_longitudinal, "locf", cols = "period")
 pha_longitudinal[, gap := NULL]
 
 
-### Flag date to use when calculating length of stay
+#### Flag date to use when calculating length of stay ####
 pha_longitudinal <- los(pha_longitudinal)
 
 # Set up length of stay using the end date
@@ -191,7 +192,7 @@ pha_longitudinal[, ':=' (
 )]
 
 
-### Age
+#### Age ####
 # Age at each date
 pha_longitudinal[, ':=' (
   age12 = round(interval(start = dob_m6, end = ymd(20121231)) / years(1), 1),
@@ -199,7 +200,10 @@ pha_longitudinal[, ':=' (
   age14 = round(interval(start = dob_m6, end = ymd(20141231)) / years(1), 1),
   age15 = round(interval(start = dob_m6, end = ymd(20151231)) / years(1), 1),
   age16 = round(interval(start = dob_m6, end = ymd(20161231)) / years(1), 1),
-  age17 = round(interval(start = dob_m6, end = ymd(20171231)) / years(1), 1)
+  age17 = round(interval(start = dob_m6, end = ymd(20171231)) / years(1), 1),
+  age18 = round(interval(start = dob_m6, end = ymd(20181231)) / years(1), 1),
+  age19 = round(interval(start = dob_m6, end = ymd(20191231)) / years(1), 1),
+  age20 = round(interval(start = dob_m6, end = ymd(20201231)) / years(1), 1)
 )]
 
 
@@ -213,23 +217,22 @@ pha_longitudinal[, agegrp := case_when(
   TRUE ~ NA_character_)]
 
 
-### Recode gender and disability
+#### Recode gender and disability ####
 pha_longitudinal[, ':=' (
   gender2 = recode(gender_new_m6, "1" = "Female", "2" = "Male", .default = NA_character_),
   disability2 = recode(disability, "1" = "Disabled", "0" = "Not disabled", .default = NA_character_)
 )]
 
 
-### ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports)
-zips <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/Spatial%20data/KC%20ZIPs.csv"), 
-                 header = TRUE, stringsAsFactors = FALSE)
-names(zips) <- tolower(names(zips))
-zips <- zips %>% select(zipcode) %>% mutate(zipcode = as.character(zipcode), kc_area = 1)
+#### ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports) ####
+zips <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_hca.csv")), 
+                 header = TRUE) %>% 
+  select(zip) %>% mutate(zip = as.character(zip), kc_area = 1)
 zips <- setDT(zips)
 
 
 pha_longitudinal <- merge(pha_longitudinal, zips, 
-                          by.x = c("unit_zip_new"), by.y = c("zipcode"),
+                          by.x = c("unit_zip_new"), by.y = c("zip"),
                           all.x = TRUE, sort = F)
 
 rm(zips)
@@ -246,10 +249,12 @@ pha_longitudinal <- pha_longitudinal[,
                                        hh_ssn_id_m6, hh_ssn_id_m6_junk, hh_lname_m6, hh_lnamesuf_m6, hh_fname_m6, 
                                        hh_mname_m6, hh_dob_m6, hh_id_new, list_date, list_zip, list_homeless, 
                                        housing_act, agency_new, major_prog, prog_type, subsidy_type, operator_type, 
-                                       vouch_type_final, agency_prog_concat, unit_add, unit_apt, unit_apt2, 
-                                       unit_city, unit_state, unit_zip, unit_add_new, unit_apt_new, unit_city_new, 
-                                       unit_state_new, unit_zip_new, unit_concat, property_id, property_name, 
-                                       property_type, portfolio, portfolio_final, unit_id, unit_type, unit_year, 
+                                       vouch_type_final, agency_prog_concat, 
+                                       unit_add, unit_apt, unit_apt2, unit_city, unit_state, unit_zip, geo_hash_raw, 
+                                       unit_add_new, unit_apt_new, unit_city_new, unit_state_new, 
+                                       unit_zip_new, geo_hash_clean, geo_hash_geocode, geo_blank,
+                                       property_id, property_name, property_type, 
+                                       portfolio, portfolio_final, unit_id, unit_type, unit_year, 
                                        access_unit, access_req, access_rec, bed_cnt, admit_date, startdate, enddate, 
                                        port_in, port_out_kcha, port_out_sha, cost_pha, asset_val, asset_inc, 
                                        inc_fixed, inc_vary, inc, inc_excl, inc_adj, hh_asset_val, hh_asset_inc, 
@@ -260,7 +265,8 @@ pha_longitudinal <- pha_longitudinal[,
                                        rent_mixfam_owner, tb_rent_ceiling, incasset_id, subsidy_id, vouch_num, 
                                        cert_id, increment, sha_source, kcha_source, eop_source, cov_time, period, 
                                        start_housing, start_pha, start_prog, time_housing, time_pha, time_prog, 
-                                       age12, age13, age14, age15, age16, age17, agegrp, gender2, disability2, kc_area)]
+                                       age12, age13, age14, age15, age16, age17, age18, age19, age20, 
+                                       agegrp, gender2, disability2, kc_area)]
 
 
 #### Save point ####
@@ -270,7 +276,7 @@ pha_longitudinal <- pha_longitudinal[,
 #### WRITE RESHAPED DATA TO SQL ####
 if (sql == TRUE) {
   dbWriteTable(db_apde51, 
-               name = DBI::Id(schema = "stage", table = "pha_"), 
+               name = DBI::Id(schema = "stage", table = "pha"), 
                value = as.data.frame(pha_longitudinal),
                field.types = c(dob = "date", dob_m6 = "date",
                                hh_dob = "date", hh_dob_m6 = "date",

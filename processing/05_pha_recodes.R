@@ -29,17 +29,18 @@ options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
 library(tidyverse) # Used to manipulate data
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
-local_metadata_path <- "//home/joseh/source/Housing/processing/metadata/"
-METADATA = RJSONIO::fromJSON(paste0(local_metadata_path,"metadata.json"))
+
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
 
 #### Bring in data ####
 if (UW == TRUE) {
   "skip load of pha_clean"
 } else {
-pha_clean <- readRDS(file = paste0(housing_path, pha_clean_fn))
+pha_clean <- readRDS(file = file.path(housing_path, pha_clean_fn))
 }
 
 #### Race ####
@@ -48,12 +49,9 @@ pha_clean <- readRDS(file = paste0(housing_path, pha_clean_fn))
 # the number of people with multiple races
 pha_recoded <- pha_clean %>%
     mutate_at(vars(r_white:r_nhpi),
-              funs(new = as.numeric(case_when(
-                . %in% c("Y", "1") ~ 1,
-                . %in% c("N", "0") ~ 0,
-                TRUE ~  NA_real_))
-                )
-              ) %>%
+              list(new = ~ as.numeric(case_when(. %in% c("Y", "1") ~ 1,
+                                                . %in% c("N", "0") ~ 0,
+                                                TRUE ~  NA_real_)))) %>%
   # Make r_hisp new for now, need to check recode eventually
   mutate(r_hisp_new = ifelse(r_hisp == 2 & !is.na(r_hisp), 0, r_hisp),
          # Propogate collapsed race code from SHA HCV data
@@ -61,8 +59,7 @@ pha_recoded <- pha_clean %>%
          r_black_new = ifelse(race == 2 & !is.na(race), 1, r_black_new),
          r_aian_new = ifelse(race == 3 & !is.na(race), 1, r_aian_new),
          r_asian_new = ifelse(race == 4 & !is.na(race), 1, r_asian_new),
-         r_nhpi_new = ifelse(race == 5 & !is.na(race), 1, r_nhpi_new)
-         )
+         r_nhpi_new = ifelse(race == 5 & !is.na(race), 1, r_nhpi_new))
 
 
 # Identify individuals with contradictory race values and set to Y
@@ -100,10 +97,10 @@ if (UW == TRUE) {
 } else {
 pha_recoded <- pha_recoded %>%
   group_by(pid) %>%
-  mutate_at(vars(r_white_new:r_hisp_new), funs(tot = sum(., na.rm = TRUE))) %>%
+  mutate_at(vars(r_white_new:r_hisp_new), list(tot = ~ sum(., na.rm = TRUE))) %>%
   ungroup() %>%
   mutate_at(vars(r_white_new_tot:r_hisp_new_tot), 
-            funs(replace(., which(. > 0), 1))) %>%
+            list(~ replace(., which(. > 0), 1))) %>%
   mutate(r_white_new = ifelse(r_white_new_tot == 1, 1, 0),
          r_black_new = ifelse(r_black_new_tot == 1, 1, 0),
          r_aian_new = ifelse(r_aian_new_tot == 1, 1, 0),
@@ -117,17 +114,15 @@ pha_recoded <- pha_recoded %>%
          r_multi_new = ifelse(r_multi_new > 1, 1, 0)) %>%
   # make new variable to look at people with one race only
   mutate_at(vars(r_white_new:r_nhpi_new), 
-            funs(alone = ifelse(r_multi_new == 1, 0, .))) %>%
+            list(alone = ~ ifelse(r_multi_new == 1, 0, .))) %>%
   # make single race variable
-  mutate(race_new = case_when(
-    r_white_new_alone == 1 ~ "White only",
-    r_black_new_alone == 1 ~ "Black only",
-    r_aian_new_alone == 1 ~ "AIAN only",
-    r_asian_new_alone == 1 ~ "Asian only",
-    r_nhpi_new_alone == 1 ~ "NHPI only",
-    r_multi_new == 1 ~ "Multiple race",
-    TRUE ~ ""
-  )) %>%
+  mutate(race_new = case_when(r_white_new_alone == 1 ~ "White only",
+                              r_black_new_alone == 1 ~ "Black only",
+                              r_aian_new_alone == 1 ~ "AIAN only",
+                              r_asian_new_alone == 1 ~ "Asian only",
+                              r_nhpi_new_alone == 1 ~ "NHPI only",
+                              r_multi_new == 1 ~ "Multiple race",
+                              TRUE ~ "")) %>%
   # Drop earlier race variables
   select(-r_white, -r_black, -r_aian, -r_asian, -r_nhpi, 
          -race, -contains("_new_tot"), -contains("_alone"), -r_multi_new)

@@ -1,5 +1,5 @@
 Package: housing
-Version: 0.0.2
+Version: 0.0.3
 Title: Organizes public housing authority data into a longitudinal record
 Description: LARGELY FOR INTERNAL USE
   Takes raw public housing authority extracts (specific to Seattle Housing
@@ -21,9 +21,8 @@ Imports:
     stringr,
     tidyr
 Suggests:
-    car,
     openxlsx,
     phonics,
     RecordLinkage,
     odbc
-RoxygenNote: 6.1.1
+RoxygenNote: 7.1.1

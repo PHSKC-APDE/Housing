@@ -4,9 +4,19 @@
 \alias{yt_popcode}
 \title{Assign people to a demographic group for a given year, prioritize YT.}
 \usage{
-yt_popcode(df, year = 12, year_pre = "pt", year_suf = NULL,
-  agency = NULL, enroll_type = NULL, dual = NULL, yt = NULL,
-  ss = NULL, pt_cut = 30, min = T)
+yt_popcode(
+  df,
+  year = 12,
+  year_pre = "pt",
+  year_suf = NULL,
+  agency = NULL,
+  enroll_type = NULL,
+  dual = NULL,
+  yt = NULL,
+  ss = NULL,
+  pt_cut = 30,
+  min = T
+)
 }
 \arguments{
 \item{df}{A data frame}

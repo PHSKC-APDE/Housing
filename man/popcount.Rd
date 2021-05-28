@@ -2,12 +2,24 @@
 % Please edit documentation in R/popcount.R
 \name{popcount}
 \alias{popcount}
-\title{Counting population and person-time in the joint PHA/Medicaid data}
+\title{Counting population and person-time in the joint PHA/Medicaid/Medicare data}
 \usage{
-popcount(df, group_var = quos(agency_new), agency = NULL,
-  enroll = NULL, unit = NULL, startdate = NULL, enddate = NULL,
-  birth = NULL, length = NULL, numeric = TRUE, wc = FALSE,
-  wc_min = 0, wc_max = 6, ...)
+popcount(
+  df,
+  group_var = quos(agency_new),
+  agency = NULL,
+  enroll = NULL,
+  unit = NULL,
+  startdate = NULL,
+  enddate = NULL,
+  birth = NULL,
+  length = NULL,
+  numeric = TRUE,
+  wc = FALSE,
+  wc_min = 0,
+  wc_max = 6,
+  ...
+)
 }
 \arguments{
 \item{df}{A data frame}
@@ -16,9 +28,9 @@ popcount(df, group_var = quos(agency_new), agency = NULL,
 Must be set as a quosure (use quos(<group1>, <group2>))}
 
 \item{agency}{A named variable that specifies the agency a person is in for 
-that period of time (usually KCHA, SHA, or NA/Medicaid only). Used to 
+that period of time (usually KCHA, SHA, or NA/Medicaid/Medicare only). Used to 
 allocate individuals who moved between multiple agencies/enrollment types 
-in the period. Default is agency_new.}
+in the period. Default is pha_agency.}
 
 \item{enroll}{A named variable that specifies the type of enrollment a person
 is in for that period of time (field should contain the following codes: 
@@ -62,13 +74,13 @@ age group (ages 3-6 years)}
 (yearmin, yearmax, period, and date).}
 }
 \description{
-\code{popcount} summarizes population data in the joint PHA/Medicaid data.
+\code{popcount} summarizes population data in the joint PHA/Medicaid/Medicare data.
 }
 \details{
 This function takes the date range supplied by \code{\link{time_range}} and
 counts individuals enrolled and person time by group.
 The function works for PHA data regardless of whether or not it has also
-been matched to Medicaid data.
+been matched to Medicaid/Medicare data.
 }
 \examples{
 \dontrun{

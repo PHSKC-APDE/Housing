@@ -23,6 +23,14 @@
 # 
 ###############################################################################
 
+
+
+### AREAS FOR QA CHECKS WHEN THE ETL PROCESS IS REVAMPED ####
+# Check act type is present and converted to numeric (and check counts)
+# Check structure of key demographics (e.g., gender, race) and associated counts
+
+
+
 #### Set up global parameter and call in libraries ####
 options(max.print = 350, tibble.print_max = 50, scipen = 999)
 
@@ -33,11 +41,16 @@ library(data.table) # Used to read in csv files more efficiently
 library(tidyverse) # Used to manipulate data
 library(RJSONIO)
 library(RCurl)
+library(lubridate)
+library(RecordLinkage)
+library(phonics)
+library(stringr)
 
-script <- RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r")
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
-METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
+housing_source_dir <- file.path(here::here(), "processing")
+METADATA = RJSONIO::fromJSON(file.path(housing_source_dir, "metadata/metadata.json"))
 set_data_envr(METADATA, "sha_data")
 
 if(sql == TRUE) {
@@ -73,10 +86,10 @@ if (add_2018 == TRUE) {
   
   sha5a_2018_2018 <- read.xlsx(file.path(sha_path, sha5a_2018_2018_fn),
                               detectDates = T)
-  sha5b_2018_2018 <- fread(file = file.path(sha_path,
-                                            sha5b_2018_2018_fn),
-                           na.strings = c("NA", "", "NULL", "N/A"), 
-                           stringsAsFactors = F)
+  sha5b_2018_2018 <- fread(file = file.path(sha_path, sha5b_2018_2018_fn),
+                           na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
+  sha6_2019_2019 <- fread(file = file.path(sha_path, sha6_2019_2019_fn),
+                           na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
 }
 
 ### Suffix-corrected data
@@ -95,18 +108,17 @@ sha2c_2007_2012 <- fread(file = file.path(sha_path, sha2c_2007_2012_fn),
 sha4_2004_2006 <- fread(file = file.path(sha_path, sha4_2004_2006_fn),
                         na.strings = c("NA", "", "NULL", "N/A"), stringsAsFactors = F)
 
-
 ### Voucher data
 if (UW == TRUE){
   sha_vouch_type <- read.xlsx(file.path(sha_path, sha_vouch_type_fn))
 }
 
-sha_prog_codes <- read.xlsx(file.path(
-  sha_path, sha_prog_codes_fn), 2)
+sha_prog_codes <- read.xlsx(file.path(sha_path, sha_prog_codes_fn), 2)
 
 # Bring in portfolio codes
-sha_portfolio_codes  <- read.xlsx(file.path(
-  sha_path, sha_prog_codes_fn), 1)
+sha_portfolio_codes  <- read.csv(file.path(sha_path, sha_portfolio_codes_fn)) %>%
+  mutate(building_name = ifelse(building_name == "", NA_character_, building_name))
+
 
 
 #### PREP DATA SETS FOR JOINING ####
@@ -122,8 +134,10 @@ if (add_2018 == TRUE) {
               sha4_2004_2006 = sha4_2004_2006, 
               sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
               sha5a_2018_2018 = sha5a_2018_2018, sha5b_2018_2018 = sha5b_2018_2018,
-              sha_prog_codes = sha_prog_codes, 
-              sha_portfolio_codes = sha_portfolio_codes)
+              sha6_2019_2019 = sha6_2019_2019,
+              sha_prog_codes = sha_prog_codes
+              #, sha_portfolio_codes = sha_portfolio_codes # Don't need to deduplicate or rename here
+              )
 } else {
   dfs <- list(sha1a_2004_2006 = sha1a_2004_2006, sha1b_2004_2006 = sha1b_2004_2006, 
               sha1c_2004_2006 = sha1c_2004_2006, 
@@ -132,8 +146,9 @@ if (add_2018 == TRUE) {
               sha3a_2012_2017 = sha3a_2012_2017, sha3b_2012_2017 = sha3b_2012_2017,
               sha4_2004_2006 = sha4_2004_2006, 
               sha5a_2006_2017 = sha5a_2006_2017, sha5b_2006_2017 = sha5b_2006_2017,
-              sha_prog_codes = sha_prog_codes, 
-              sha_portfolio_codes = sha_portfolio_codes)
+              sha_prog_codes = sha_prog_codes
+              #, sha_portfolio_codes = sha_portfolio_codes # Don't need to deduplicate or rename here
+              )
 }
 
 
@@ -150,8 +165,8 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
-         header = TRUE, stringsAsFactors = FALSE)
+fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv")), 
+         header = TRUE)
 ###
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?
 if (UW == TRUE) {
@@ -161,8 +176,8 @@ if (UW == TRUE) {
   fields_uw <- read.xlsx(file.path(sha_path, field_name_mapping_fn), 1)
   
   fields_uw <- fields_uw %>%
-    mutate_at(vars(sha_old:sha_new_ph), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
-    mutate_at(vars(sha_old:sha_new_ph), funs(tolower(.)))
+    mutate_at(vars(sha_2004_2012:sha_2019), funs(gsub("[[:punct:]]|[[:space:]]","",.))) %>%
+    mutate_at(vars(sha_2004_2012:sha_2019), funs(tolower(.)))
 }
 ###
 
@@ -182,13 +197,13 @@ gc()
 
 ### Apply new names to columns and tweak action type column (UW only)
 if (UW == T) {
-  sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$SHA_old)])
-  sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$SHA_old)])
-  sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$SHA_old)])
-  sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$SHA_old)])
-  sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$SHA_old)])
-  sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$SHA_old)])
-  sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$SHA_new_ph)])
+  sha1a <- setnames(sha1a, fields$PHSKC[match(names(sha1a), fields$sha_2004_2012)])
+  sha1b <- setnames(sha1b, fields$PHSKC[match(names(sha1b), fields$sha_2004_2012)])
+  sha1c <- setnames(sha1c, fields$PHSKC[match(names(sha1c), fields$sha_2004_2012)])
+  sha2a <- setnames(sha2a, fields$PHSKC[match(names(sha2a), fields$sha_2004_2012)])
+  sha2b <- setnames(sha2b, fields$PHSKC[match(names(sha2b), fields$sha_2004_2012)])
+  sha2c <- setnames(sha2c, fields$PHSKC[match(names(sha2c), fields$sha_2004_2012)])
+  sha3a_new <- setnames(sha3a_new, fields$PHSKC[match(names(sha3a_new), fields$sha_ph_2012_2018)])
   
   # Issue with the hh_names, they are reapeted accross both HH and housemember names same for ssn
   colnames(sha3a_2012_2017)[10] <- "hh_lname"
@@ -196,19 +211,20 @@ if (UW == T) {
   colnames(sha3a_2012_2017)[12] <- "hh_mname"
   
   sha3b_new <- setnames(sha3b_new, fields$common_name[match(names(sha3b_new), 
-                                                    fields$sha_new_ph)])
+                                                    fields$sha_ph_2012_2018)])
 sha_portfolio_codes <- setnames(sha_portfolio_codes, 
                                 fields$common_name[match(names(sha_portfolio_codes), 
                                                    fields$sha_prog_port_codes)])
 
-sha4a <- setnames(sha4a, fields$common_name[match(names(sha4a), fields$sha_old)])
+sha4a <- setnames(sha4a, fields$common_name[match(names(sha4a), fields$sha_2004_2012)])
 sha5a_new <- setnames(sha5a_new, fields$common_name[match(names(sha5a_new), 
-                                                    fields$sha_new_hcv)])
+                                                    fields$sha_hcv_2006_2018)])
 sha5b_new <- setnames(sha5b_new, fields$common_name[match(names(sha5b_new), 
-                                                    fields$sha_new_hcv)])
-  
+                                                    fields$sha_hcv_2006_2018)])
+sha6_2019_2019 <- setnames(sha6_2019_2019, fields$PHSKC[match(names(sha6_2019_2019), fields$sha_2019)])
+
   sha_vouch_type <- data.table::setnames(sha_vouch_type, fields_uw$PHSKC[match(names(sha_vouch_type), 
-                                                                               fields_uw$SHA_new_hcv)])
+                                                                               fields_uw$sha_hcv_2006_2018)])
   sha_vouch_type <- sha_vouch_type %>%
     mutate(act_type = car::recode(act_type, c("'Annual HQS Inspection Only' = 13; 'Annual Reexamination' = 2; 'Annual Reexamination Searching' = 9;
                                               'End Participation' = 6; 'Expiration of Voucher' = 11; 'FSS/WtW Addendum Only' = 8;
@@ -223,27 +239,54 @@ sha5b_new <- setnames(sha5b_new, fields$common_name[match(names(sha5b_new),
                                               fields$sha_prog_port_codes)])
            
 } else {
-  sha1a_2004_2006 <- setnames(sha1a_2004_2006, fields$common_name[match(names(sha1a_2004_2006), fields$sha_old)])
-  sha1b_2004_2006 <- setnames(sha1b_2004_2006, fields$common_name[match(names(sha1b_2004_2006), fields$sha_old)])
-  sha1c_2004_2006 <- setnames(sha1c_2004_2006, fields$common_name[match(names(sha1c_2004_2006), fields$sha_old)])
-  sha2a_2007_2012 <- setnames(sha2a_2007_2012, fields$common_name[match(names(sha2a_2007_2012), fields$sha_old)])
-  sha2b_2007_2012 <- setnames(sha2b_2007_2012, fields$common_name[match(names(sha2b_2007_2012), fields$sha_old)])
-  sha2c_2007_2012 <- setnames(sha2c_2007_2012, fields$common_name[match(names(sha2c_2007_2012), fields$sha_old)])
-  sha3a_2012_2017 <- setnames(sha3a_2012_2017, fields$common_name[match(names(sha3a_2012_2017), fields$sha_new_ph)])
-  sha3b_2012_2017 <- setnames(sha3b_2012_2017, fields$common_name[match(names(sha3b_2012_2017), fields$sha_new_ph)])
-  sha4_2004_2006 <- setnames(sha4_2004_2006, fields$common_name[match(names(sha4_2004_2006), fields$sha_old)])
-  sha5a_2006_2017 <- setnames(sha5a_2006_2017, fields$common_name[match(names(sha5a_2006_2017), fields$sha_new_hcv)])
-  sha5b_2006_2017 <- setnames(sha5b_2006_2017, fields$common_name[match(names(sha5b_2006_2017), fields$sha_new_hcv)])
+  sha1a_2004_2006 <- setnames(sha1a_2004_2006, fields$common_name[match(names(sha1a_2004_2006), fields$sha_2004_2012)])
+  sha1b_2004_2006 <- setnames(sha1b_2004_2006, fields$common_name[match(names(sha1b_2004_2006), fields$sha_2004_2012)])
+  sha1c_2004_2006 <- setnames(sha1c_2004_2006, fields$common_name[match(names(sha1c_2004_2006), fields$sha_2004_2012)])
+  sha2a_2007_2012 <- setnames(sha2a_2007_2012, fields$common_name[match(names(sha2a_2007_2012), fields$sha_2004_2012)])
+  sha2b_2007_2012 <- setnames(sha2b_2007_2012, fields$common_name[match(names(sha2b_2007_2012), fields$sha_2004_2012)])
+  sha2c_2007_2012 <- setnames(sha2c_2007_2012, fields$common_name[match(names(sha2c_2007_2012), fields$sha_2004_2012)])
+  sha3a_2012_2017 <- setnames(sha3a_2012_2017, fields$common_name[match(names(sha3a_2012_2017), fields$sha_ph_2012_2018)])
+  sha3b_2012_2017 <- setnames(sha3b_2012_2017, fields$common_name[match(names(sha3b_2012_2017), fields$sha_ph_2012_2018)])
+  sha4_2004_2006 <- setnames(sha4_2004_2006, fields$common_name[match(names(sha4_2004_2006), fields$sha_2004_2012)])
+  sha5a_2006_2017 <- setnames(sha5a_2006_2017, fields$common_name[match(names(sha5a_2006_2017), fields$sha_hcv_2006_2018)])
+  sha5b_2006_2017 <- setnames(sha5b_2006_2017, fields$common_name[match(names(sha5b_2006_2017), fields$sha_hcv_2006_2018)])
 
   sha_portfolio_codes <- setnames(sha_portfolio_codes, fields$common_name[match(names(sha_portfolio_codes), 
                                                                                 fields$sha_prog_port_codes)])  
   sha_prog_codes <- setnames(sha_prog_codes, fields$common_name[match(names(sha_prog_codes), 
                                                                       fields$sha_prog_port_codes)])
   if (add_2018 == T) {
-    sha3a_2018_2018 <- setnames(sha3a_2018_2018, fields$common_name[match(names(sha3a_2018_2018), fields$sha_new_ph)])
-    sha3b_2018_2018 <- setnames(sha3b_2018_2018, fields$common_name[match(names(sha3b_2018_2018), fields$sha_new_ph)])
-    sha5a_2018_2018 <- setnames(sha5a_2018_2018, fields$common_name[match(names(sha5a_2018_2018), fields$sha_new_hcv)])
-    sha5b_2018_2018 <- setnames(sha5b_2018_2018, fields$common_name[match(names(sha5b_2018_2018), fields$sha_new_hcv)])
+    sha3a_2018_2018 <- setnames(sha3a_2018_2018, fields$common_name[match(names(sha3a_2018_2018), fields$sha_ph_2012_2018)])
+    sha3b_2018_2018 <- setnames(sha3b_2018_2018, fields$common_name[match(names(sha3b_2018_2018), fields$sha_ph_2012_2018)])
+    sha5a_2018_2018 <- setnames(sha5a_2018_2018, fields$common_name[match(names(sha5a_2018_2018), fields$sha_hcv_2006_2018)])
+    sha5b_2018_2018 <- setnames(sha5b_2018_2018, fields$common_name[match(names(sha5b_2018_2018), fields$sha_hcv_2006_2018)])
+    sha6_2019_2019 <- setnames(sha6_2019_2019, fields$common_name[match(names(sha6_2019_2019), fields$sha_2019)])
+    
+    # Need to fix up action type for SHA in 2019
+    sha6_2019_2019 <- sha6_2019_2019 %>%
+      mutate(act_type = recode(act_type, 
+                               "Annual Recertification" = 2,
+                               "Annual Reexamination" = 2,
+                               "Annual Reexamination Searching" = 9,
+                               "End Participation" = 6,
+                               "Expiration of Voucher" = 11,
+                               "FSS/WtW Addendum Only" = 8,
+                               "Gross Rent Change" = 17,
+                               "Historical Adjustment" = 14,
+                               "Interim Reexamination" = 3,
+                               "Issuance of Voucher" = 10,
+                               "Move In" = 1,
+                               "Move Out" = 6,
+                               "New Admission" = 1,
+                               "Other Change of Unit" = 7,
+                               "Port-Out Update (Not Submitted To MTCS)" = 16,
+                               "Portability Move-in" = 4,
+                               "Portability Move-out" = 5,
+                               "Termination" = 6,
+                               "Unit Transfer" = 7,
+                               "Void" = 15,
+                               .default = NA_real_))
+      
   }
 }
 
@@ -477,7 +520,6 @@ inc_clean_f <- function(df) {
       df <- setDF(df_inc)
     }
     if (!("inc" %in% names(df)) & "asset_val" %in% names(df)) {
-      
       df_ass <- setDT(df)
       df_ass <- df_ass[, lapply(.SD, sum, na.rm = T),
                        by = .(incasset_id, inc_mbr_num),
@@ -534,6 +576,43 @@ inc_clean_f <- function(df) {
 }
 }
 
+### Function to determine HOH demographics
+hoh_demo <- function(df) {
+  df <- df %>%
+    group_by(cert_id) %>%
+    filter(hh_ssn == ssn)
+  df <- df[c("cert_id", "hh_ssn", "fname", "lname", "mname", "dob", "gender")]
+  names(df)[names(df) == "cert_id"] <- "cert_id.x"
+  names(df)[names(df) == "hh_ssn"] <- "hh_ssn.x"
+  names(df)[names(df) == "fname"] <- "hh_fname"
+  names(df)[names(df) == "lname"] <- "hh_lname"
+  names(df)[names(df) == "mname"] <- "hh_mname"
+  names(df)[names(df) == "dob"] <- "hh_dob"
+  names(df)[names(df) == "gender"] <- "hh_gender"
+  return(df)
+}
+
+### Function to create income totals for single line data frames
+inc_sum <- function(df) {
+  df <- df %>%
+    select(cert_id, ssn, starts_with("inc_")) %>%
+    mutate(
+      inc = select(., contains("inc_")) %>% rowSums(na.rm = TRUE), 
+      inc_fixed = select(., inc_p, inc_ss, inc_s) %>% rowSums(na.rm = T),
+      inc_excl = 0,
+      inc_adj = 0) %>%
+    group_by(cert_id) %>%
+    mutate(
+      hh_inc = sum(inc, na.rm = T),
+      hh_inc_excl = sum(inc_excl, na.rm = T),
+      hh_inc_adj = sum(inc_adj, na.rm = T)) %>%
+    ungroup()
+  names(df)[names(df) == "cert_id"] <- "cert_id.y"
+  names(df)[names(df) == "ssn"] <- "ssn.y"
+  
+  return(df)
+}
+
 # Make list of data frames with income or asset variables
 if (add_2018 == T) {
   dfs_inc <- list(sha1b_2004_2006 = sha1b_2004_2006, sha1c_2004_2006 = sha1c_2004_2006, 
@@ -555,6 +634,7 @@ rm(dfs_inc)
 rm(income_assets)
 
 
+
 #### JOIN PUBLIC HOUSING FILES ####
 # Clean up mismatching variables
 sha2a_2007_2012 <- yesno_f(sha2a_2007_2012, ph_rent_ceiling)
@@ -574,6 +654,26 @@ if (add_2018 == T) {
            mbr_num = as.numeric(ifelse(mbr_num == "NULL", NA, mbr_num)),
            r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
     )
+  sha6_2019_2019 <- sha6_2019_2019 %>%
+    mutate(act_type = as.numeric(ifelse(act_type == "E", 3, act_type)),
+           r_hisp = as.numeric(ifelse(r_hisp == "NULL", NA, r_hisp))
+    )
+  
+  ### Get Income and HH data for sha6
+  sha6_inc <- inc_sum(sha6_2019_2019)
+  sha6_hoh <- hoh_demo(sha6_2019_2019)
+  sha6 <- inner_join(sha6_2019_2019, sha6_hoh, by = c("cert_id" = "cert_id.x", "hh_ssn" = "hh_ssn.x"))
+  sha6 <- inner_join(sha6, sha6_inc, by = c("cert_id" = "cert_id.y", "ssn" = "ssn.y"))
+  sha6 <- select(sha6, !contains(c(".x", ".y")))
+  sha6 <- sha6 %>%
+    mutate(r_asian = ifelse(r_asian == 1, "Y", "N"),
+           r_black = ifelse(r_black == 1, "Y", "N"),
+           r_aian = ifelse(r_aian == 1, "Y", "N"),
+           r_nhpi = ifelse(r_nhpi == 1, "Y", "N"),
+           r_white = ifelse(r_white == 1, "Y", "N"),
+           )
+  rm(sha6_inc)
+  rm(sha6_hoh)
 }
 
 # UW DATA CODE
@@ -648,7 +748,7 @@ if (add_2018 == T) {
 
 
 if (UW == TRUE){
-  sha6 <- left_join(sha6a_new, sha6b_new, 
+  sha6uw <- left_join(sha6a_new, sha6b_new, 
                   by = c("incasset_id", "mbr_num" = "inc_mbr_num"))
 }
 
@@ -657,56 +757,78 @@ sha1 <- sha1 %>% mutate(sha_source = "sha1")
 sha2 <- sha2 %>% mutate(sha_source = "sha2")
 sha3 <- sha3 %>% mutate(sha_source = "sha3")
 
+
+### Clean column types before append ### change to match new mappings  check other things
+sha1 <- sha1 %>%
+  mutate(subs_type = as.character(subs_type),
+         hh_size = as.integer(hh_size),
+         rent_tenant = as.numeric(rent_tenant),
+         unit_zip = as.numeric(unit_zip),
+         r_hisp = as.numeric(r_hisp),
+         hh_asset_val=as.numeric(hh_asset_val),
+         hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
+
+sha2 <- sha2 %>%
+  mutate(subs_type = as.character(subs_type),
+         rent_tenant = as.numeric(rent_tenant),
+         unit_zip = as.numeric(unit_zip),
+         r_hisp = as.numeric(r_hisp),
+         hh_asset_val=as.numeric(hh_asset_val),
+         ph_rent_ceiling=as.integer(ph_rent_ceiling),
+         hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
+
+sha3 <- sha3 %>%
+  mutate(subs_type = as.character(subs_type),
+         unit_zip = as.character(unit_zip),
+         rent_tenant = as.numeric(rent_tenant),
+         unit_zip = as.numeric(unit_zip),)
+
+
+### Append data and drop data fields not being used (data from SHA are blank)
 if (UW == TRUE) {
+  sha6uw <- sha6uw %>% mutate(sha_source = "sha6uw")
   
-  sha6 <- sha6 %>% mutate(sha_source = "sha6")
-  
-  ### Clean column types before append ### change to match new mappings  check other things
-  sha1 <- sha1 %>%
-          mutate(subs_type = as.character(subs_type),
-                hh_size = as.integer(hh_size),
-                rent_tenant = as.numeric(rent_tenant),
-                r_hisp = as.numeric(r_hisp),
-                hh_asset_val=as.numeric(hh_asset_val),
-                hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
-
-  sha2 <- sha2 %>%
-            mutate(subs_type = as.character(subs_type),
-                  rent_tenant = as.numeric(rent_tenant),
-                  r_hisp = as.numeric(r_hisp),
-                  hh_asset_val=as.numeric(hh_asset_val),
-                  ph_rent_ceiling=as.integer(ph_rent_ceiling),
-                  hh_inc_tot_adj=as.numeric(hh_inc_tot_adj))
-
-  sha3 <- sha3 %>%
-            mutate(subs_type = as.character(subs_type),
-                  unit_zip = as.character(unit_zip),
-                  rent_tenant = as.numeric(rent_tenant))
-  
-  sha6 <- sha6 %>%
+  sha6uw <- sha6uw %>%
     mutate(subs_type = as.character(subs_type),
            unit_zip = as.character(unit_zip),
            rent_tenant = as.numeric(rent_tenant))
-
-  # Append data and drop data fields not being used (data from SHA are blank)
-  sha_ph <- bind_rows(sha1, sha2, sha3, sha6)
+  
+  sha_ph <- bind_rows(sha1, sha2, sha3, sha6uw)
+} else if (add_2018 == T) {
+  sha6 <- sha6 %>% mutate(sha_source = "sha6")
+  
+  sha_ph <- bind_rows(sha1, sha2, sha3, sha6) %>%
+    select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 } else {
   sha_ph <- bind_rows(sha1, sha2, sha3) %>%
-  select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
+    select(-fss_date, -emp_date, -fss_start_date, -fss_end_date, -fss_extend_date)
 }
+
 
 # Fix more formats
 sha_ph <- sha_ph %>%
-  mutate(property_id = case_when(
-    as.numeric(property_id) < 10 & !is.na(as.numeric(property_id)) ~ paste0("00", property_id),
-    as.numeric(property_id) >= 10 & as.numeric(property_id) < 100 & 
-      !is.na(as.numeric(property_id)) ~ paste0("0", property_id),
-    TRUE ~ property_id)
-  ) %>%
-  mutate_at(vars(contains("date"), dob), funs(as.Date(., format = "%m/%d/%Y")))
+  mutate_at(vars(contains("date"), dob, hh_dob, start_pha), funs(as.Date(., format = "%m/%d/%Y")))
 
 # Join with portfolio data
-sha_ph <- left_join(sha_ph, sha_portfolio_codes, by = c("property_id"))
+# First join on propertyid then on building_id for the 2019 data
+sha_ph <- left_join(sha_ph, 
+                    distinct(sha_portfolio_codes, property_id, prog_type, portfolio), 
+                    by = "property_id") %>%
+  mutate(prog_type = ifelse(is.na(prog_type.x), prog_type.y, prog_type.x)) %>%
+  select(-prog_type.x, -prog_type.y) %>%
+  left_join(., 
+            distinct(sha_portfolio_codes, building_id, building_name, property_name, portfolio), 
+            by = c("building_id", "property_name" = "building_name")) %>%
+  mutate(property_name = case_when(!is.na(property_name.y) ~ property_name.y,
+                                   TRUE ~ property_name),
+         portfolio = case_when(
+           is.na(portfolio.x) & !is.na(portfolio.y) ~ portfolio.y,
+           # Fix up a few special cases that didn't join)
+           sha_source == "sha6" & property_name == "Yesler Terrace" ~ "Yesler Terrace",
+           sha_source == "sha6" & prog_type == "Collaborative Housing" & is.na(portfolio.y) ~ "Collaborative Housing",
+           TRUE ~ portfolio.x)
+         ) %>%
+  select(-portfolio.x, -portfolio.y, -property_name.y)
 
 # Rename specific portfolio
 sha_ph <- mutate(sha_ph, 
@@ -822,6 +944,8 @@ if (UW == TRUE) {
 
 sha_hcv <- bind_rows(sha4, sha5)
 
+
+
 #### JOIN PH AND HCV COMBINED FILES ####
 # Clean up mismatching variables
 if (UW == TRUE) {
@@ -838,8 +962,12 @@ if (UW == TRUE) {
                   assist_eitc)
 }
 
-#### Append data ####
-sha <- bind_rows(sha_ph, sha_hcv)
+
+#### APPEND DATA ####
+sha <- bind_rows(sha_ph, sha_hcv) %>% 
+  mutate_at(vars(contains("name"), contains("unit"), 
+                 prog_type, vouch_type, portfolio, cost_pha), 
+            list(~ toupper(.)))
 
 
 ### Fix up conflicting and missing income
@@ -847,6 +975,10 @@ sha <- bind_rows(sha_ph, sha_hcv)
 # fill in gaps (rather than mutate, which is slow)
 # Data recorded in the HH fields do not add up to the calculated HH income
 # Need to standardize, calculated data seems more accurate
+
+#### NOTE: NEED TO REDO THIS SECTION FOR THE 2019 DATA ####
+# 2019 income data sits in hh_inc already
+
 
 # Temporarily switch to data.table because it's ~50 times faster
 hh_inc_y <- setDT(sha)
@@ -922,11 +1054,38 @@ sha <- sha %>% mutate(mbr_num = ifelse(is.na(mbr_num) & ssn == hh_ssn &
 # FIX 3: Make sure the HoH has member number = 1
 
 ### Set up temp household ID  unique to a household, action date, and cert/asset IDs
-sha$hh_id_temp <- group_indices(sha, hh_id, prog_type, unit_add, unit_city, 
-                                act_date, act_type, cert_id, incasset_id)
+sha <- sha %>% 
+  group_by(hh_id, prog_type, unit_add, unit_city, act_date, act_type, cert_id, incasset_id) %>% 
+  mutate(hh_id_temp = cur_group_id()) %>%
+  ungroup()
 
 
 #### FIX 1: Deal with households that have multiple HoHs listed ####
+# Check for suffixes in first names and move them to the lnamesuf/hh_lnamesuf columns
+suffix <- c(" JR", " SR"," II", " IV", " III", " LLL", " 2ND", " 111", " JR.")
+
+sha <- sha %>%
+  mutate(hh_lnamesuf = ifelse(str_detect(hh_fname, paste(suffix, collapse="|")), 
+                              str_trim(str_sub(hh_fname, 
+                                               str_locate(hh_fname, paste(suffix, collapse="|"))[,1],
+                                               str_locate(hh_fname, paste(suffix, collapse="|"))[,2])), 
+                              hh_lnamesuf),
+         hh_fname = ifelse(str_detect(hh_fname, paste(suffix, collapse="|")), 
+                           str_trim(str_sub(hh_fname, 
+                                            1,
+                                            str_locate(hh_fname, paste(suffix, collapse="|"))[,1])), 
+                           hh_fname),
+         lnamesuf = ifelse(str_detect(fname, paste(suffix, collapse="|")), 
+                           str_trim(str_sub(fname, 
+                                            str_locate(fname, paste(suffix, collapse="|"))[,1],
+                                            str_locate(fname, paste(suffix, collapse="|"))[,2])), 
+                           lnamesuf),
+         fname = ifelse(str_detect(fname, paste(suffix, collapse="|")), 
+                        str_trim(str_sub(fname, 
+                                         1,
+                                         str_locate(fname, paste(suffix, collapse="|"))[,1])), 
+                        fname))
+
 # Check for households with >1 people listed as HoH
 multi_hoh <- sha %>%
   group_by(hh_id_temp) %>%
@@ -1037,7 +1196,7 @@ rm(mbr_miss_join)
 
 
 
-### Transfer over data to rows with missing programs and vouchers
+#### Transfer over data to rows with missing programs and vouchers ####
 # (not all rows were joined earlier and it is easier to clean up at this point 
 # once duplicate rows are deleted)
 sha <- setDT(sha)
@@ -1062,13 +1221,25 @@ if(sql == TRUE) {
   if (dbExistsTable(db_apde51, tbl_id_meta)) {
     dbRemoveTable(db_apde51, tbl_id_meta)
   }
-  
-  dbWriteTable(db_apde51, tbl_id_meta, sha, overwrite = T,
+  # Was having network issues trying to write the entire table at once so split it up
+  dbWriteTable(db_apde51, tbl_id_meta, sha[1:250000,], overwrite = T,
                field.types = c(
                  act_date = "date",
                  admit_date = "date",
-                 dob = "date"
+                 dob = "date",
+                 hh_dob = "date",
+                 reexam_date = "date",
+                 mtw_admit_date = "date",
+                 list_date = "date",
+                 move_in_date = "date",
+                 next_review_date = "date"
                ))
+  dbWriteTable(db_apde51, tbl_id_meta, sha[250001:500000,], 
+               overwrite = F, append = T)
+  dbWriteTable(db_apde51, tbl_id_meta, sha[500001:900000,], 
+               overwrite = F, append = T)
+  dbWriteTable(db_apde51, tbl_id_meta, sha[900001:1228936,], 
+               overwrite = F, append = T)
   rm(tbl_id_meta)
 }
 

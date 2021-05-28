@@ -6,12 +6,25 @@
 \alias{count_chronic}
 \title{Count the number of events/population with condition by desired grouping}
 \usage{
-count_acute(df, year, group_var = quos(agency_new), age_var = NULL,
-  len_var = NULL, event = NULL, event_year = event_year,
-  unit = NULL, person = FALSE, birth = NULL)
+count_acute(
+  df,
+  year,
+  group_var = quos(agency_new),
+  age_var = NULL,
+  len_var = NULL,
+  event = NULL,
+  event_year = event_year,
+  unit = NULL,
+  person = FALSE,
+  birth = NULL
+)
 
-count_chronic(df_chronic = chronic, df_pop = chronic_pop,
-  condition = NULL, year = 12)
+count_chronic(
+  df_chronic = chronic,
+  df_pop = chronic_pop,
+  condition = NULL,
+  year = 12
+)
 }
 \arguments{
 \item{df}{A data frame containing health event/condition data.}

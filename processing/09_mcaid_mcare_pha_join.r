@@ -60,24 +60,25 @@ yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/pro
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/alter_schema.R")
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
 
-##### Connect to the servers #####
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
-db_claims51 <- dbConnect(odbc(), "PHClaims51")
 
-##### ------------------ ####
 ##### Load data from SQL #####
-  ### Medicaid-Medicare-Public Housing ID crosswalk ----
-  xwalk <- setDT(odbc::dbGetQuery(db_claims51, "SELECT id_apde, pid FROM [PHClaims].[final].[xwalk_apde_mcaid_mcare_pha]"))
-  
-  ### Public Housing ----
-  # use stage schema for now but switch to final once QA approach is sorted
-  pha <- setDT(odbc::dbGetQuery(db_apde51, "SELECT 
+### Public Housing ----
+# use stage schema for now but switch to final once QA approach is sorted
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+pha <- setDT(odbc::dbGetQuery(db_apde51, "SELECT 
         pid, start_housing, startdate, enddate, dob_m6, 
         gender_new_m6,
         race_new, r_aian_new, r_asian_new, r_black_new, r_nhpi_new, r_white_new, r_hisp_new,
         unit_add_new, unit_apt, unit_apt2, unit_city_new, unit_state_new, unit_zip_new, 
+        geo_hash_clean, geo_hash_geocode, 
         agency_new, operator_type, portfolio_final, subsidy_type, vouch_type_final
                                 FROM [PH_APDEStore].[stage].[pha] WHERE enddate >= '2012-01-01'"))
+
+
+  ### Medicaid-Medicare-Public Housing ID crosswalk ----
+  db_claims51 <- dbConnect(odbc(), "PHClaims51")
+  xwalk <- setDT(odbc::dbGetQuery(db_claims51, "SELECT id_apde, pid FROM [PHClaims].[final].[xwalk_apde_mcaid_mcare_pha]"))
+  
   
   ### Joint Medicaid-Medicare elig_demo ----
   elig.mm <- setDT(odbc::dbGetQuery(db_claims51, "SELECT * FROM [PHClaims].[final].[mcaid_mcare_elig_demo]"))
@@ -89,7 +90,7 @@ db_claims51 <- dbConnect(odbc(), "PHClaims51")
   
   ### Geo ref table ----
   ref.geo <- setDT(odbc::dbGetQuery(db_claims51, "
-  SELECT geo_add1_clean, geo_city_clean, geo_state_clean, geo_zip_clean, 
+  SELECT geo_add1_clean, geo_city_clean, geo_state_clean, geo_zip_clean, geo_hash_geocode, 
   geo_zip_centroid, geo_street_centroid, geo_countyfp10 AS geo_county_code,
   geo_tractce10 AS geo_tract_code, geo_hra_id AS geo_hra_code, 
   geo_school_geoid10 AS geo_school_code 
@@ -159,7 +160,8 @@ pha <- merge(pha, ref.geo,
 # ascribe ever KC residence status
 pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
 
-##### Create Mcaid-Mcare-PHA elig_demo -----
+
+##### CREATE MCAID-MCARE-PHA ELIG_DEMO -----
   ### Create PHA elig_demo (most recent row per id) ----
   elig.pha <- copy(pha)
   setorder(elig.pha, id_apde, -from_date) 
@@ -222,7 +224,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       rm(elig.mm, elig.mm.linked, elig.mm.solo, elig.pha, elig.pha.linked, elig.pha.solo, linked)
       
       
-##### Create Mcaid-Mcare-PHA elig_timevar -----
+##### CREATE MCAID-MCARE-PHA ELIG_TIMEVAR -----
   ### Create PHA elig_timevar ----
       timevar.pha <- copy(pha)
       timevar.pha <- timevar.pha[, .(id_apde, from_date, to_date, 
@@ -299,9 +301,9 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       #-- Expand out rows to separate out overlaps ----
       temp_ext <- setDT(temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)])
       
-      temp2 <- temp %>% filter(id_apde == 408970) ## DELETE LATER
-      temp_ext <- temp2[rep(seq(nrow(temp2)), temp2$repnum), 1:ncol(temp2)]
-      
+      # temp2 <- temp %>% filter(id_apde == 408970) ## DELETE LATER
+      # temp_ext <- temp2[rep(seq(nrow(temp2)), temp2$repnum), 1:ncol(temp2)]
+      # 
       
       #-- Process the expanded data ----
       temp_ext[, rownum_temp := rowid(id_apde, from_date.elig.pha, to_date.elig.pha, from_date.elig.mm, to_date.elig.mm)]
@@ -556,7 +558,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
       #-- Add KC flag based on zip code or FIPS code as appropriate----  
-      kc.zips <- fread(kc.zips.url)
+      kc.zips <- data.table::fread("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv")
       timevar[, geo_kc := 0]
       timevar[geo_county_code=="033", geo_kc := 1]
       timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]
@@ -579,21 +581,41 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       #-- clean up ----
       rm(linked, pha, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo)
       
-##### Write elig_demo to SQL ----
+      
+##### WRITE ELIG_DEMO TO SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config_demo <- yaml::yaml.load(RCurl::getURL(yaml.elig))
+  table_config_demo <- yaml::yaml.load(httr::content(httr::GET(yaml.elig)))
 
   # Ensure columns are in same order in R & SQL & that we drop extraneous variables
   keep.elig <- names(table_config_demo$vars)
   elig <- elig[, ..keep.elig]
   
   # Write table to SQL
-  dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table), 
-               value = as.data.frame(elig),
-               overwrite = T, append = F, 
-               field.types = unlist(table_config_demo$vars))
+  # Split into smaller tables to avoid SQL connection issues
+  start <- 1L
+  max_rows <- 100000L
+  cycles <- ceiling(nrow(elig)/max_rows)
+  
+  lapply(seq(start, cycles), function(i) {
+    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+    end_row <- min(nrow(elig), max_rows * i)
+    
+    message("Loading cycle ", i, " of ", cycles)
+    if (i == 1) {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table),
+                   value = as.data.frame(elig[start_row:end_row]),
+                   overwrite = T, append = F,
+                   field.types = unlist(table_config_demo$vars))
+    } else {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_demo$schema, table = table_config_demo$table),
+                   value = as.data.frame(elig[start_row:end_row]),
+                   overwrite = F, append = T)
+    }
+  })
+  
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -740,10 +762,10 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   DBI::dbExecute(conn = db_apde51, qa.values2)
   
   
-##### Write elig_timevar to SQL ----
+##### WRITE ELIG_TIMEVAR TO SQL ----
   ### Write to SQL ----
   # Pull YAML from GitHub
-  table_config_timevar <- yaml::yaml.load(RCurl::getURL(yaml.timevar))
+  table_config_timevar <- yaml::yaml.load(httr::content(httr::GET(yaml.timevar)))
 
   # Ensure columns are in same order in R & SQL & are limited those specified in the YAML
   keep.timevars <- names(table_config_timevar$vars)
@@ -752,11 +774,30 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
   setcolorder(timevar, names(table_config_timevar$vars))
   
   # Write table to SQL
-  dbWriteTable(db_apde51, 
-               DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table), 
-               value = as.data.frame(timevar),
-               overwrite = T, append = F, 
-               field.types = unlist(table_config_timevar$vars))
+  # Split into smaller tables to avoid SQL connection issues
+  start <- 1L
+  max_rows <- 100000L
+  cycles <- ceiling(nrow(timevar)/max_rows)
+  
+  lapply(seq(start, cycles), function(i) {
+    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+    end_row <- min(nrow(timevar), max_rows * i)
+    
+    message("Loading cycle ", i, " of ", cycles)
+    if (i == 1) {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table),
+                   value = as.data.frame(timevar[start_row:end_row]),
+                   overwrite = T, append = F,
+                   field.types = unlist(table_config_timevar$vars))
+    } else {
+      dbWriteTable(db_apde51,
+                   DBI::Id(schema = table_config_timevar$schema, table = table_config_timevar$table),
+                   value = as.data.frame(timevar[start_row:end_row]),
+                   overwrite = F, append = T)
+    }
+  })
+
   
   ### Simple QA ----
       #-- confirm that all rows were loaded to SQL ----
@@ -920,13 +961,11 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
     
     # Load to final schema (permissions should be in place but not working)
     # Use SQL code file for now
-    
-    
-    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51",  
+        alter_schema_f(conn = db_apde51, 
                    from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_demo")
     
-    alter_schema_f(conn = db_apde51, odbc_name = "PH_APDEStore51", 
+    alter_schema_f(conn = db_apde51, 
                    from_schema = "stage", to_schema = "final",
                    table_name = "mcaid_mcare_pha_elig_timevar")
     

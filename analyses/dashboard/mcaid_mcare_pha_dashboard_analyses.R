@@ -21,27 +21,12 @@ library(glue) # Used to safely make SQL queries
 
 
 ##### Connect to the SQL servers #####
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
-db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
-db_extractstore50 <- dbConnect(odbc(), "PHExtractStore50")
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+
 
 housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
 
-
-#### BRING IN DATA ####
-### Years to look over
-years <- seq(2012, 2018)
-
-
-### Precalculated calendar year table
-# Use stage for now
-mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid_mcare_pha_elig_calyear")
-
-mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
-  mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
-
-mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
 
 #### FUNCTIONS ####
 ### Standard recode/rename function
@@ -63,18 +48,20 @@ recode_f <- function(df) {
   
   output <- setDT(output)
   output[, ':=' (
+    enroll_type = case_when(
+      enroll_type == "h" ~ "Housing only",
+      enroll_type %in% c("md", "me", "mm") & dual == 1 ~ "Medicaid and Medicare",
+      enroll_type == "md" ~ "Medicaid only",
+      enroll_type == "me" ~ "Medicare only",
+      enroll_type == "mm" ~ "Medicaid and Medicare",
+      enroll_type %in% c("hmd", "hme", "a") & dual == 1 ~ "Housing and Medicaid and Medicare",
+      enroll_type == "hmd" ~ "Housing and Medicaid",
+      enroll_type == "hme" ~ "Housing and Medicare",
+      enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
     dual = if_else(dual == 1, "Dual eligible", "Not dual eligible"),
     full_benefit = case_when(
       full_benefit == 1 ~ "Full Medicaid benefits",
       full_benefit == 0 ~ "Not full Medicaid benefits"),
-    enroll_type = case_when(
-      enroll_type == "h" ~ "Housing only",
-      enroll_type == "md" ~ "Medicaid only",
-      enroll_type == "me" ~ "Medicare only",
-      enroll_type == "mm" ~ "Medicaid and Medicare",
-      enroll_type == "hmd" ~ "Housing and Medicaid",
-      enroll_type == "hme" ~ "Housing and Medicare",
-      enroll_type == "a" ~ "Housing and Medicaid and Medicare"),
     pha_operator = ifelse(pha_subsidy == "TENANT BASED/SOFT UNIT", NA_character_, 
                           pha_operator),
     pha_portfolio = case_when(
@@ -365,51 +352,417 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
 }
 
 
+# No pharm data in Medicare so need different approach
+mh_f <- function(year = 2014,
+                 summarise = T,
+                 source = c("all", "mcaid")) {
+  
+  source <- match.arg(source)
+  
+  
+  # Add in relevant components depending on source
+  if (source == "all") {
+    enroll_sql <- DBI::SQL(" AND enroll_type <> 'h' ")
+    pharm_sql <- DBI::SQL("")
+  } else if (source == "mcaid") {
+    enroll_sql <- DBI::SQL(" AND enroll_type IN ('hmd', 'md') ")
+    pharm_sql <- glue::glue_sql(" UNION
+    	SELECT DISTINCT c.id_apde, 
+    	CASE 
+    	WHEN b.sub_group = 'ADHD Rx' THEN 'Persons with mental health concerns: ADHD'
+    	WHEN b.sub_group = 'Antianxiety Rx' THEN 'Persons with mental health concerns: Anxiety'
+    	WHEN b.sub_group = 'Antidepressants Rx' THEN 'Persons with mental health concerns: Depression'
+    	WHEN b.sub_group = 'Antimania Rx' THEN 'Persons with mental health concerns: Mania/Bipolar'
+    	WHEN b.sub_group = 'Antipsychotic Rx' THEN 'Persons with mental health concerns: Psychotic'
+    	END AS indicator
+    	FROM PHClaims.final.mcaid_claim_pharm as a
+    	INNER JOIN (
+    		SELECT sub_group, code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'Psychotropic-NDC'
+    	  ) as b
+    	ON a.ndc = b.code
+    	LEFT JOIN (
+    	  SELECT id_apde, id_mcaid
+    	  FROM PHClaims.final.xwalk_apde_mcaid_mcare_pha
+    	  ) AS c
+    	ON a.id_mcaid = c.id_mcaid 
+    	WHERE a.rx_fill_date between '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31' ",
+                                .con = db_apde51)
+  }
+  
+  
+  sql_query <- glue_sql(
+    "SELECT x.*, y.indicator
+
+    FROM
+      (SELECT year, id_apde, mcaid, mcare, enroll_type, pha_agency, dual,
+        full_benefit, full_criteria, full_criteria_12, 
+        agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
+        pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
+        FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
+        WHERE [year] = {year} AND pop = 1 {enroll_sql}) x
+    
+    --pull people identified to have BH conditions from 2-year lookback
+    INNER JOIN (
+    
+    	--BASED ON DIAGNOSIS
+    	SELECT DISTINCT a.id_apde,
+    	CASE 
+    	WHEN b.sub_group = 'ADHD' THEN 'Persons with mental health concerns: ADHD'
+    	WHEN b.sub_group = 'Adjustment' THEN 'Persons with mental health concerns: Adjustment disorder'
+    	WHEN b.sub_group = 'Anxiety' THEN 'Persons with mental health concerns: Anxiety'
+    	WHEN b.sub_group = 'Depression' THEN 'Persons with mental health concerns: Depression'
+    	WHEN b.sub_group = 'Disrup/Impulse/Conduct' THEN 'Persons with mental health concerns: Disruptive/Impulsive/Conduct'
+    	WHEN b.sub_group = 'Mania/Bipolar' THEN 'Persons with mental health concerns: Mania/Bipolar'
+    	WHEN b.sub_group = 'Psychotic' THEN 'Persons with mental health concerns: Psychotic'
+    	END AS indicator
+    	FROM PHClaims.final.mcaid_mcare_claim_icdcm_header AS a
+    	INNER JOIN (
+    		SELECT sub_group, code_set, code
+    		--,
+    		--CASE 
+    		--  WHEN code_set = 'ICD9CM' THEN 9 
+    		--  WHEN code_set = 'ICD10CM' THEN 10 
+    		--END AS icdcm_version
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MI-Diagnosis'
+    		) AS b
+    	ON a.icdcm_norm = b.code --AND a.icdcm_version = b.icdcm_version
+    	WHERE a.first_service_date BETWEEN '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31'
+    
+    
+    -- BASED ON PROCEDURE
+    -- DEFINITION #1: Receipt of an outpatient service with a procedure code in the MH-Proc1 value set (MCG 261) 
+    UNION
+    SELECT DISTINCT a.id_apde, 'Persons with mental health concerns: General MH outpatient visit' AS indicator
+      FROM PHClaims.final.mcaid_mcare_claim_header AS a
+      INNER JOIN (
+        SELECT id_apde, claim_header_id, procedure_code
+        FROM PHClaims.final.mcaid_mcare_claim_procedure 
+        ) AS b
+      ON a.id_apde = b.id_apde AND a.claim_header_id = b.claim_header_id
+    	INNER JOIN (
+    		SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MH-Proc1'
+    		) AS c
+    	ON b.procedure_code = c.code
+    	WHERE a.first_service_date BETWEEN '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31'
+    	 AND a.claim_type_id = 4
+    	 
+    	 
+    -- DEFINITION #2: Receipt of an outpatient service with: 
+    --    Servicing provider taxonomy code in the MH-Taxonomy value set (MCG262) AND  
+    --    Procedure code in MH-Proc2 value set (MCG 4947) OR MH-Proc3 value set (MCG 3117) AND 
+    --    Primary diagnosis code in the MI-Diagnosis value set
+    UNION
+    SELECT DISTINCT a.id_apde, 
+    CASE WHEN f.sub_group = 'ADHD' THEN 'Persons with mental health concerns: ADHD'
+          WHEN f.sub_group = 'Adjustment' THEN 'Persons with mental health concerns: Adjustment disorder'
+          WHEN f.sub_group = 'Anxiety' THEN 'Persons with mental health concerns: Anxiety'
+          WHEN f.sub_group = 'Depression' THEN 'Persons with mental health concerns: Depression'
+          WHEN f.sub_group = 'Disrup/Impulse/Conduct' THEN 'Persons with mental health concerns: Disruptive/Impulsive/Conduct'
+          WHEN f.sub_group = 'Mania/Bipolar' THEN 'Persons with mental health concerns: Mania/Bipolar'
+          WHEN f.sub_group = 'Psychotic' THEN 'Persons with mental health concerns: Psychotic'
+    	END AS indicator
+      FROM PHClaims.final.mcaid_mcare_claim_header AS a
+      
+      -- Taxonomy
+      INNER JOIN (
+        SELECT npi, primary_taxonomy, secondary_taxonomy 
+        FROM PHClaims.ref.kc_provider_master
+        ) AS b
+      ON a.billing_provider_npi = b.npi
+      INNER JOIN (
+        SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MH-Taxonomy' 
+        ) AS c  
+      ON b.primary_taxonomy = c.code OR b.secondary_taxonomy = c.code
+      
+      -- Procedure
+      INNER JOIN (
+        SELECT id_apde, claim_header_id, procedure_code
+        FROM PHClaims.final.mcaid_mcare_claim_procedure 
+        ) AS d
+      ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
+    	INNER JOIN (
+    		SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name IN ('MH-Proc2', 'MH-Proc3')
+    		) AS e
+    	ON d.procedure_code = e.code
+    	
+    	-- Primary dx
+    	INNER JOIN (
+    	  SELECT sub_group, code_set, code
+    	  --,
+    		--CASE 
+    		--  WHEN code_set = 'ICD9CM' THEN 9 
+    		--  WHEN code_set = 'ICD10CM' THEN 10 
+    		--END AS icdcm_version
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MI-Diagnosis'  
+    	) AS f
+    	ON a.primary_diagnosis = f.code --AND a.icdcm_version = f.icdcm_version 
+    	
+    	-- Date and outpatient limitations
+    	WHERE a.first_service_date BETWEEN '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31'
+    	 AND a.claim_type_id = 4
+    
+    
+    -- DEFINITION #3: Receipt of an outpatient service with: 
+    --    Procedure code in MH-Proc4 value set (MCG 4491) AND 
+    --    Any diagnosis code in the MI-Diagnosis value set
+    UNION
+    SELECT DISTINCT a.id_apde, 
+    CASE WHEN e.sub_group = 'ADHD' THEN 'Persons with mental health concerns: ADHD'
+          WHEN e.sub_group = 'Adjustment' THEN 'Persons with mental health concerns: Adjustment disorder'
+          WHEN e.sub_group = 'Anxiety' THEN 'Persons with mental health concerns: Anxiety'
+          WHEN e.sub_group = 'Depression' THEN 'Persons with mental health concerns: Depression'
+          WHEN e.sub_group = 'Disrup/Impulse/Conduct' THEN 'Persons with mental health concerns: Disruptive/Impulsive/Conduct'
+          WHEN e.sub_group = 'Mania/Bipolar' THEN 'Persons with mental health concerns: Mania/Bipolar'
+          WHEN e.sub_group = 'Psychotic' THEN 'Persons with mental health concerns: Psychotic'
+    	END AS indicator
+      FROM PHClaims.final.mcaid_mcare_claim_header AS a
+      
+      -- Procedure
+      INNER JOIN (
+        SELECT id_apde, claim_header_id, procedure_code
+        FROM PHClaims.final.mcaid_mcare_claim_procedure 
+        ) AS b
+      ON a.id_apde = b.id_apde AND a.claim_header_id = b.claim_header_id
+    	INNER JOIN (
+    		SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MH-Proc4'
+    		) AS c
+    	ON b.procedure_code = c.code
+    	
+    	-- Any dx
+    	INNER JOIN (
+    	  SELECT id_apde, claim_header_id, icdcm_norm, icdcm_version
+    	  FROM PHClaims.final.mcaid_mcare_claim_icdcm_header
+    	  ) AS d
+    	 ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
+    	INNER JOIN (
+    	  SELECT sub_group, code_set, code
+    	  --,
+    		--CASE 
+    		--  WHEN code_set = 'ICD9CM' THEN 9 
+    		--  WHEN code_set = 'ICD10CM' THEN 10 
+    		--END AS icdcm_version
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MI-Diagnosis'  
+    	) AS e
+    	ON d.icdcm_norm = e.code --AND d.icdcm_version = e.icdcm_version 
+    	
+    	-- Date and outpatient limitations
+    	WHERE a.first_service_date BETWEEN '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31'
+    	 AND a.claim_type_id = 4
+    
+    
+    -- DEFINITION #4: Receipt of an outpatient service with: 
+    --    Servicing provider taxonomy code in the MH-Taxonomy value set (MCG262) AND  
+    --    Procedure code in MH-Proc5 value set (MCG 4948) AND 
+    --    Any diagnosis code in the MI-Diagnosis value set
+    UNION
+    SELECT DISTINCT a.id_apde, 
+    CASE WHEN g.sub_group = 'ADHD' THEN 'Persons with mental health concerns: ADHD'
+          WHEN g.sub_group = 'Adjustment' THEN 'Persons with mental health concerns: Adjustment disorder'
+          WHEN g.sub_group = 'Anxiety' THEN 'Persons with mental health concerns: Anxiety'
+          WHEN g.sub_group = 'Depression' THEN 'Persons with mental health concerns: Depression'
+          WHEN g.sub_group = 'Disrup/Impulse/Conduct' THEN 'Persons with mental health concerns: Disruptive/Impulsive/Conduct'
+          WHEN g.sub_group = 'Mania/Bipolar' THEN 'Persons with mental health concerns: Mania/Bipolar'
+          WHEN g.sub_group = 'Psychotic' THEN 'Persons with mental health concerns: Psychotic'
+    	END AS indicator
+      FROM PHClaims.final.mcaid_mcare_claim_header AS a
+      
+      -- Taxonomy
+      INNER JOIN (
+        SELECT npi, primary_taxonomy, secondary_taxonomy 
+        FROM PHClaims.ref.kc_provider_master
+        ) AS b
+      ON a.billing_provider_npi = b.npi
+      INNER JOIN (
+        SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MH-Taxonomy' 
+        ) AS c  
+      ON b.primary_taxonomy = c.code OR b.secondary_taxonomy = c.code
+      
+      -- Procedure
+      INNER JOIN (
+        SELECT id_apde, claim_header_id, procedure_code
+        FROM PHClaims.final.mcaid_mcare_claim_procedure 
+        ) AS d
+      ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
+    	INNER JOIN (
+    		SELECT code_set, code
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MH-Proc5'
+    		) AS e
+    	ON d.procedure_code = e.code
+    	
+    	-- Any dx
+    	INNER JOIN (
+    	  SELECT id_apde, claim_header_id, icdcm_norm, icdcm_version
+    	  FROM PHClaims.final.mcaid_mcare_claim_icdcm_header
+    	  ) AS f
+    	 ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
+    	INNER JOIN (
+    	  SELECT sub_group, code_set, code
+    	  --,
+    		--CASE 
+    		--  WHEN code_set = 'ICD9CM' THEN 9 
+    		--  WHEN code_set = 'ICD10CM' THEN 10 
+    		--END AS icdcm_version
+    		FROM PHClaims.ref.rda_value_set_2021
+    		WHERE value_set_name = 'MI-Diagnosis'  
+    	) AS g
+    	ON f.icdcm_norm = g.code --AND f.icdcm_version = g.icdcm_version 
+    	
+    	-- Date and outpatient limitations
+    	WHERE a.first_service_date BETWEEN '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31'
+    	 AND a.claim_type_id = 4
+    
+    
+    -- BASED ON PRESCRIPTIONS
+    {pharm_sql}
+    
+    ) as y
+    ON x.id_apde = y.id_apde;",
+    .con = db_apde51)
+  
+  # Run query
+  output <- dbGetQuery(db_apde51, sql_query)
+  
+  # Run through standardized recoding/renaming
+  message("Recoding output")
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    message("Summarizing output")
+    any_mh <- output %>%
+      filter(full_criteria_12 == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := n_distinct(id_apde)) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare",
+             indicator = "Persons with mental health concerns: Any diagnosis")
+    
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip,
+               indicator) %>%
+      summarise(count := n_distinct(id_apde)) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+    
+    output <- bind_rows(output, any_mh)
+  } else if (summarise == T & source == "mcaid") {
+    message("Summarizing output")
+    
+    any_mh <- output %>%
+      filter(full_criteria_12 == "Met full criteria" & mcare == 0 & dual == "Not dual eligible") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := n_distinct(id_apde)) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only",
+             indicator = "Persons with mental health concerns: Any diagnosis")
+    
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria" & mcare == 0 & dual == "Not dual eligible") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip,
+               indicator) %>%
+      summarise(count := n_distinct(id_apde)) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+    
+    output <- bind_rows(output, any_mh)
+  }
+  
+  return(output)
+}
+
+
+
+#### BRING IN DATA ####
+### Years to look over
+years <- seq(2012, 2019)
+years_mcare <- seq(2012, 2017)
+
+
+### Precalculated calendar year table
+# Use stage for now
+mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid_mcare_pha_elig_calyear")
+
+mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
+  mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
+
+mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
+
+# Recode so that duals are grouped appropriately
+mcaid_mcare_pha_elig_calyear <- recode_f(mcaid_mcare_pha_elig_calyear)
+
+
 #### ENROLLMENT POPULATION ####
 # Run different age groups for Medicaid/Medicare vs Medicaid-only data
 # Also differentiate between pop counts for enrollment vs denominator data
 # Denominator data excludes people on Medicare and duals for the Medicaid-only data
-pop_enroll_mm <- mcaid_mcare_pha_elig_calyear[year <= 2017 & pop == 1]
+pop_enroll_mm <- mcaid_mcare_pha_elig_calyear[year <= max(years_mcare) & pop == 1]
 pop_enroll_mm <- pop_enroll_mm[, .(pop = sum(pop), pt = sum(pt_tot)), 
-                               by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
-                                      agegrp_expanded, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                      pha_portfolio, time_housing, geo_zip)]
+                               by = .(year, enroll_type, agency, dual, full_benefit, full_criteria_12, 
+                                      agegrp_expanded, gender, ethn, subsidy, voucher, operator, 
+                                      portfolio, length, zip)]
 pop_enroll_mm[, ':=' (wc_flag = 0L, source = "Medicaid and Medicare", for_enrollment = 1L)]
 setnames(pop_enroll_mm, "agegrp_expanded", "agegrp")
 
 
-pop_enroll_md <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1]
+pop_enroll_md <- mcaid_mcare_pha_elig_calyear[!(mcaid == 0 & mcare == 1) & pop == 1]
 pop_enroll_md <- pop_enroll_md[, .(pop = sum(pop), pt = sum(pt_tot)), 
-                               by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
-                                      agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                      pha_portfolio, time_housing, geo_zip)]
+                               by = .(year, enroll_type, agency, dual, full_benefit, full_criteria_12, 
+                                      agegrp, gender, ethn, subsidy, voucher, operator, 
+                                      portfolio, length, zip)]
 pop_enroll_md[, ':=' (wc_flag = 0L, source = "Medicaid only", for_enrollment = 1L)]
 
 
-pop_enroll_md_health <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop == 1 & mcare == 0 & dual == 0]
+pop_enroll_md_health <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop == 1 & mcare == 0 & dual == "Not dual eligible"]
 pop_enroll_md_health <- pop_enroll_md_health[, .(pop = sum(pop), pt = sum(pt_tot)), 
-                                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
-                                                    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                                    pha_portfolio, time_housing, geo_zip)]
+                                             by = .(year, enroll_type, agency, dual, full_benefit, full_criteria_12, 
+                                                    agegrp, gender, ethn, subsidy, voucher, operator, 
+                                                    portfolio, length, zip)]
 pop_enroll_md_health[, ':=' (wc_flag = 0L, source = "Medicaid only", for_enrollment = 0L)]
 
 
 ### Repeat for well-child population
-pop_enroll_md_wc <- mcaid_mcare_pha_elig_calyear[(pha == 1 | mcaid == 1) & pop == 1 & !is.na(age_wc)]
+pop_enroll_md_wc <- mcaid_mcare_pha_elig_calyear[!(mcaid == 0 & mcare == 1) & pop == 1 & !is.na(age_wc)]
 pop_enroll_md_wc <- pop_enroll_md_wc[, .(pop = sum(pop), pt = sum(pt_tot)), 
-                                     by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
-                                            age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                            pha_portfolio, time_housing, geo_zip)]
+                                     by = .(year, enroll_type, agency, dual, full_benefit, full_criteria_12, 
+                                            age_wc, gender, ethn, subsidy, voucher, operator, 
+                                            portfolio, length, zip)]
 pop_enroll_md_wc[, ':=' (wc_flag = 1L, source = "Medicaid only", for_enrollment = 1L)]
 setnames(pop_enroll_md_wc, "age_wc", "agegrp")
 
 
 pop_enroll_md_wc_health <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop == 1 & 
-                                                          mcare == 0 & dual == 0 & !is.na(age_wc)]
+                                                          mcare == 0 & dual == "Not dual eligible" & !is.na(age_wc)]
 pop_enroll_md_wc_health <- pop_enroll_md_wc_health[, .(pop = sum(pop), pt = sum(pt_tot)), 
-                                                   by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria_12, 
-                                                          age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                                          pha_portfolio, time_housing, geo_zip)]
+                                                   by = .(year, enroll_type, agency, dual, full_benefit, full_criteria_12, 
+                                                          age_wc, gender, ethn, subsidy, voucher, operator, 
+                                                          portfolio, length, zip)]
 pop_enroll_md_wc_health[, ':=' (wc_flag = 1L, source = "Medicaid only", for_enrollment = 0L)]
 setnames(pop_enroll_md_wc_health, "age_wc", "agegrp")
 
@@ -417,7 +770,6 @@ setnames(pop_enroll_md_wc_health, "age_wc", "agegrp")
 ### Combine into one
 pop_enroll_all <- bind_rows(pop_enroll_mm, pop_enroll_md, pop_enroll_md_health, 
                             pop_enroll_md_wc, pop_enroll_md_wc_health)
-pop_enroll_all <- recode_f(pop_enroll_all)
 pop_enroll_all <- pop_enroll_all %>% select(for_enrollment, source, wc_flag, year:pt)
 pop_enroll_all <- setDT(pop_enroll_all)
 
@@ -500,12 +852,32 @@ pop_enroll_combine_bivar_suppressed <- pop_enroll_combine_bivar %>%
 
 
 ### Write to SQL
-DBI::dbWriteTable(db_extractstore51,
-                  name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
-                  value = pop_enroll_combine_bivar_suppressed,
-                  append = F, overwrite = T,
-                  field.types = c(year = "integer", pt = "integer", pop = "integer", 
-                                  pop_supp_flag = "integer", wc_flag = "integer"))
+# Set up connections
+db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
+# Split into smaller tables to avoid SQL connection issues
+start <- 1L
+max_rows <- 100000L
+cycles <- ceiling(nrow(pop_enroll_combine_bivar_suppressed)/max_rows)
+
+lapply(seq(start, cycles), function(i) {
+  start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+  end_row <- min(nrow(pop_enroll_combine_bivar_suppressed), max_rows * i)
+  
+  message("Loading cycle ", i, " of ", cycles)
+  if (i == 1) {
+    dbWriteTable(db_extractstore51,
+                 name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
+                 value = as.data.frame(pop_enroll_combine_bivar_suppressed[start_row:end_row]),
+                 overwrite = T, append = F,
+                 field.types = c(year = "integer", pt = "integer", pop = "integer", 
+                                 pop_supp_flag = "integer", wc_flag = "integer"))
+  } else {
+    dbWriteTable(db_extractstore51,
+                 name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_enrollment"),
+                 value = as.data.frame(pop_enroll_combine_bivar_suppressed[start_row:end_row]),
+                 overwrite = F, append = T)
+  }
+})
 
 
 
@@ -518,36 +890,35 @@ DBI::dbWriteTable(db_extractstore51,
 # Also need to change grouping based on source
 
 ### First set up acute populations
-pop_acute_mm <- mcaid_mcare_pha_elig_calyear[(mcaid == 1 | mcare == 1) & year <= 2017 & pop_ever == 1]
+pop_acute_mm <- mcaid_mcare_pha_elig_calyear[(mcaid == 1 | mcare == 1) & year <= max(years_mcare) & pop_ever == 1]
 pop_acute_mm <- pop_acute_mm[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
-                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
-                                    agegrp_expanded, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                    pha_portfolio, time_housing, geo_zip)]
+                             by = .(year, enroll_type, agency, dual, full_benefit, full_criteria, 
+                                    agegrp_expanded, gender, ethn, subsidy, voucher, operator, 
+                                    portfolio, length, zip)]
 pop_acute_mm[, ':=' (wc_flag = 0L, source = "Medicaid and Medicare")]
 setnames(pop_acute_mm, "agegrp_expanded", "agegrp")
 
 
-pop_acute_md <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop_ever == 1 & mcare == 0 & dual == 0]
+pop_acute_md <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop_ever == 1 & mcare == 0 & dual == "Not dual eligible"]
 pop_acute_md <- pop_acute_md[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
-                             by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
-                                    agegrp, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                    pha_portfolio, time_housing, geo_zip)]
+                             by = .(year, enroll_type, agency, dual, full_benefit, full_criteria, 
+                                    agegrp, gender, ethn, subsidy, voucher, operator, 
+                                    portfolio, length, zip)]
 pop_acute_md[, ':=' (wc_flag = 0L, source = "Medicaid only")]
 
 
 pop_acute_md_wc <- mcaid_mcare_pha_elig_calyear[mcaid == 1 & pop_ever == 1 & 
-                                                  mcare == 0 & dual == 0 & !is.na(age_wc)]
+                                                  mcare == 0 & dual == "Not dual eligible" & !is.na(age_wc)]
 pop_acute_md_wc <- pop_acute_md_wc[, .(pop_ever = sum(pop_ever), pt = sum(pt)), 
-                                   by = .(year, enroll_type, pha_agency, dual, full_benefit, full_criteria, 
-                                          age_wc, gender_me, race_eth_me, pha_subsidy, pha_voucher, pha_operator, 
-                                          pha_portfolio, time_housing, geo_zip)]
+                                   by = .(year, enroll_type, agency, dual, full_benefit, full_criteria, 
+                                          age_wc, gender, ethn, subsidy, voucher, operator, 
+                                          portfolio, length, zip)]
 pop_acute_md_wc[, ':=' (wc_flag = 1L, source = "Medicaid only")]
 setnames(pop_acute_md_wc, "age_wc", "agegrp")
 
 
 # Combine into one
 pop_acute_all <- bind_rows(pop_acute_mm, pop_acute_md, pop_acute_md_wc)
-pop_acute_all <- recode_f(pop_acute_all)
 pop_acute_all <- pop_acute_all %>% select(source, wc_flag, year:pt)
 pop_acute_all <- setDT(pop_acute_all)
 
@@ -681,9 +1052,9 @@ rm(pop_enroll_all, pop_enroll_bivariate, pop_enroll_total)
 rm(pop_acute_mm, pop_acute_md, pop_acute_md_wc)
 rm(pop_health_bivariate, pop_health_univariate, 
    pop_health_total_chronic, pop_health_total_acute)
-
-
 #### END POPULATION ####
+
+
 
 #### PERSON-TIME BASED EVENTS ####
 ### Hospitalizations
@@ -710,209 +1081,228 @@ inj_events_mcaid <- inj_events_mcaid %>% filter(year >= 2016)
 
 #### PERSON-BASED ACUTE EVENTS ####
 ### Hospitalizations
-hosp_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+hosp_pers_all <- bind_rows(lapply(years_mcare, acute_persons_f, 
                               type = "hosp", source = "all")) %>%
   mutate(indicator = "Persons with hospitalizations")
 
-hosp_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+hosp_pers_mcaid <- bind_rows(lapply(years, acute_persons_f, 
                                   type = "hosp", source = "mcaid")) %>%
   mutate(indicator = "Persons with hospitalizations")
 
 
 ### ED visits
-ed_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+ed_pers_all <- bind_rows(lapply(years_mcare, acute_persons_f, 
                                   type = "ed", source = "all")) %>%
   mutate(indicator = "Persons with ED visits")
 
-ed_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+ed_pers_mcaid <- bind_rows(lapply(years, acute_persons_f, 
                                     type = "ed", source = "mcaid")) %>%
   mutate(indicator = "Persons with ED visits")
 
 
 ### Injuries
-inj_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+inj_pers_mcaid <- bind_rows(lapply(years, acute_persons_f, 
                                   type = "inj", source = "mcaid")) %>%
   mutate(indicator = "Persons with injuries")
 
 
 ### Well-child checks
-wc_pers_all <- bind_rows(lapply(seq(2012, 2017), acute_persons_f, 
+wc_pers_all <- bind_rows(lapply(years_mcare, acute_persons_f, 
                                  type = "wc", source = "all")) %>%
   mutate(indicator = "Persons with well-child checks")
 
-wc_pers_mcaid <- bind_rows(lapply(seq(2012, 2018), acute_persons_f, 
+wc_pers_mcaid <- bind_rows(lapply(years, acute_persons_f, 
                                    type = "wc", source = "mcaid")) %>%
   mutate(indicator = "Persons with well-child checks")
 
 
 #### CHRONIC CONDITIONS ####
 ### Alzheimer's related
-alzheimer_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+alzheimer_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                    condition = "ccw_alzheimer_related", cvd = F,
                                    source = "all")) %>%
   mutate(indicator = "Persons with Alzheimer's-related conditions")
 
-alzheimer_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+alzheimer_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                        condition = "ccw_alzheimer_related", cvd = F,
                                        source = "mcaid")) %>%
   mutate(indicator = "Persons with Alzheimer's-related conditions")
 
 
 ### Asthma
-asthma_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+asthma_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                        condition = "ccw_asthma", cvd = F,
                                        source = "all")) %>%
   mutate(indicator = "Persons with asthma")
 
-asthma_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+asthma_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                          condition = "ccw_asthma", cvd = F,
                                          source = "mcaid")) %>%
   mutate(indicator = "Persons with asthma")
 
 
 ### Cancer - breast
-cancer_breast_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+cancer_breast_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                     condition = "ccw_cancer_breast", cvd = F,
                                     source = "all")) %>%
   mutate(indicator = "Persons with cancer: breast")
 
-cancer_breast_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+cancer_breast_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                       condition = "ccw_cancer_breast", cvd = F,
                                       source = "mcaid")) %>%
   mutate(indicator = "Persons with cancer: breast")
 
 
 ### Cancer - colorectal
-cancer_colorectal_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+cancer_colorectal_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                       condition = "ccw_cancer_colorectal", cvd = F,
                                       source = "all")) %>%
   mutate(indicator = "Persons with cancer: colorectal")
 
-cancer_colorectal_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+cancer_colorectal_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                         condition = "ccw_cancer_colorectal", cvd = F,
                                         source = "mcaid")) %>%
   mutate(indicator = "Persons with cancer: colorectal")
 
 
 ### CHF
-chf_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+chf_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                           condition = "ccw_heart_failure", cvd = F,
                                           source = "all")) %>%
   mutate(indicator = "Persons with cardiovascular disease: congestive heart failure")
 
-chf_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+chf_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                             condition = "ccw_heart_failure", cvd = F,
                                             source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: congestive heart failure")
 
 
 # COPD
-copd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+copd_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                             condition = "ccw_copd", cvd = F,
                             source = "all")) %>%
   mutate(indicator = "Persons with chronic obstructive pulmonary disease")
 
-copd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+copd_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                               condition = "ccw_copd", cvd = F,
                               source = "mcaid")) %>%
   mutate(indicator = "Persons with chronic obstructive pulmonary disease")
 
 
 ### CVD
-cvd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+cvd_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                             condition = "", cvd = T,
                             source = "all")) %>%
   mutate(indicator = "Persons with cardiovascular disease: any type")
 
-cvd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+cvd_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                               condition = "", cvd = T,
                               source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: any type")
 
 
 ### Depression
-depression_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
-                             condition = "ccw_depression", cvd = F,
-                             source = "all")) %>%
-  mutate(indicator = "Persons with depression")
-
-depression_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
-                               condition = "ccw_depression", cvd = F,
-                               source = "mcaid")) %>%
-  mutate(indicator = "Persons with depression")
+# Use the MH coding instead of CCW
+# depression_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
+#                              condition = "ccw_depression", cvd = F,
+#                              source = "all")) %>%
+#   mutate(indicator = "Persons with depression")
+# 
+# depression_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
+#                                condition = "ccw_depression", cvd = F,
+#                                source = "mcaid")) %>%
+#   mutate(indicator = "Persons with depression")
 
 
 ### Diabetes
-diabetes_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+diabetes_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                    condition = "ccw_diabetes", cvd = F,
                                    source = "all")) %>%
   mutate(indicator = "Persons with diabetes")
 
-diabetes_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+diabetes_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                      condition = "ccw_diabetes", cvd = F,
                                      source = "mcaid")) %>%
   mutate(indicator = "Persons with diabetes")
 
 
 ### Hypertension
-hypertension_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+hypertension_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                             condition = "ccw_hypertension", cvd = F,
                             source = "all")) %>%
   mutate(indicator = "Persons with cardiovascular disease: hypertension")
 
-hypertension_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+hypertension_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                               condition = "ccw_hypertension", cvd = F,
                               source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: hypertension")
 
 
 ### IHD
-ihd_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+ihd_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                             condition = "ccw_ischemic_heart_dis", cvd = F,
                             source = "all")) %>%
   mutate(indicator = "Persons with cardiovascular disease: ischemic heart disease")
 
-ihd_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+ihd_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                               condition = "ccw_ischemic_heart_dis", cvd = F,
                               source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: ischemic heart disease")
 
 
 ### Kidney disease
-kidney_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+kidney_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                  condition = "ccw_chr_kidney_dis", cvd = F,
                                  source = "all")) %>%
   mutate(indicator = "Persons with kidney disease")
 
-kidney_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+kidney_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                    condition = "ccw_chr_kidney_dis", cvd = F,
                                    source = "mcaid")) %>%
   mutate(indicator = "Persons with kidney disease")
 
 
 ### Myocardial infarction
-mi_all <- bind_rows(lapply(seq(2012, 2017), eventcount_chronic_f, 
+mi_all <- bind_rows(lapply(years_mcare, eventcount_chronic_f, 
                                      condition = "ccw_mi", cvd = F,
                                      source = "all")) %>%
   mutate(indicator = "Persons with cardiovascular disease: myocardial infarction")
 
-mi_mcaid <- bind_rows(lapply(seq(2012, 2018), eventcount_chronic_f, 
+mi_mcaid <- bind_rows(lapply(years, eventcount_chronic_f, 
                                        condition = "ccw_mi", cvd = F,
                                        source = "mcaid")) %>%
   mutate(indicator = "Persons with cardiovascular disease: myocardial infarction")
 
 
+#### MENTAL HEALTH CONDITIONS ####
+# Start at 2014 since there is a two-year lookback
+system.time(test_all_nosum <- mh_f(year = 2014, summarise = F, source = "all"))
+system.time(test_all_sum <- mh_f(year = 2014, summarise = T, source = "all"))
+system.time(test_mcaid_nosum <- mh_f(year = 2014, summarise = F, source = "mcaid"))
+system.time(test_mcaid_sum <- mh_f(year = 2014, summarise = T, source = "mcaid"))
+
+
+mh_all <- bind_rows(lapply(seq(2014, max(years_mcare)), mh_f, 
+                           summarise = T,
+                           source = "all"))
+
+mh_mcaid <- bind_rows(lapply(seq(2014, max(years)), mh_f, 
+                           summarise = T,
+                           source = "mcaid"))
+
+
 #### COMBINE DATA ####
 health_events <- bind_rows(alzheimer_all, asthma_all, cancer_breast_all,
                            cancer_colorectal_all, chf_all, copd_all, cvd_all, 
-                           depression_all, diabetes_all, hypertension_all, 
-                           ihd_all, kidney_all, mi_all,
+                           diabetes_all, hypertension_all, 
+                           ihd_all, kidney_all, mh_all, mi_all,
                            hosp_events_all, ed_events_all,
                            hosp_pers_all, ed_pers_all, wc_pers_all,
+                           
                            alzheimer_mcaid, asthma_mcaid, cancer_breast_mcaid,
                            cancer_colorectal_mcaid, chf_mcaid, copd_mcaid, cvd_mcaid, 
-                           depression_mcaid, diabetes_mcaid, hypertension_mcaid, 
-                           ihd_mcaid, kidney_mcaid, mi_mcaid,
+                           diabetes_mcaid, hypertension_mcaid, 
+                           ihd_mcaid, kidney_mcaid, mh_mcaid, mi_mcaid,
                            hosp_events_mcaid, ed_events_mcaid, inj_events_mcaid,
                            hosp_pers_mcaid, ed_pers_mcaid, inj_pers_mcaid, wc_pers_mcaid) %>%
   mutate(full_criteria = ifelse(is.na(full_criteria), full_criteria_12, full_criteria)) %>%
@@ -921,7 +1311,7 @@ health_events <- bind_rows(alzheimer_all, asthma_all, cancer_breast_all,
   # in housing
   filter(!enroll_type %in% c("h", "Housing only")) %>%
   # Remove events for years where we don't have pop data
-  filter(year < 2019) %>%
+  filter(year <= max(years)) %>%
   # Remove combinations we won't show (e.g., duals when source = Medicaid)
   filter(full_criteria == "Met full criteria")
 
@@ -994,8 +1384,8 @@ health_events_total <- health_events %>%
 #### Combine into one data frame ####
 health_events_combined <- bind_rows(health_events_bivariate, health_events_univariate, health_events_total) %>%
   # TEMP: filter out source/year combos with no populations
-  filter((source == "Medicaid and Medicare" & year < 2018) |
-           (source == "Medicaid only" & year < 2019)) %>%
+  filter((source == "Medicaid and Medicare" & year <= max(years_mcare)) |
+           (source == "Medicaid only" & year <= max(years))) %>%
   rename(count = count_sum) %>%
   mutate(wc_flag = if_else(str_detect(indicator, "(W|w)ell-child check"), 1L, 0L),
          acute = case_when(
@@ -1006,10 +1396,11 @@ health_events_combined <- bind_rows(health_events_bivariate, health_events_univa
   arrange(source, indicator, year, full_criteria, agency, category1, group1, category2, group2)
 
 
-# Add suppression
-health_events_combined <- health_events_combined %>%
-  mutate(suppressed = if_else(between(count, 1, 10), 1, 0),
-         count_supp = if_else(between(count, 1, 10), NA_real_, count)) 
+# # Add suppression
+# # Now doing this after combining with pop data
+# health_events_combined <- health_events_combined %>%
+#   mutate(suppressed = if_else(between(count, 1, 10), 1, 0),
+#          count_supp = if_else(between(count, 1, 10), NA_real_, count)) 
 
 
 
@@ -1060,9 +1451,10 @@ health_events_combined_pop_chronic <- left_join(
 ### Combine
 health_events_combined_pop <- bind_rows(health_events_combined_pop_acute,
                                         health_events_combined_pop_chronic) %>%
-  mutate(suppressed = ifelse(is.na(count_supp), 1L, 0L),
-         # If there were no counts for that pop group, set to 0
-         count = ifelse(is.na(count), 0L, count))
+  mutate(# If there were no counts for that pop group, set to 0
+         count = ifelse(is.na(count), 0L, count),
+         suppressed = if_else(between(count, 1, 10), 1, 0),
+         count_supp = if_else(between(count, 1, 10), NA_real_, count))
 
 rm(pop_health_combine_acute, health_events_combined_pop_acute, 
    pop_health_combine_chronic, health_events_combined_pop_chronic)
@@ -1073,7 +1465,7 @@ rm(pop_health_combine_acute, health_events_combined_pop_acute,
 
 health_events_combined_pop <- health_events_combined_pop %>%
   mutate(
-    denominator = ifelse(year %in% c(2012, 2016), pt / 366, pt / 365),
+    denominator = ifelse(year %in% c(2012, 2016, 2020, 2024), pt / 366, pt / 365),
     rate = case_when(
       acute == 1 ~ count / denominator * 1000,
       acute == 0 & (is.na(pop) | pop == 0) ~ NA_real_,
@@ -1098,7 +1490,7 @@ health_events_combined_pop <- health_events_combined_pop %>%
 
 
 
-### Create portfolio specific comparisons and join back to main data
+### Create portfolio specific comparisons and join back to main data ####
 rest_pha <- health_events_combined_pop %>%
   filter((agency == "KCHA" | agency == "SHA") & category1 == "portfolio" & 
            !is.na(group1) & category2 == "total") %>%
@@ -1109,7 +1501,7 @@ rest_pha <- health_events_combined_pop %>%
     rest_count = count_tot - count,
     rest_pop = pop_tot - pop,
     rest_pt = pt_tot - pt,
-    rest_denominator = ifelse(year %in% c(2012, 2016), rest_pt / 366, rest_pt / 365),
+    rest_denominator = ifelse(year %in% c(2012, 2016, 2020, 2024), rest_pt / 366, rest_pt / 365),
     rest_pha_rate = case_when(
       acute == 1 ~ rest_count / rest_denominator * 1000,
       acute == 0 & pop == 0 ~ NA_real_,
@@ -1190,29 +1582,51 @@ health_events_pop_final_suppressed <- health_events_pop_final_suppressed %>%
               . == "voucher" ~ "Voucher type",
               . == "zip" ~ "ZIP code",
               TRUE ~ .))) %>%
-  mutate_at(vars(group1, group2), list(~ case_when(. == "overall" ~ "Overall", TRUE ~ .)))
+  mutate_at(vars(group1, group2), list(~ case_when(. == "overall" ~ "Overall", TRUE ~ .))) %>%
+  # Add timestamp for load
+  mutate(run_date = Sys.time())
 
 
 #### WRITE DATA ####
-dbWriteTable(db_extractstore51, 
-             name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
-             value = health_events_pop_final_suppressed, overwrite = T,
-             field.types = c(acute = "tinyint",
-                             year = "integer",
-                             wc_flag = "tinyint",
-                             count = "integer",
-                             pt = "integer",
-                             pop_ever = "integer",
-                             pop = "integer",
-                             rest_count = "integer",
-                             rest_pop = "integer",
-                             rest_pt = "integer",
-                             count_supp = "integer",
-                             pop_ever_supp = "tinyint",
-                             pop_supp = "tinyint",
-                             rest_pha_rate = "float",
-                             rest_ci_lb = "float",
-                             rest_ci_ub = "float"))
+db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
+# Split into smaller tables to avoid SQL connection issues
+start <- 1L
+max_rows <- 100000L
+cycles <- ceiling(nrow(health_events_pop_final_suppressed)/max_rows)
+
+lapply(seq(start, cycles), function(i) {
+  start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+  end_row <- min(nrow(health_events_pop_final_suppressed), max_rows * i)
+  
+  message("Loading cycle ", i, " of ", cycles)
+  if (i == 1) {
+    dbWriteTable(db_extractstore51,
+                 name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
+                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row]),
+                 overwrite = T, append = F,
+                 field.types = c(acute = "tinyint",
+                                 year = "integer",
+                                 wc_flag = "tinyint",
+                                 count = "integer",
+                                 pt = "integer",
+                                 pop_ever = "integer",
+                                 pop = "integer",
+                                 rest_count = "integer",
+                                 rest_pop = "integer",
+                                 rest_pt = "integer",
+                                 count_supp = "integer",
+                                 pop_ever_supp = "tinyint",
+                                 pop_supp = "tinyint",
+                                 rest_pha_rate = "float",
+                                 rest_ci_lb = "float",
+                                 rest_ci_ub = "float"))
+  } else {
+    dbWriteTable(db_extractstore51,
+                 name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
+                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row]),
+                 overwrite = F, append = T)
+  }
+})
 
 
 
@@ -1223,29 +1637,37 @@ gc()
 
 
 #### CAUSES OF ACUTE CLAIMS (HOSPITALIZATION AND ED) ####
+db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+
 ### Bring in timevar tables
-timevar_all <- setDT(dbGetQuery(db_apde51,
-  "SELECT id_apde, from_date, to_date, pha_agency AS agency  
-  FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
-  WHERE geo_kc = 1 AND full_criteria = 1 AND year(to_date) <= 2017"))
+timevar_all <- setDT(dbGetQuery(
+  db_apde51,
+  glue::glue_sql("SELECT id_apde, from_date, to_date, pha_agency AS agency  
+                 FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
+                 WHERE geo_kc = 1 AND full_criteria = 1 AND year(to_date) <= {max(years_mcare)}" ,
+                 .con = db_apde51)
+  ))
 timevar_all[, from_date := as.Date(from_date, origin = "1970-01-01")]
 timevar_all[, to_date := as.Date(to_date, origin = "1970-01-01")]
 
 
-timevar_mcaid <- setDT(dbGetQuery(db_apde51,
-  "SELECT a.*, b.id_mcaid FROM
-  (SELECT id_apde, from_date, to_date, pha_agency AS agency  
-  FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
-  WHERE geo_kc = 1 AND mcaid = 1 AND mcare = 0 AND 
-  full_criteria = 1 AND year(to_date) <= 2018) a
-  LEFT JOIN
-  (SELECT id_apde, id_mcaid FROM PHClaims.final.xwalk_apde_mcaid_mcare_pha) b
-  ON a.id_apde = b.id_apde"))
+timevar_mcaid <- setDT(dbGetQuery(
+  db_apde51,
+  glue::glue_sql("SELECT a.*, b.id_mcaid FROM
+                 (SELECT id_apde, from_date, to_date, pha_agency AS agency  
+                   FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
+                   WHERE geo_kc = 1 AND mcaid = 1 AND mcare = 0 AND 
+                   full_criteria = 1 AND year(to_date) <= {max(years)}) a
+                 LEFT JOIN
+                 (SELECT id_apde, id_mcaid FROM PHClaims.final.xwalk_apde_mcaid_mcare_pha) b
+                 ON a.id_apde = b.id_apde",
+                 .con = db_apde51)))
 timevar_mcaid[, from_date := as.Date(from_date, origin = "1970-01-01")]
 timevar_mcaid[, to_date := as.Date(to_date, origin = "1970-01-01")]
 
 
-acute_cause_nonpha <- bind_rows(lapply(seq(2012,2017), function(x) {
+### Run queries
+acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1296,7 +1718,7 @@ acute_cause_nonpha <- bind_rows(lapply(seq(2012,2017), function(x) {
 }))
 
 
-acute_cause_nonpha_mcaid <- bind_rows(lapply(seq(2012,2018), function(x) {
+acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1347,7 +1769,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(seq(2012,2018), function(x) {
 }))
 
 
-acute_cause_kcha <- bind_rows(lapply(seq(2012,2017), function(x) {
+acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1398,7 +1820,7 @@ acute_cause_kcha <- bind_rows(lapply(seq(2012,2017), function(x) {
 }))
 
 
-acute_cause_kcha_mcaid <- bind_rows(lapply(seq(2012,2018), function(x) {
+acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1449,7 +1871,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(seq(2012,2018), function(x) {
 }))
 
 
-acute_cause_sha <- bind_rows(lapply(seq(2012,2017), function(x) {
+acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1500,7 +1922,7 @@ acute_cause_sha <- bind_rows(lapply(seq(2012,2017), function(x) {
 }))
 
 
-acute_cause_sha_mcaid <- bind_rows(lapply(seq(2012,2018), function(x) {
+acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
   year_to <- paste0(x, "-12-31")
@@ -1571,10 +1993,12 @@ acute_cause <- bind_rows(acute_cause_nonpha, acute_cause_nonpha_mcaid,
     rank_flag = ifelse(is.na(claim_cnt), "+", NA_character_)
   ) %>%
   ungroup() %>%
-  select(-rank_max)
+  select(-rank_max) %>%
+  mutate(run_date = Sys.time())
 
 
-# Write to SQL
+### Write to SQL
+db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
 DBI::dbWriteTable(db_extractstore51,
                   name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_event_causes"),
                   value = acute_cause,
@@ -1583,36 +2007,33 @@ DBI::dbWriteTable(db_extractstore51,
 
 
 #### MOVE DATA TO 50 SERVER ####
+# Set up connections
+db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
+
 # If the Tableau workbook and data pass internal QA, move to external WIP file
 # for partners to QA
-DBI::dbWriteTable(db_extractstore50,
-                  name = DBI::Id(schema = "APDE", table = "mcaid_mcare_pha_enrollment"),
-                  value = pop_enroll_combine_bivar_suppressed,
-                  append = F, overwrite = T,
-                  field.types = c(year = "integer", pt = "integer", pop = "integer", 
-                                  pop_supp_flag = "integer", wc_flag = "integer"))
 
-dbWriteTable(db_extractstore50, 
-             name = DBI::Id(schema = "APDE", table = "mcaid_mcare_pha_events"),
-             value = health_events_pop_final_suppressed, overwrite = T,
-             field.types = c(acute = "tinyint",
-                             year = "integer",
-                             wc_flag = "tinyint",
-                             count = "integer",
-                             pt = "integer",
-                             pop_ever = "integer",
-                             pop = "integer",
-                             rest_count = "integer",
-                             rest_pop = "integer",
-                             rest_pt = "integer",
-                             count_supp = "integer",
-                             pop_ever_supp = "tinyint",
-                             pop_supp = "tinyint",
-                             rest_pha_rate = "float",
-                             rest_ci_lb = "float",
-                             rest_ci_ub = "float"))
+# Note: this approach assumes no differences between the WIP and production table structures
+# If there are differences, load from R instead (but break up loads into chunks to avoid network issues)
 
-DBI::dbWriteTable(db_extractstore50,
-                  name = DBI::Id(schema = "APDE", table = "mcaid_mcare_pha_event_causes"),
-                  value = acute_cause,
-                  append = F, overwrite = T)
+DBI::dbExecute(db_extractstore51,
+               "DELETE FROM [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_enrollment]")
+DBI::dbExecute(db_extractstore51,
+               "INSERT INTO [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_enrollment]
+               SELECT * FROM [KCITSQLUTPDBH51].[PHExtractStore].[APDE_WIP].[mcaid_mcare_pha_enrollment]")
+
+
+DBI::dbExecute(db_extractstore51,
+               "DELETE FROM [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_events]")
+DBI::dbExecute(db_extractstore51,
+               "INSERT INTO [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_events]
+               SELECT * FROM [KCITSQLUTPDBH51].[PHExtractStore].[APDE_WIP].[mcaid_mcare_pha_events]")
+
+
+DBI::dbExecute(db_extractstore51,
+               "DELETE FROM [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_event_causes]")
+DBI::dbExecute(db_extractstore51,
+               "INSERT INTO [KCITSQLPRPDBM50_apde].[PHExtractStore].[APDE].[mcaid_mcare_pha_event_causes]
+               SELECT * FROM [KCITSQLUTPDBH51].[PHExtractStore].[APDE_WIP].[mcaid_mcare_pha_event_causes]")
+
+
