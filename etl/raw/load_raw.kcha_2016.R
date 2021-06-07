@@ -8,8 +8,8 @@
 # Assumes relevant libraries are already loaded
 
 # conn = ODBC connection to use
-# to_schema = name of the schema to load 2004-2015 data to
-# to_table = name of the table to load 2004-2015 data to
+# to_schema = name of the schema to load data to
+# to_table = name of the table to load data to
 # qa_schema = name of the schema the QA lives in (likely the same as the to_schema if working in HHSAW)
 # qa_table = name of the table that holds QA outcomes
 # file_path = where the KCHA data files live (note that the file names themselves are hard coded for now)
