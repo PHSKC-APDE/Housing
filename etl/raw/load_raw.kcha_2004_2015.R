@@ -10,26 +10,22 @@
 # conn = ODBC connection to use
 # to_schema = name of the schema to load 2004-2015 data to
 # to_table = name of the table to load 2004-2015 data to
-# qa_schema = name of the schema the QA and ETL tables live in (likely the same as 
-# the to_schema if working in HHSAW)
+# qa_schema = name of the schema the QA lives in (likely the same as the to_schema if working in HHSAW)
 # qa_table = name of the table that holds QA outcomes
-# etl_table = name of the table that holds the ETL logging
 # file_path = where the KCHA data files live (note that the file names themselves are hard coded for now)
 # date_min = the minimum action date expected in the data
 # date_max = the maximum action date expected in the data
-# date_delivery = date the data were received
+# etl_batch_id = the value in the ETL logging table that corresponds to these data
 
 load_raw.kcha_2004_2015 <- function(conn = NULL,
                                     to_schema = NULL,
                                     to_table = NULL,
                                     qa_schema = NULL,
                                     qa_table = NULL,
-                                    etl_table = NULL,
                                     file_path = NULL,
                                     date_min = "2004-01-01",
                                     date_max = "2015-12-31",
-                                    date_delivery = "2017-10-09",
-                                    etl_note = "Initial delivery of data") {
+                                    etl_batch_id = NULL) {
   
   # BRING IN DATA ----
   kcha_p1_2004_2015 <- fread(file = file.path(file_path, "kcha_panel_01_2004_2015.csv"), 
@@ -46,18 +42,6 @@ load_raw.kcha_2004_2015 <- function(conn = NULL,
   kcha_eop <- fread(file = file.path(file_path, "EOP Certifications_received_2017-10-05.csv"),
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
-  
-  
-  # METADATA ----
-  etl_batch_id <- load_metadata_etl_log(conn = conn,
-                                        to_schema = qa_schema,
-                                        to_table = etl_table,
-                                        data_source = "kcha",
-                                        data_type = "hcv_ph",
-                                        date_min = date_min,
-                                        date_max = date_max,
-                                        date_delivery = date_delivery,
-                                        note = etl_note)
   
   
   # QA CHECKS ----
@@ -236,8 +220,7 @@ load_raw.kcha_2004_2015 <- function(conn = NULL,
   # COMBINE DATA ----
   ### Join into a single file for each extract
   # Using a left_join because without the panel 1 info (names, SSN, etc.) the info is not much help
-  kcha_2004_2015_full <- list(kcha_p1_2004_2015, kcha_p2_2004_2015, 
-                              kcha_p3_2004_2015) %>%
+  kcha_2004_2015_full <- list(kcha_p1_2004_2015, kcha_p2_2004_2015, kcha_p3_2004_2015) %>%
     Reduce(function(dtf1, dtf2) left_join(
       dtf1, dtf2, by = c("subsidy_id", "h2a", "h2b", "row_n")), .)
   

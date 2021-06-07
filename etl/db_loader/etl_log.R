@@ -102,25 +102,24 @@ load_metadata_etl_log <- function(conn = NULL,
     if (nrow(latest) > 0 & nrow(latest_source) > 0 & auto_proceed == F) {
       proceed_msg <- glue::glue("
                                 The most recent entry in the etl_log is as follows:
-                                etl_batch_id: {latest[1]}
-                                data_source: {latest[2]}
-                                data_type: {latest[3]}
-                                date_min: {latest[4]}
-                                date_max: {latest[5]}
-                                date_delivery: {latest[6]}
-                                note: {latest[7]}
+                                etl_batch_id: {latest$etl_batch_id}
+                                data_source: {latest$data_source}
+                                data_type: {latest$data_type}
+                                date_min: {latest$date_min}
+                                date_max: {latest$date_max}
+                                date_delivery: {latest$date_delivery}
+                                note: {latest$note}
                                 
                                 The most recent entry in the etl_log FOR THIS DATA SOURCE is as follows:
-                                etl_batch_id: {latest_source[1]}
-                                data_source: {latest_source[2]}
-                                data_type: {latest[3]}
-                                date_min: {latest_source[4]}
-                                date_max: {latest_source[5]}
-                                date_delivery: {latest_source[6]}
-                                note: {latest_source[7]}
+                                etl_batch_id: {latest_source$etl_batch_id}
+                                data_source: {latest_source$data_source}
+                                data_type: {latest_source$data_type}
+                                date_min: {latest_source$date_min}
+                                date_max: {latest_source$date_max}
+                                date_delivery: {latest_source$date_delivery}
+                                note: {latest_source$note}
                                 
-                                Do you still want to make a new entry?",
-                                .con = conn)
+                                Do you still want to make a new entry?")
       
       proceed <- askYesNo(msg = proceed_msg)
     }
