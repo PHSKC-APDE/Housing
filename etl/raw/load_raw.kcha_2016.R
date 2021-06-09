@@ -181,7 +181,7 @@ load_raw.kcha_2016 <- function(conn = NULL,
                             lag(., 1), .)))
   
   
-  # LOAD DATE TO SQL ----
+  # LOAD DATA TO SQL ----
   # Add source field to track where each row came from
   kcha_2016_full <- kcha_2016_full %>% 
     mutate(pha_source = "kcha2016",

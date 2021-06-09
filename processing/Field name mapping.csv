@@ -2,6 +2,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 01a,agencyname1a,agencyname1a,,,,h1a,,agency
 02a,actiontype2a,actiontype2a,actiontype2a,certtype,,h2a,HUD-50058 2a Type of Action,act_type
 02a,,,actiontype2a,,,,,act_type
+02a,,,,,,certificationtype,,act_type_text
 02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,effectivedate,,h2b,Effective Date,act_date
 02b,,,effectivedateofaction2b,,,,,act_date
 02c,,,,,,h2c,,correction
@@ -67,10 +68,10 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 19e,incomeexclusions19e,incomeexclusions19e,incomeexclusions19e,,,,,inc_excl
 19f,incomeafterexclusions19f,incomeafterexclusions19f,incomeafterexclusions19f,,,,,inc_adj
 19g,totalsumof19d19g,totalsumof19d19g,,,,,,hh_inc
-19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,,,,,hh_inc_adj
-19i,totalannualincome19i,totalannualincome19i,totalannualincome19i,,,,,hh_inc_tot
+19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,,,h19h,,hh_inc_adj
+19i,totalannualincome19i,totalannualincome19i,totalannualincome19i,,,h19i,,hh_inc_tot
 19j,,deductions19j,deductions19j,,,,,hh_inc_deduct
-19k,adjustedannualincome19k,adjustedannualincome19k,adjustedannualincome19k,,,,,hh_inc_tot_adj
+19k,adjustedannualincome19k,adjustedannualincome19k,adjustedannualincome19k,,,h19k,,hh_inc_tot_adj
 20a,typeofrent20a,typeofrent20a,typeofrent20a,,,h20a,,rent_type
 20b,tenantrent20b,tenantrent20b,tenantrent20b,totaltenantrent,,h20b,,rent_tenant
 20c,mixedfamilytenantrent20c,mixedfamilytenantrent20c,mixedfamilytenantrent20c,,,h20c,,rent_mixfam

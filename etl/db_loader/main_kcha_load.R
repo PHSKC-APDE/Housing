@@ -58,8 +58,6 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                        Authentication = "ActiveDirectoryPassword")
 
 
-
-
 # LOAD 2004-2015 DATA ----
 # Bring in function
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.kcha_2004_2015.R")
@@ -216,8 +214,48 @@ rm(load_raw.kcha_2019, etl_batch_id_2019)
 
 
 # LOAD 2020 DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2020/etl/raw/load_raw.kcha_2020.R")
+
+# Set up etl_batch_id
+etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,
+                                           to_schema = qa_schema,
+                                           to_table = etl_table,
+                                           data_source = "kcha",
+                                           data_type = "hcv_ph",
+                                           date_min = "2020-01-01",
+                                           date_max = "2020-12-31",
+                                           date_delivery = "2021-05-25",
+                                           note = "Initial delivery of data")
+
+# Run function
+load_raw.kcha_2020(conn = db_hhsaw,
+                   to_schema = "pha",
+                   to_table = "raw_kcha_2020",
+                   qa_schema = qa_schema,
+                   qa_table = qa_table,
+                   file_path = file_path,
+                   date_min = "2020-01-01",
+                   date_max = "2020-12-31",
+                   etl_batch_id = etl_batch_id_2020)
+
+
+# Clean up
+rm(load_raw.kcha_2020, etl_batch_id_2020)
 
 
 # MAKE STAGE KCHA TABLE ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.kcha.R")
 
+# Run function
+load_stage.kcha(conn = db_hhsaw,
+                to_schema = "pha",
+                to_table = "stage_kcha",
+                from_schema = "pha",
+                from_table = "raw_kcha",
+                qa_schema = qa_schema,
+                qa_table = qa_table,
+                years = c(2015:2020),
+                truncate = T)
 
