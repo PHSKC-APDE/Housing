@@ -41,12 +41,12 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 04b,,zipcodebeforeadmission4b,,,,box04b,,list_zip
 04c,,homelessatadmission4c,,homeless,,box04c,,list_homeless
 04e,,assistedunderthe1937housingact4e,,,,,,housing_act
-05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,h5a1a,,unit_add
-05a1b,,,,unitnumber,,h5a1b,,unit_apt
-05a2,,,,,,h5a2,,unit_apt2
-05a3,unitcity5a,unitcity5a,unitcity5a,unitcity,,h5a3,,unit_city
-05a4,unitstate5a,unitstate5a,unitstate5a,unitstate,,h5a4,,unit_state
-05a5,unitzipcode5a,unitzipcode5a,unitzipcode5a,unitzip,,h5a5,,unit_zip
+05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,h5a1a,,geo_add1_raw
+05a1b,,,,unitnumber,,h5a1b,,geo_add2_raw
+05a2,,,,,,h5a2,,geo_add3_raw
+05a3,unitcity5a,unitcity5a,unitcity5a,unitcity,,h5a3,,geo_city_raw
+05a4,unitstate5a,unitstate5a,unitstate5a,unitstate,,h5a4,,geo_state_raw
+05a5,unitzipcode5a,unitzipcode5a,unitzipcode5a,unitzip,,h5a5,,geo_zip_raw
 05d,numberofbedrooms5d,numberofbedrooms5d,numberofbedroomsinunit5d,noofbedrooms,,h5d,,bed_cnt
 05e,,unitidentifiedasaccessibleunit5e,,,,h5e,,access_unit
 05f,,familyrequestedaccessibilityfeaturesindicator5f,,,,h5f,,access_req
@@ -152,10 +152,11 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,,,,,,DevelopmentName,,property_name
 ,,projectname,projectname,,ProjectName,Property.Name,,property_name
 ,,,,,projectname,,,property_name
-,,projecttype,projecttype,,,Property.Type,,property_type
-,,,,,,Property Type,,property_type
-,,,,,,projecttype,,property_type
-,,,,,,PropertyType,,property_type
+,,projecttype,projecttype,,,Property.Type,,portfolio_type
+,,,,,,Property Type,,portfolio_type
+,,,,,,projecttype,,portfolio_type
+,,,,,,PropertyType,,portfolio_type
+,,,,,,propertytype,,portfolio_type
 ,,portfolio,portfolio,,Portfolio.Type,Portfolio.Name,,portfolio
 ,,,,,portfoliotype,portfolioname,,portfolio
 ,,,,,,Portfolio Name,,portfolio

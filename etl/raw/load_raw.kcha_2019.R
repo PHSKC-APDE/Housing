@@ -57,7 +57,7 @@ load_raw.kcha_2019 <- function(conn = NULL,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES ({etl_batch_id}, NULL, 'raw.kcha_2019',
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'row_count', {nrow(kcha_p1_2019)},
                                   {Sys.time()}, NULL)",
                           .con = conn))

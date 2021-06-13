@@ -44,15 +44,15 @@ options(max.print = 350, tibble.print_max = 50, warning.length = 8170,
 qa_schema <- "pha"
 qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
-file_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data"
+file_path_kcha <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data"
 
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                        driver = "ODBC Driver 17 for SQL Server",
                        server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
                        database = "hhs_analytics_workspace",
-                       uid = keyring::key_list("hhsaw_dev")[["username"]],
-                       pwd = keyring::key_get("hhsaw_dev", keyring::key_list("hhsaw_dev")[["username"]]),
+                       uid = keyring::key_list("hhsaw")[["username"]],
+                       pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
                        Encrypt = "yes",
                        TrustServerCertificate = "yes",
                        Authentication = "ActiveDirectoryPassword")
@@ -79,7 +79,7 @@ load_raw.kcha_2004_2015(conn = db_hhsaw,
                         to_table = "raw_kcha_2004_2015",
                         qa_schema = qa_schema,
                         qa_table = qa_table,
-                        file_path = file_path,
+                        file_path = file_path_kcha,
                         date_min = "2004-01-01",
                         date_max = "2015-12-31",
                         etl_batch_id = etl_batch_id_2015)
@@ -110,7 +110,7 @@ load_raw.kcha_2016(conn = db_hhsaw,
                    to_table = "raw_kcha_2016",
                    qa_schema = qa_schema,
                    qa_table = qa_table,
-                   file_path = file_path,
+                   file_path = file_path_kcha,
                    date_min = "2016-01-01",
                    date_max = "2016-12-31",
                    etl_batch_id = etl_batch_id_2016)
@@ -141,7 +141,7 @@ load_raw.kcha_2017(conn = db_hhsaw,
                    to_table = "raw_kcha_2017",
                    qa_schema = qa_schema,
                    qa_table = qa_table,
-                   file_path = file_path,
+                   file_path = file_path_kcha,
                    date_min = "2017-01-01",
                    date_max = "2017-12-31",
                    etl_batch_id = etl_batch_id_2017)
@@ -172,7 +172,7 @@ load_raw.kcha_2018(conn = db_hhsaw,
                    to_table = "raw_kcha_2018",
                    qa_schema = qa_schema,
                    qa_table = qa_table,
-                   file_path = file_path,
+                   file_path = file_path_kcha,
                    date_min = "2018-01-01",
                    date_max = "2018-12-31",
                    etl_batch_id = etl_batch_id_2018)
@@ -203,7 +203,7 @@ load_raw.kcha_2019(conn = db_hhsaw,
                    to_table = "raw_kcha_2019",
                    qa_schema = qa_schema,
                    qa_table = qa_table,
-                   file_path = file_path,
+                   file_path = file_path_kcha,
                    date_min = "2019-01-01",
                    date_max = "2019-12-31",
                    etl_batch_id = etl_batch_id_2019)
@@ -234,7 +234,7 @@ load_raw.kcha_2020(conn = db_hhsaw,
                    to_table = "raw_kcha_2020",
                    qa_schema = qa_schema,
                    qa_table = qa_table,
-                   file_path = file_path,
+                   file_path = file_path_kcha,
                    date_min = "2020-01-01",
                    date_max = "2020-12-31",
                    etl_batch_id = etl_batch_id_2020)

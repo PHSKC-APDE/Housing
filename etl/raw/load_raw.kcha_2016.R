@@ -62,7 +62,7 @@ load_raw.kcha_2016 <- function(conn = NULL,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES ({etl_batch_id}, NULL, 'raw.kcha_2016',
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'row_count', {nrow(kcha_p1_2016)},
                                   {Sys.time()}, 'Only applies to panel 1')",
                           .con = conn))
@@ -178,7 +178,10 @@ load_raw.kcha_2016 <- function(conn = NULL,
                    contains("h20"), contains("h21"), hh_lname, hh_fname, 
                    hh_mname, contains("hh_inc"), spec_vouch),
               list(~ ifelse(hh_ssn == lag(hh_ssn, 1) & eop_source == "eop" & !is.na(eop_source), 
-                            lag(., 1), .)))
+                            lag(., 1), .))) %>%
+    # Fix up the date format that broke here
+    mutate_at(vars(h2h, starts_with("h3e")),
+              list(~ as.Date(., origin = "1970-01-01")))
   
   
   # LOAD DATA TO SQL ----
