@@ -28,13 +28,13 @@ load_raw.kcha_2018 <- function(conn = NULL,
                                etl_batch_id = NULL) {
   
   # BRING IN DATA ----
-  kcha_p1_2018 <- fread(file = file.path(file_path, "kcha_panel_01_2018.csv"), 
+  kcha_p1_2018 <- fread(file = file.path(file_path, "kcha_2018_panel_01.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2018 <- fread(file = file.path(file_path, "kcha_panel_02_2018.csv"), 
+  kcha_p2_2018 <- fread(file = file.path(file_path, "kcha_2018_panel_02.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2018 <- fread(file = file.path(file_path, "kcha_panel_03_2018.csv"), 
+  kcha_p3_2018 <- fread(file = file.path(file_path, "kcha_2018_panel_03.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
   

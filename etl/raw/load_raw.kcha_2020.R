@@ -32,13 +32,13 @@ load_raw.kcha_2020 <- function(conn = NULL,
   date_max <- as.Date(date_max, format = "%Y-%m-%d")
   
   # BRING IN DATA ----
-  kcha_p1_2020 <- fread(file = file.path(file_path, "kcha_panel_01_2020.csv"), 
+  kcha_p1_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_01.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2020 <- fread(file = file.path(file_path, "kcha_panel_02_2020.csv"), 
+  kcha_p2_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_02.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2020 <- fread(file = file.path(file_path, "kcha_panel_03_2020.csv"), 
+  kcha_p3_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_03.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
   
