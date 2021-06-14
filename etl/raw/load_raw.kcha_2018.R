@@ -23,8 +23,6 @@ load_raw.kcha_2018 <- function(conn = NULL,
                                qa_schema = NULL,
                                qa_table = NULL,
                                file_path = NULL,
-                               date_min = "2018-01-01",
-                               date_max = "2018-12-31",
                                etl_batch_id = NULL) {
   
   # BRING IN DATA ----

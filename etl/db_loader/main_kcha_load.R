@@ -80,8 +80,6 @@ load_raw.kcha_2004_2015(conn = db_hhsaw,
                         qa_schema = qa_schema,
                         qa_table = qa_table,
                         file_path = file_path_kcha,
-                        date_min = "2004-01-01",
-                        date_max = "2015-12-31",
                         etl_batch_id = etl_batch_id_2015)
 
 
@@ -111,8 +109,6 @@ load_raw.kcha_2016(conn = db_hhsaw,
                    qa_schema = qa_schema,
                    qa_table = qa_table,
                    file_path = file_path_kcha,
-                   date_min = "2016-01-01",
-                   date_max = "2016-12-31",
                    etl_batch_id = etl_batch_id_2016)
 
 
@@ -142,8 +138,6 @@ load_raw.kcha_2017(conn = db_hhsaw,
                    qa_schema = qa_schema,
                    qa_table = qa_table,
                    file_path = file_path_kcha,
-                   date_min = "2017-01-01",
-                   date_max = "2017-12-31",
                    etl_batch_id = etl_batch_id_2017)
 
 
@@ -173,8 +167,6 @@ load_raw.kcha_2018(conn = db_hhsaw,
                    qa_schema = qa_schema,
                    qa_table = qa_table,
                    file_path = file_path_kcha,
-                   date_min = "2018-01-01",
-                   date_max = "2018-12-31",
                    etl_batch_id = etl_batch_id_2018)
 
 
@@ -204,8 +196,6 @@ load_raw.kcha_2019(conn = db_hhsaw,
                    qa_schema = qa_schema,
                    qa_table = qa_table,
                    file_path = file_path_kcha,
-                   date_min = "2019-01-01",
-                   date_max = "2019-12-31",
                    etl_batch_id = etl_batch_id_2019)
 
 

@@ -424,9 +424,12 @@ load_stage_kcha <- function(conn = NULL,
   
 
   # MAKE FINAL DATA FRAME AND ADD USEFUL VARIABLES ----
+  last_run <- Sys.time()
+  
   kcha_long <- kcha_long %>%
     bind_rows() %>%
-    mutate(major_prog = ifelse(prog_type == "PH", "PH", "HCV"))
+    mutate(major_prog = ifelse(prog_type == "PH", "PH", "HCV"),
+           last_run = last_run)
   
   
   # QA FINAL DATA ----
@@ -455,7 +458,7 @@ load_stage_kcha <- function(conn = NULL,
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
                           'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
                           .con = conn))
   
@@ -485,7 +488,7 @@ load_stage_kcha <- function(conn = NULL,
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
                           'row_count_vs_previous', {qa_names_result}, {Sys.time()}, {qa_names_note})",
                           .con = conn))
   
@@ -496,7 +499,7 @@ load_stage_kcha <- function(conn = NULL,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
+                          VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'row_count', {nrow(kcha_long)},
                                   {Sys.time()}, NULL)",
                           .con = conn))
