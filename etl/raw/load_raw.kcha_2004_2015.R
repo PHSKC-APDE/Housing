@@ -86,7 +86,7 @@ load_raw.kcha_2004_2015 <- function(conn = NULL,
   })
   
   # Bring back data frames from list
-  list2env(df_dedups, .GlobalEnv)
+  list2env(df_dedups, envir = environment())
   rm(dfs)
   rm(df_dedups)
   
