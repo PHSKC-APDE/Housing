@@ -191,7 +191,6 @@ load_raw.kcha_2020 <- function(conn = NULL,
   # Do they have the expected range?
   act_types <- sort(unique(kcha_p1_2020$h2a[!is.na(kcha_p1_2020$h2a)]))
   
-  
   if (min(act_types %in% 1:14) == 0) {
     qa_act_note <- glue("The following unexpected action types were present: ",
                          "{glue_collapse(act_types[act_types %in% 1:14 == FALSE], sep = ', ')}")
@@ -205,7 +204,7 @@ load_raw.kcha_2020 <- function(conn = NULL,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                          'date_range', {qa_act_result}, {Sys.time()}, {qa_act_note})",
+                          'action_types', {qa_act_result}, {Sys.time()}, {qa_act_note})",
                           .con = conn))
   
   
@@ -229,6 +228,10 @@ load_raw.kcha_2020 <- function(conn = NULL,
   } else {
     # Clean up QA objects if everything passed
     rm(list = ls(pattern = "^qa_"))
+    rm(names)
+    rm(dates)
+    rm(prog_types)
+    rm(act_types)
   }
   
   
