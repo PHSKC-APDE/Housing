@@ -24,6 +24,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 03e,dateofbirth3e,dateofbirth3e,dateofbirth3e,dob,,h3e,,dob
 03g,sex3g,sex3g,sex3g,gender,,h3g,,gender
 03h,memberrelationcode3h,memberrelationcode3h,memberrelationcode3h,relation,,h3h,,relcode
+,,,,relationdescription,,,,rel_text
 03i,citizenship3i,citizenship3i,citizenship3i,,,h3i,,citizen
 03j,disability3j,disability3j,disability3j,disability,,h3j,,disability
 03k,,,raceshacombined3k,,,,,race
@@ -43,7 +44,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 04e,,assistedunderthe1937housingact4e,,,,,,housing_act
 05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,h5a1a,,geo_add1_raw
 05a1b,,,,unitnumber,,h5a1b,,geo_add2_raw
-05a2,,,,,,h5a2,,geo_add3_raw
+05a2,,,,unitaddressline2,,h5a2,,geo_add3_raw
 05a3,unitcity5a,unitcity5a,unitcity5a,unitcity,,h5a3,,geo_city_raw
 05a4,unitstate5a,unitstate5a,unitstate5a,unitstate,,h5a4,,geo_state_raw
 05a5,unitzipcode5a,unitzipcode5a,unitzipcode5a,unitzip,,h5a5,,geo_zip_raw

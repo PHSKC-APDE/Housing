@@ -12,7 +12,7 @@
 
 # BRING IN DATA ----
 # Bring in data
-kcha_portfolio <- openxlsx::read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/Property list with project code_received_2017-07-26.xlsx")
+kcha_portfolios <- openxlsx::read.xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/Property list with project code_received_2017-07-26.xlsx")
 
 # Bring in field names
 fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
@@ -20,18 +20,18 @@ fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
 
 # CLEAN UP ----
 ## Clean up KCHA field names ----
-kcha_portfolio <- data.table::setnames(kcha_portfolio, fields$common_name[match(names(kcha_portfolio), fields$kcha_modified)])
-kcha_portfolio$property_name <- toupper(kcha_portfolio$property_name)
+kcha_portfolios <- data.table::setnames(kcha_portfolios, fields$common_name[match(names(kcha_portfolios), fields$kcha_modified)])
+kcha_portfolios$property_name <- toupper(kcha_portfolios$property_name)
 
 
 # LOAD TO SQL ----
 db_hhsaw <- DBI::dbConnect(odbc::odbc(), "hhsaw_prod", uid = keyring::key_list("hhsaw_dev")[["username"]])
 DBI::dbWriteTable(conn = db_hhsaw,
-                  name = DBI::Id(schema = "pha", table = "ref_kcha_portfolio_codes"),
-                  value = as.data.frame(kcha_portfolio),
+                  name = DBI::Id(schema = "pha", table = "ref_kcha_portfolios_codes"),
+                  value = as.data.frame(kcha_portfolios),
                   overwrite = T)
 
 # CLEAN UP ----
-rm(kcha_portfolio)
+rm(kcha_portfolios)
 rm(fields)
 rm(db_hhsaw)
