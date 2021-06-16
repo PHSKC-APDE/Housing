@@ -1,4 +1,4 @@
-#### CODE TO LOAD 2019 SEATTLE HOUSING AUTHORITY PUBLIC HOUSING AND VOUCHER DATA
+#### CODE TO LOAD 2019 SEATTLE HOUSING AUTHORITY PUBLIC HOUSING DATA
 # Alastair Matheson, PHSKC (APDE)
 #
 # 2021-06
@@ -17,14 +17,14 @@
 # date_max = the maximum action date expected in the data
 # etl_batch_id = the value in the ETL logging table that corresponds to these data
 
-load_raw.sha_2019 <- function(conn = NULL,
+load_raw.sha_ph_2020 <- function(conn = NULL,
                               to_schema = NULL,
                               to_table = NULL,
                               qa_schema = NULL,
                               qa_table = NULL,
                               file_path = NULL,
-                              date_min = "2019-01-01",
-                              date_max = "2019-12-31",
+                              date_min = "2020-01-01",
+                              date_max = "2020-12-31",
                               etl_batch_id = NULL) {
   
   # SET UP VARIABLES ----
@@ -33,7 +33,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   
   # BRING IN DATA ----
-  sha_2019 <- fread(file = file.path(file_path, "sha_hcv_ph_2019.csv"), 
+  sha_ph_2020 <- fread(file = file.path(file_path, "sha_ph_2020.csv"), 
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
   
@@ -43,16 +43,17 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   # QA CHECKS ----
   # Fewer QA checks this time since there is no comparison to previous years
+  # Last year HCV and PH were combined so hard to compare row and ID counts
   
   ## Field names ----
   # Are there any new names not seen before?
-  names <- names(sha_2019)
+  names <- names(sha_ph_2020)
   names <- tolower(str_replace_all(names,"[:punct:]|[:space:]", ""))
   
-  if (length(names[names %in% fields$sha_2019 == F]) > 0) {
+  if (length(names[names %in% unique(fields$sha_2019) == F]) > 0) {
     qa_names_result <- "FAIL"
     qa_names_note <- glue("The following new columns were detected: ", 
-                          "{glue_collapse(names[names %in% fields$sha_2019 == F], sep = ', ', last = ', and ')}. ",
+                          "{glue_collapse(names[names %in% unique(fields$sha_2019) == F], sep = ', ', last = ', and ')}. ",
                           "Update the field_name_mapping.csv file.")
     warning(qa_names_note)
   } else {
@@ -74,7 +75,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   # Do they fall in the expected range?
   # Some may be from earlier years so will want to manually check them 
   # (and see if they appear in previous data)
-  dates <- sha_2019 %>%
+  dates <- sha_ph_2020 %>%
     mutate(EFFECTIVE_DATE = as.Date(EFFECTIVE_DATE, format = "%m/%d/%Y")) %>%
     summarise(date_min = min(EFFECTIVE_DATE, na.rm = T),
               date_max = max(EFFECTIVE_DATE, na.rm = T))
@@ -84,16 +85,19 @@ load_raw.sha_2019 <- function(conn = NULL,
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
+    warning(qa_date_note)
   } else if (dates$date_min - date_min > 30 | date_max - dates$date_max > 30) {
     qa_date_note <- glue("Large gap between expected and actual min or max date: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
+    warning(qa_date_note)
   } else {
     qa_date_note <- glue("Date fell in expected range: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "PASS"
+    message(qa_date_note)
   }
   
   DBI::dbExecute(conn,
@@ -105,7 +109,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   ## Action codes/types ----
   # Are there any new codes/types not seen before?
-  act_types <- sort(unique(sha_2019$CERT_TYPE[!is.na(sha_2019$CERT_TYPE)]))
+  act_types <- sort(unique(sha_ph_2020$CERT_TYPE[!is.na(sha_ph_2020$CERT_TYPE)]))
   act_types_expected <- c(
     "Annual HQS Inspection Only", "Annual Recertification", "Annual Reexamination", "Annual Reexamination Searching", 
     "End Participation", "Expiration of Voucher", "FSS/MTW Self-Sufficiency Only", "FSS/WtW Addendum Only",  
@@ -113,13 +117,14 @@ load_raw.sha_2019 <- function(conn = NULL,
     "Move In", "Move Out", "New Admission", "Other Change of Unit", "Port-Out Update (Not Submitted To MTCS)", 
     "Portability Move-in", "Portability Move-out", "Termination", "Unit Transfer", "Void")
   
-  if (is.character(sha_2019$CERT_TYPE) & length(act_types[act_types %in% act_types_expected == F]) > 0) {
+  
+  if (is.character(sha_ph_2020$CERT_TYPE) & length(act_types[act_types %in% act_types_expected == F]) > 0) {
     qa_act_note <- glue("The following unexpected action types were present: ",
                         "{glue_collapse(act_types[act_types %in% act_types_expected == F], sep = ', ')}. ", 
                         "Update stage.sha recoding as appropriate.")
     qa_act_result <- "FAIL"
     warning(qa_act_note)
-  } else if (is.integer(sha_2019$CERT_TYPE) & min(act_types %in% 1:15) == 0) {
+  } else if (is.integer(sha_ph_2020$CERT_TYPE) & min(act_types %in% 1:15) == 0) {
     qa_act_note <- glue("The following unexpected action types were present: ",
                         "{glue_collapse(act_types[act_types %in% 1:15 == FALSE], sep = ', ')}")
     qa_act_result <- "FAIL"
@@ -140,7 +145,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   ## Program types ----
   # Are there any new program types not seen before?
-  prog_types <- sort(unique(sha_2019$PROGRAM_TYPE[!is.na(sha_2019$PROGRAM_TYPE)]))
+  prog_types <- sort(unique(sha_ph_2020$PROGRAM_TYPE[!is.na(sha_ph_2020$PROGRAM_TYPE)]))
   prog_types_expected = c("Collaborative Housing", "SHA Owned and Managed", "Tenant Based")
   
   if (length(prog_types[prog_types %in% prog_types_expected == F]) > 0) {
@@ -148,9 +153,11 @@ load_raw.sha_2019 <- function(conn = NULL,
                          "{glue_collapse(prog_types[prog_types %in% prog_types_expected == F], sep = ', ')}. ", 
                          "Update stage.sha recoding as appropriate.")
     qa_prog_result <- "FAIL"
+    warning(qa_prog_note)
   } else {
     qa_prog_note <- "There were no unexpected program types."
     qa_prog_result <- "PASS"
+    message(qa_prog_note)
   }
   
   DBI::dbExecute(conn,
@@ -166,23 +173,26 @@ load_raw.sha_2019 <- function(conn = NULL,
   # Assumes ref table is loaded in PHA schema. If needed add ref_schema and ref_table options to function.
   sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
   
-  portfolios_miss <- sha_2019 %>%
-    filter(PROGRAM_TYPE == "SHA Owned and Managed") %>%
+  portfolios_miss <- sha_ph_2020 %>%
+    filter(str_detect(tolower(PROGRAM_TYPE), "owned") & str_detect(tolower(PROGRAM_TYPE), "managed")) %>%
     distinct(BUILDING_ID) %>%
+    mutate(BUILDING_ID = as.character(BUILDING_ID)) %>%
     left_join(., sha_portfolios, by = c("BUILDING_ID" = "building_id")) %>%
     filter(is.na(portfolio))
   
   portfolio_impact <- inner_join(portfolios_miss, 
-                                 select(sha_2019, BUILDING_ID) %>% 
+                                 select(sha_ph_2020, BUILDING_ID) %>% 
                                    mutate(BUILDING_ID = as.character(BUILDING_ID)))
   
   if (nrow(portfolios_miss) > 0) {
     qa_portfolio_note <- glue("There were {nrow(portfolios_miss)} PH building IDs found in {nrow(portfolio_impact)} ",
                               "rows that did not match to a portfolio. Need to update ref table.")
     qa_portfolio_result <- "FAIL"
+    warning(qa_portfolio_note)
   } else {
     qa_portfolio_note <- "There were no unexpected building IDs."
     qa_portfolio_result <- "PASS"
+    message(qa_portfolio_note)
   }
   
   DBI::dbExecute(conn,
@@ -197,21 +207,19 @@ load_raw.sha_2019 <- function(conn = NULL,
   # Row counts
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                          (etl_batch_id, last_run, table_name, 
-                            qa_type, qa_item, qa_result, qa_date, note) 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {nrow(sha_2019)},
-                                  {Sys.time()}, 'HCV and PH both included')",
+                                  'value', 'row_count', {nrow(sha_ph_2020)},
+                                  {Sys.time()}, NULL)",
                           .con = conn))
   
   # Distinct HH IDs
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                          (etl_batch_id, last_run, table_name, 
-                            qa_type, qa_item, qa_result, qa_date, note) 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'household_count', {length(unique(sha_2019$HH_CERT_ID))},
-                                  {Sys.time()}, 'HCV and PH both included')",
+                                  'value', 'household_count', {length(unique(sha_ph_2020$HH_CERT_ID))},
+                                  {Sys.time()}, NULL)",
                           .con = conn))
   
   
@@ -233,7 +241,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   # RENAME FIELDS ----
   # Get rid of spaces, characters, and capitals in existing names
   # Makes it easier to accommodate changes in names provided by SHA
-  sha_2019 <- sha_2019 %>%
+  sha_ph_2020 <- sha_ph_2020 %>%
     rename_with(., ~ str_replace_all(.,"[:punct:]|[:space:]", "")) %>%
     rename_with(., tolower) %>%
     setnames(., fields$common_name[match(names(.), fields$sha_2019)])
@@ -241,13 +249,20 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   # DATA CLEANING ----
   ## Deduplicate data to avoid extra rows when joining ----
-  sha_2019 <- sha_2019 %>% distinct()
+  sha_ph_2020 <- sha_ph_2020 %>% distinct()
   
   
   ## Fix up date formats ----
-  sha_2019 <- sha_2019 %>%
-    mutate(across(c(ends_with("_date"), dob), ~ as.Date(.x, format = "%m/%d/%Y")),
+  # Dates that were previously offset due to name suffixes or commas in the building name
+  #   have a different format so need to account for that.
+  # There will be a warning message about NAs introduced by coercion but there 
+  #   don't appear to be any NAs actually generated.
+  sha_ph_2020 <- sha_ph_2020 %>%
+    mutate(across(c(ends_with("_date"), dob), 
+                  ~ case_when(str_detect(.x, "/") ~ as.Date(.x, format = "%m/%d/%Y"),
+                              TRUE ~ as.Date(as.integer(.x), origin = "1899-12-30"))),
            geo_zip_raw = as.character(geo_zip_raw))
+  
   
   
   ## Income ----
@@ -255,7 +270,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   # 1) Reshape income from wide to long
   # 2) Identify people with income from a fixed source
   # 3) Summarize income/assets for a given time point to reduce duplicated rows
-  sha_2019_inc <- sha_2019 %>%
+  sha_ph_2020_inc <- sha_ph_2020 %>%
     select(cert_id, act_date, ssn, starts_with("inc_")) %>%
     pivot_longer(cols = starts_with("inc_"),
                  names_to = "inc_code",
@@ -277,22 +292,22 @@ load_raw.sha_2019 <- function(conn = NULL,
   ### Join into a single file for each extract
   # Using a left_join because without the panel 1 info (names, SSN, etc.) the info is not much help
   # Join hh-level income info separately to avoid NAs on hh members who don't appear in panel 2
-  sha_2019 <- left_join(sha_2019, 
-                        select(sha_2019_inc, cert_id, act_date, ssn, starts_with("inc")) %>% distinct(), 
+  sha_ph_2020 <- left_join(sha_ph_2020, 
+                        select(sha_ph_2020_inc, cert_id, act_date, ssn, starts_with("inc")) %>% distinct(), 
                         by = c("cert_id", "act_date", "ssn")) %>%
-    left_join(., select(sha_2019_inc, cert_id, act_date, starts_with("hh_")) %>% distinct(),
+    left_join(., select(sha_ph_2020_inc, cert_id, act_date, starts_with("hh_")) %>% distinct(),
               by = c("cert_id", "act_date"))
   
   
   # LOAD DATA TO SQL ----
   # Add source field to track where each row came from
-  sha_2019 <- sha_2019 %>% 
-    mutate(pha_source = "sha2019",
+  sha_ph_2020 <- sha_ph_2020 %>% 
+    mutate(pha_source = "sha2020_ph",
            etl_batch_id = etl_batch_id)
   
   # Load data
   dbWriteTable(conn,
                name = DBI::Id(schema = to_schema, table = to_table),
-               value = as.data.frame(sha_2019),
+               value = as.data.frame(sha_ph_2020),
                overwrite = T, append = F)
 }

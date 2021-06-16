@@ -145,16 +145,19 @@ load_raw.kcha_2020 <- function(conn = NULL,
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
+    warning(qa_date_note)
   } else if (dates$date_min - date_min > 30 | date_max - dates$date_max > 30) {
     qa_date_note <- glue("Large gap between expected and actual min or max date: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
+    warning(qa_date_note)
   } else {
     qa_date_note <- glue("Date fell in expected range: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "PASS"
+    message(qa_date_note)
   }
   
   DBI::dbExecute(conn,
@@ -174,9 +177,11 @@ load_raw.kcha_2020 <- function(conn = NULL,
                          "{glue_collapse(prog_types[prog_types %in% c('P', 'PBS8', 'PH', 'PR', 'T', 'TBS8', 'VO') == FALSE], 
                          sep = ', ')}")
     qa_prog_result <- "FAIL"
+    warning(qa_prog_note)
   } else {
     qa_prog_note <- "There were no unexpected program types"
     qa_prog_result <- "PASS"
+    message(qa_prog_note)
   }
   
   DBI::dbExecute(conn,
@@ -195,9 +200,11 @@ load_raw.kcha_2020 <- function(conn = NULL,
     qa_act_note <- glue("The following unexpected action types were present: ",
                          "{glue_collapse(act_types[act_types %in% 1:14 == FALSE], sep = ', ')}")
     qa_act_result <- "FAIL"
+    warning(qa_act_note)
   } else {
     qa_act_note <- "There were no unexpected action types (all between 1 and 14)"
     qa_act_result <- "PASS"
+    message(qa_act_note)
   }
   
   DBI::dbExecute(conn,

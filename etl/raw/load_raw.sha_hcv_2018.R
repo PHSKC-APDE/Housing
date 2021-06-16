@@ -1,10 +1,10 @@
-#### CODE TO LOAD 2018 SEATTLE HOUSING AUTHORITY PUBLIC HOUSING DATA
-# Alastair Matheson, hcvSKC (APDE)
+#### CODE TO LOAD 2018 SEATTLE HOUSING AUTHORITY VOUCHER DATA
+# Alastair Matheson, PHSKC (APDE)
 #
 # 2021-06
 
 ### Run from main_sha_load script
-# https://github.com/hcvSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_sha_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_sha_load.R
 # Assumes relevant libraries are already loaded
 
 # conn = ODBC connection to use

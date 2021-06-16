@@ -85,6 +85,63 @@ load_raw.sha_ph_2004_2006(conn = db_hhsaw,
 rm(load_raw.sha_ph_2004_2006, etl_batch_id_ph_2006)
 
 
+# LOAD 2004-2006 HCV DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2004_2006.R")
+
+# Set up etl_batch_id
+etl_batch_id_hcv_2006 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "sha",
+                                               data_type = "hcv",
+                                               date_min = "2004-01-01",
+                                               date_max = "2006-12-31",
+                                               date_delivery = "2016-05-25",
+                                               note = "Initial delivery of data")
+
+# Run function
+load_raw.sha_hcv_2004_2006(conn = db_hhsaw,
+                           to_schema = "pha",
+                           to_table = "raw_sha_hcv_2004_2006",
+                           qa_schema = qa_schema,
+                           qa_table = qa_table,
+                           file_path = file_path_sha,
+                           etl_batch_id = etl_batch_id_hcv_2006)
+
+
+# Clean up
+rm(load_raw.sha_hcv_2004_2006, etl_batch_id_hcv_2006)
+
+
+# LOAD 2006-2017 HCV DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2006_2017.R")
+
+# Set up etl_batch_id
+etl_batch_id_hcv_2017 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "sha",
+                                               data_type = "hcv",
+                                               date_min = "2006-01-01",
+                                               date_max = "2017-12-31",
+                                               date_delivery = "2018-04-20",
+                                               note = "Initial delivery of data, also covers 2006-2016 file delivered 2017-03-31")
+
+# Run function
+load_raw.sha_hcv_2006_2017(conn = db_hhsaw,
+                           to_schema = "pha",
+                           to_table = "raw_sha_hcv_2006_2017",
+                           qa_schema = qa_schema,
+                           qa_table = qa_table,
+                           file_path = file_path_sha,
+                           etl_batch_id = etl_batch_id_hcv_2017)
+
+# Clean up
+rm(load_raw.sha_hcv_2006_2017, etl_batch_id_hcv_2017)
+
+
 # LOAD 2007-2012 PH DATA ----
 # Bring in function
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_ph_2007_2012.R")
@@ -144,6 +201,35 @@ load_raw.sha_ph_2012_2017(conn = db_hhsaw,
 rm(load_raw.sha_ph_2012_2017, etl_batch_id_ph_2012)
 
 
+# LOAD 2018 HCV DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2018.R")
+
+# Set up etl_batch_id
+etl_batch_id_hcv_2018 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "sha",
+                                               data_type = "hcv",
+                                               date_min = "2018-01-01",
+                                               date_max = "2018-12-31",
+                                               date_delivery = "2019-03-19",
+                                               note = "Initial delivery of data")
+
+# Run function
+load_raw.sha_hcv_2018(conn = db_hhsaw,
+                      to_schema = "pha",
+                      to_table = "raw_sha_hcv_2018",
+                      qa_schema = qa_schema,
+                      qa_table = qa_table,
+                      file_path = file_path_sha,
+                      etl_batch_id = etl_batch_id_hcv_2018)
+
+
+# Clean up
+rm(load_raw.sha_hcv_2018, etl_batch_id_hcv_2018)
+
+
 # LOAD 2018 PH DATA ----
 # Bring in function
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_ph_2018.R")
@@ -170,99 +256,12 @@ load_raw.sha_ph_2018(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2018, etl_batch_id_ph_2012)
-
-
-# LOAD 2004-2006 HCV DATA ----
-# Bring in function
-devtools::source_url("https://raw.githubusercontent.com/hcvSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2004_2006.R")
-
-# Set up etl_batch_id
-etl_batch_id_hcv_2006 <- load_metadata_etl_log(conn = db_hhsaw,
-                                               to_schema = qa_schema,
-                                               to_table = etl_table,
-                                               data_source = "sha",
-                                               data_type = "hcv",
-                                               date_min = "2004-01-01",
-                                               date_max = "2006-12-31",
-                                               date_delivery = "2016-05-25",
-                                               note = "Initial delivery of data")
-
-# Run function
-load_raw.sha_hcv_2004_2006(conn = db_hhsaw,
-                           to_schema = "pha",
-                           to_table = "raw_sha_hcv_2004_2006",
-                           qa_schema = qa_schema,
-                           qa_table = qa_table,
-                           file_path = file_path_sha,
-                           etl_batch_id = etl_batch_id_hcv_2006)
-
-
-# Clean up
-rm(load_raw.sha_hcv_2004_2006, etl_batch_id_hcv_2006)
-
-
-# LOAD 2006-2017 HCV DATA ----
-# Bring in function
-devtools::source_url("https://raw.githubusercontent.com/hcvSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2006_2017.R")
-
-# Set up etl_batch_id
-etl_batch_id_hcv_2017 <- load_metadata_etl_log(conn = db_hhsaw,
-                                               to_schema = qa_schema,
-                                               to_table = etl_table,
-                                               data_source = "sha",
-                                               data_type = "hcv",
-                                               date_min = "2006-01-01",
-                                               date_max = "2017-12-31",
-                                               date_delivery = "2018-04-20",
-                                               note = "Initial delivery of data, also covers 2006-2016 file delivered 2017-03-31")
-
-# Run function
-load_raw.sha_hcv_2006_2017(conn = db_hhsaw,
-                           to_schema = "pha",
-                           to_table = "raw_sha_hcv_2006_2017",
-                           qa_schema = qa_schema,
-                           qa_table = qa_table,
-                           file_path = file_path_sha,
-                           etl_batch_id = etl_batch_id_hcv_2017)
-
-
-# Clean up
-rm(load_raw.sha_hcv_2006_2017, etl_batch_id_hcv_2017)
-
-
-# LOAD 2018 HCV DATA ----
-# Bring in function
-devtools::source_url("https://raw.githubusercontent.com/hcvSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2018.R")
-
-# Set up etl_batch_id
-etl_batch_id_hcv_2018 <- load_metadata_etl_log(conn = db_hhsaw,
-                                               to_schema = qa_schema,
-                                               to_table = etl_table,
-                                               data_source = "sha",
-                                               data_type = "hcv",
-                                               date_min = "2018-01-01",
-                                               date_max = "2018-12-31",
-                                               date_delivery = "2019-03-19",
-                                               note = "Initial delivery of data")
-
-# Run function
-load_raw.sha_hcv_2018(conn = db_hhsaw,
-                           to_schema = "pha",
-                           to_table = "raw_sha_hcv_2018",
-                           qa_schema = qa_schema,
-                           qa_table = qa_table,
-                           file_path = file_path_sha,
-                           etl_batch_id = etl_batch_id_hcv_2018)
-
-
-# Clean up
-rm(load_raw.sha_hcv_2018, etl_batch_id_hcv_2018)
+rm(load_raw.sha_ph_2018, etl_batch_id_ph_2018)
 
 
 # LOAD 2019 HCV AND PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/hcvSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_2019.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_2019.R")
 
 # Set up etl_batch_id
 etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -287,6 +286,65 @@ load_raw.sha_2019(conn = db_hhsaw,
 
 # Clean up
 rm(load_raw.sha_2019, etl_batch_id_2019)
+
+
+# LOAD 2020 PH DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_ph_2020.R")
+
+# Set up etl_batch_id
+etl_batch_id_ph_2020 <- load_metadata_etl_log(conn = db_hhsaw,
+                                              to_schema = qa_schema,
+                                              to_table = etl_table,
+                                              data_source = "sha",
+                                              data_type = "ph",
+                                              date_min = "2020-10-01",
+                                              date_max = "2020-12-30",
+                                              date_delivery = "2021-06-15",
+                                              note = "Initial delivery of data")
+
+# Run function
+load_raw.sha_ph_2020(conn = db_hhsaw,
+                     to_schema = "pha",
+                     to_table = "raw_sha_ph_2020",
+                     qa_schema = qa_schema,
+                     qa_table = qa_table,
+                     file_path = file_path_sha,
+                     etl_batch_id = etl_batch_id_ph_2020)
+
+
+# Clean up
+rm(load_raw.sha_ph_2020, etl_batch_id_ph_2020)
+
+
+# LOAD 2020 HCV DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/raw/load_raw.sha_hcv_2020.R")
+
+# Set up etl_batch_id
+etl_batch_id_hcv_2020 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "sha",
+                                               data_type = "hcv",
+                                               date_min = "2020-01-01",
+                                               date_max = "2020-12-31",
+                                               date_delivery = "2021-06-15",
+                                               note = "Initial delivery of data")
+
+# Run function
+load_raw.sha_hcv_2020(conn = db_hhsaw,
+                      to_schema = "pha",
+                      to_table = "raw_sha_hcv_2020",
+                      qa_schema = qa_schema,
+                      qa_table = qa_table,
+                      file_path = file_path_sha,
+                      etl_batch_id = etl_batch_id_hcv_2020)
+
+
+# Clean up
+rm(load_raw.sha_hcv_2020, etl_batch_id_hcv_2020)
+
 
 
 # MAKE STAGE SHA TABLE ----
