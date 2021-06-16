@@ -23,18 +23,16 @@ load_raw.sha_ph_2004_2006 <- function(conn = NULL,
                                     qa_schema = NULL,
                                     qa_table = NULL,
                                     file_path = NULL,
-                                    date_min = "2004-01-01",
-                                    date_max = "2006-12-31",
                                     etl_batch_id = NULL) {
   
   # BRING IN DATA ----
-  sha_ph_p1_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004-2006_panel_01_household_suffix_corrected.csv"), 
+  sha_ph_p1_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004_2006_panel_01_household_suffix_corrected.csv"), 
                              na.strings = c("NA", "", "NULL", "N/A", "."), 
                              stringsAsFactors = F)
-  sha_ph_p2_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004-2006_panel_02_income_suffix_corrected.csv"), 
+  sha_ph_p2_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004_2006_panel_02_income_suffix_corrected.csv"), 
                              na.strings = c("NA", "", "NULL", "N/A", "."), 
                              stringsAsFactors = F)
-  sha_ph_p3_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004-2006_panel_03_assets_suffix_corrected.csv"), 
+  sha_ph_p3_2004_2006 <- fread(file = file.path(file_path, "sha_ph_2004_2006_panel_03_assets_suffix_corrected.csv"), 
                              na.strings = c("NA", "", "NULL", "N/A", "."), 
                              stringsAsFactors = F)
   
