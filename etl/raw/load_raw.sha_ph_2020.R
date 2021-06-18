@@ -37,6 +37,7 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
   
+  
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
   

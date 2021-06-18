@@ -89,7 +89,7 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
   ## Deduplicate data to avoid extra rows when joining ----
   sha_hcv_2006_2017 <- sha_hcv_2006_2017 %>% 
     map(~ .x %>% 
-          mutate(across(everything(), str_squish)) %>% 
+          mutate(across(where(is.character), str_squish)) %>% 
           mutate(across(where(is.character), ~ ifelse(.x == "", NA_character_, .x))) %>% 
           distinct())
   

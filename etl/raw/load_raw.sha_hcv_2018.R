@@ -164,7 +164,7 @@ load_raw.sha_hcv_2018 <- function(conn = NULL,
   # LOAD DATA TO SQL ----
   # Add source field to track where each row came from
   sha_hcv_2018 <- sha_hcv_2018 %>% 
-    mutate(hcva_source = "sha2018_hcv",
+    mutate(pha_source = "sha2018_hcv",
            etl_batch_id = etl_batch_id)
   
   # Load data
