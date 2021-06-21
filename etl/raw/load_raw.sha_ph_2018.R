@@ -33,6 +33,8 @@ load_raw.sha_ph_2018 <- function(conn = NULL,
                              na.strings = c("NA", "", "NULL", "N/A", "."), 
                              stringsAsFactors = F)
   
+  # Bring in mapping of building/property IDs and portfolios/program types
+  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
   
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
@@ -90,6 +92,7 @@ load_raw.sha_ph_2018 <- function(conn = NULL,
   sha_ph_p1_2018 <- sha_ph_p1_2018 %>%
     mutate(across(c(ends_with("_date"), dob), ~ as.Date(.x, format = "%m/%d/%Y")),
            geo_zip_raw = as.character(geo_zip_raw),
+           property_id = as.character(property_id),
            act_type = as.integer(ifelse(act_type == "E", 3, act_type)))
   
   
@@ -136,6 +139,12 @@ load_raw.sha_ph_2018 <- function(conn = NULL,
               by = c("incasset_id", "mbr_num" = "inc_mbr_num")) %>%
     left_join(., select(sha_ph_p2_2018_asset, incasset_id, starts_with("hh_")) %>% distinct(),
               by = "incasset_id")
+  
+  
+  ## Join with portfolio data ----
+  sha_ph_2018 <- left_join(sha_ph_2018, 
+                    distinct(sha_portfolios, property_id, property_name, prog_type, portfolio), 
+                    by = c("property_id"))
   
   
   # LOAD DATA TO SQL ----

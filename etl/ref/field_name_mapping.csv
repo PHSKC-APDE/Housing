@@ -135,6 +135,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,,projectid,project_id,,Project_ID,,,property_id
 ,,,projectid,,projectid,,,property_id
 ,,,,buildingid,,,,building_id
+,,,,buildingname,,,,building_name
 ,,,certificationuniqueidshafield,hhcertid,,certificationid,,cert_id
 ,,,certificationuniqueidshafield,,,,,cert_id
 ,,,hohuniqueidentifier,,,householdid,Household ID,hh_id
@@ -155,7 +156,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,,,increment,,,,,increment
 ,,,incrementdescription,,,,,inc_desc
 ,,,incrementinformation,,,,,inc_info
-,,,,buildingname,,developmentname,,property_name
+,,,,,,developmentname,,property_name
 ,,,,,,Development.Name,,property_name
 ,,,,,,Development Name,,property_name
 ,,,,,,DevelopmentName,,property_name

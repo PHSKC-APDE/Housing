@@ -37,6 +37,9 @@ load_raw.sha_2019 <- function(conn = NULL,
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
   
+  # Bring in mapping of building/property IDs and portfolios/program types
+  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
+  
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
   
@@ -163,9 +166,6 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   ## Portfolios/building IDs ----
   # Do any building IDs/property IDs fail to join to the ref table?
-  # Assumes ref table is loaded in PHA schema. If needed add ref_schema and ref_table options to function.
-  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
-  
   portfolios_miss <- sha_2019 %>%
     filter(PROGRAM_TYPE == "SHA Owned and Managed") %>%
     distinct(BUILDING_ID) %>%
@@ -282,6 +282,15 @@ load_raw.sha_2019 <- function(conn = NULL,
                         by = c("cert_id", "act_date", "ssn")) %>%
     left_join(., select(sha_2019_inc, cert_id, act_date, starts_with("hh_")) %>% distinct(),
               by = c("cert_id", "act_date"))
+  
+  
+  ## Join with portfolio data ----
+  sha_2019 <- left_join(sha_2019, 
+                    distinct(sha_portfolios, building_id, building_name, property_id, property_name, prog_type, portfolio) %>%
+                      filter(!(is.na(building_id) & is.na(building_name))), 
+                    by = c("building_id", "building_name")) %>%
+    mutate(prog_type = ifelse(!is.na(prog_type.y), prog_type.y, prog_type.x)) %>%
+    select(-prog_type.x, -prog_type.y)
   
   
   # LOAD DATA TO SQL ----

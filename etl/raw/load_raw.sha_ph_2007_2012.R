@@ -36,6 +36,8 @@ load_raw.sha_ph_2007_2012 <- function(conn = NULL,
                              na.strings = c("NA", "", "NULL", "N/A", "."), 
                              stringsAsFactors = F)
   
+  # Bring in mapping of building/property IDs and portfolios/program types
+  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
   
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
@@ -136,6 +138,12 @@ load_raw.sha_ph_2007_2012 <- function(conn = NULL,
     left_join(., select(sha_ph_p2_2007_2012, incasset_id, starts_with("hh_")) %>% distinct(),
               by = "incasset_id") %>%
     left_join(., sha_ph_p3_2007_2012, by = "incasset_id")
+  
+  
+  ## Join with portfolio data ----
+  sha_ph_2007_2012 <- left_join(sha_ph_2007_2012, 
+                                distinct(sha_portfolios, property_id, property_name, prog_type, portfolio), 
+                                by = c("property_id"))
   
   
   # LOAD DATA TO SQL ----

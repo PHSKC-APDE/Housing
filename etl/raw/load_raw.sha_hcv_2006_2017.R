@@ -41,6 +41,12 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
                                na.strings = c("NA", "", "NULL", "N/A", "."), 
                                stringsAsFactors = F)
   
+  
+  # Some of the SHA program/voucher data is missing from the original extract
+  sha_vouchers <- fread(file = file.path(file_path, "sha_hcv_increment_program_voucher_types_2018-01-26.csv"),
+                        na.strings = c("NA", "", "NULL", "N/A", "."), 
+                        stringsAsFactors = F)
+  
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
   
@@ -83,6 +89,14 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
           rename_with(., ~ str_replace_all(.,"[:punct:]|[:space:]", "")) %>%
           rename_with(., tolower)) %>%
     map(~ setnames(.x, fields$common_name[match(names(.x), fields$sha_hcv_2006_2018)]))
+  
+  # Do the same for the voucher code data (the portfolio data is already named appropriately)
+  sha_vouchers <- sha_vouchers %>% 
+    rename_with(., ~ str_replace_all(.,"[:punct:]|[:space:]", "")) %>%
+    rename_with(., tolower)
+  
+  sha_vouchers <- setnames(sha_vouchers, 
+                           fields$common_name[match(names(sha_vouchers), fields$sha_prog_port_codes)])
   
   
   # DATA CLEANING ----
@@ -158,7 +172,7 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
   # Join back and remove duplicates
   sha_hcv_p1_2006_2017 <- left_join(sha_hcv_p1_2006_2017, sha_hcv_p1_2006_2017_race,
                                     by = c("cert_id", "hh_id", "mbr_id")) %>%
-    select(-race) %>% distinct()
+    select(-race) %>% distinct())
   rm(sha_hcv_p1_2006_2017_race)
   
   
@@ -266,7 +280,8 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
            pha_source = "sha2016_hcv") %>%
     right_join(., sha_hcv_2006_2016, by = c("cert_id", "hh_id", "mbr_id", "act_date")) %>%
     filter(keep == 1) %>%
-    select(-keep)
+    select(-keep) %>%
+    mutate(r_hisp = as.character(r_hisp))
   
   # Add to existing data
   sha_hcv_2006_2017 <- sha_hcv_2006_2017 %>%
@@ -274,6 +289,8 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
     bind_rows(., sha_hcv_2006_2016_join)
   
   
+  ## Join with voucher data ----
+  sha_hcv_2006_2017 <- left_join(sha_hcv_2006_2017, sha_vouchers, by = c("increment"))
   
   # LOAD DATA TO SQL ----
   # Add source field to track where each row came from

@@ -46,14 +46,14 @@ file_path_sha <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data"
 
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
-                       driver = "ODBC Driver 17 for SQL Server",
-                       server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
-                       database = "hhs_analytics_workspace",
-                       uid = keyring::key_list("hhsaw")[["username"]],
-                       pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
-                       Encrypt = "yes",
-                       TrustServerCertificate = "yes",
-                       Authentication = "ActiveDirectoryPassword")
+                           driver = "ODBC Driver 17 for SQL Server",
+                           server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                           database = "hhs_analytics_workspace",
+                           uid = keyring::key_list("hhsaw")[["username"]],
+                           pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
+                           Encrypt = "yes",
+                           TrustServerCertificate = "yes",
+                           Authentication = "ActiveDirectoryPassword")
 
 
 # LOAD 2004-2006 PH DATA ----
@@ -62,23 +62,23 @@ devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure
 
 # Set up etl_batch_id
 etl_batch_id_ph_2006 <- load_metadata_etl_log(conn = db_hhsaw,
-                                           to_schema = qa_schema,
-                                           to_table = etl_table,
-                                           data_source = "sha",
-                                           data_type = "ph",
-                                           date_min = "2004-01-01",
-                                           date_max = "2006-12-31",
-                                           date_delivery = "2016-05-11",
-                                           note = "Initial delivery of data")
+                                              to_schema = qa_schema,
+                                              to_table = etl_table,
+                                              data_source = "sha",
+                                              data_type = "ph",
+                                              date_min = "2004-01-01",
+                                              date_max = "2006-12-31",
+                                              date_delivery = "2016-05-11",
+                                              note = "Initial delivery of data")
 
 # Run function
 load_raw.sha_ph_2004_2006(conn = db_hhsaw,
-                        to_schema = "pha",
-                        to_table = "raw_sha_ph_2004_2006",
-                        qa_schema = qa_schema,
-                        qa_table = qa_table,
-                        file_path = file_path_sha,
-                        etl_batch_id = etl_batch_id_ph_2006)
+                          to_schema = "pha",
+                          to_table = "raw_sha_ph_2004_2006",
+                          qa_schema = qa_schema,
+                          qa_table = qa_table,
+                          file_path = file_path_sha,
+                          etl_batch_id = etl_batch_id_ph_2006)
 
 
 # Clean up
@@ -247,12 +247,12 @@ etl_batch_id_ph_2018 <- load_metadata_etl_log(conn = db_hhsaw,
 
 # Run function
 load_raw.sha_ph_2018(conn = db_hhsaw,
-                          to_schema = "pha",
-                          to_table = "raw_sha_ph_2018",
-                          qa_schema = qa_schema,
-                          qa_table = qa_table,
-                          file_path = file_path_sha,
-                          etl_batch_id = etl_batch_id_ph_2018)
+                     to_schema = "pha",
+                     to_table = "raw_sha_ph_2018",
+                     qa_schema = qa_schema,
+                     qa_table = qa_table,
+                     file_path = file_path_sha,
+                     etl_batch_id = etl_batch_id_ph_2018)
 
 
 # Clean up
@@ -353,12 +353,13 @@ devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure
 
 # Run function
 load_stage.sha(conn = db_hhsaw,
-                to_schema = "pha",
-                to_table = "stage_sha",
-                from_schema = "pha",
-                from_table = "raw_sha",
-                qa_schema = qa_schema,
-                qa_table = qa_table,
-                years = c(2015:2020),
-                truncate = T)
+               to_schema = "pha",
+               to_table = "stage_sha",
+               from_schema = "pha",
+               from_table = "raw_sha",
+               qa_schema = qa_schema,
+               qa_table = qa_table,
+               hcv_years = c(2006, 2017, 2018:2020),
+               ph_years = c(2006, 2012, 2017, 2018:2020),
+               truncate = T)
 

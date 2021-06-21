@@ -37,6 +37,9 @@ load_raw.sha_hcv_2020 <- function(conn = NULL,
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
   
+  # Bring in mapping of building/property IDs and portfolios/program types
+  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
+  
   # Bring in field names
   fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
   
@@ -170,9 +173,6 @@ load_raw.sha_hcv_2020 <- function(conn = NULL,
   
   ## Portfolios/building IDs ----
   # Do any building IDs/property IDs fail to join to the ref table?
-  # Assumes ref table is loaded in PHA schema. If needed add ref_schema and ref_table options to function.
-  sha_portfolios <- dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")
-  
   portfolios_miss <- sha_hcv_2020 %>%
     filter(str_detect(tolower(PROGRAM_TYPE), "owned") & str_detect(tolower(PROGRAM_TYPE), "managed")) %>%
     distinct(BUILDING_ID) %>%
@@ -252,10 +252,11 @@ load_raw.sha_hcv_2020 <- function(conn = NULL,
   sha_hcv_2020 <- sha_hcv_2020 %>% distinct()
   
   
-  ## Fix up date formats ----
+  ## Fix up formats ----
   sha_hcv_2020 <- sha_hcv_2020 %>%
     mutate(across(c(ends_with("_date"), dob), ~ as.Date(.x, format = "%m/%d/%Y")),
-           geo_zip_raw = as.character(geo_zip_raw))
+           geo_zip_raw = as.character(geo_zip_raw),
+           building_id = as.character(building_id))
   
   
   ## Income ----

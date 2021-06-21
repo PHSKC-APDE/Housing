@@ -37,8 +37,8 @@ load_raw.sha_hcv_2004_2006 <- function(conn = NULL,
                                na.strings = c("NA", "", "NULL", "N/A", "."), 
                                stringsAsFactors = F)
   
-  # Some of the SHA voucher data is missing from the original extract
-  sha_vouchers <- fread(file = file.path(file_path, "sha_hcv_2004-2006_voucher_types.csv"),
+  # Some of the SHA program/voucher data is missing from the original extract
+  sha_vouchers <- fread(file = file.path(file_path, "sha_hcv_increment_program_voucher_types_2018-01-26.csv"),
                     na.strings = c("NA", "", "NULL", "N/A", "."), 
                     stringsAsFactors = F)
   
