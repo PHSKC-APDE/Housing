@@ -248,8 +248,13 @@ load_raw.sha_hcv_2020 <- function(conn = NULL,
   
   
   # DATA CLEANING ----
-  ## Deduplicate data to avoid extra rows when joining ----
-  sha_hcv_2020 <- sha_hcv_2020 %>% distinct()
+  ## Move in dates ----
+  # Seem to be multiple move-in dates for a given person, take the min
+  sha_hcv_2020 <- sha_hcv_2020 %>% 
+    group_by(ssn, cert_id) %>%
+    mutate(move_in_date = min(move_in_date, na.rm = T)) %>%
+    ungroup() %>%
+    distinct()
   
   
   ## Fix up formats ----
@@ -266,14 +271,14 @@ load_raw.sha_hcv_2020 <- function(conn = NULL,
   # 3) Summarize income/assets for a given time point to reduce duplicated rows
   sha_hcv_2020_inc <- sha_hcv_2020 %>%
     select(cert_id, act_date, ssn, starts_with("inc_")) %>%
+    # Duplicate versions of one income so need to drop one and avoid overcounting income
+    select(-inc_i2) %>%
     pivot_longer(cols = starts_with("inc_"),
                  names_to = "inc_code",
                  names_prefix = "inc_",
                  values_to = "inc",
                  values_drop_na = TRUE) %>%
-    # Sometimes 2 versions of one income so need to recode them to have the same inc_code
-    mutate(ifelse(tolower(inc_code) == "i2", "i", inc_code),
-           inc_fixed = ifelse(tolower(inc_code) %in% c("p", "pension", "s", "ssi", "ss", "social security"), 
+    mutate(inc_fixed = ifelse(tolower(inc_code) %in% c("p", "pension", "s", "ssi", "ss", "social security"), 
                               1, 0)) %>%
     group_by(cert_id, act_date, ssn) %>%
     summarise(inc = sum(inc, na.rm = T), 

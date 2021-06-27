@@ -147,7 +147,11 @@ load_stage_sha <- function(conn = NULL,
                              TRUE ~ 99L)),
                  r_hisp = case_when(r_hisp == "2" ~ 0L,
                                     r_hisp == "1" ~ 1L,
-                                    TRUE ~ as.integer(r_hisp))))
+                                    r_hisp == "0" ~ 0L,
+                                    TRUE ~ as.integer(r_hisp)),
+                 female = case_when(tolower(gender) %in% c("f", "female") ~ 1L,
+                                    tolower(gender) %in% c("m", "male") ~ 0L,
+                                    TRUE ~ NA_integer_)))
   
   
   ## Field types ----
@@ -156,15 +160,106 @@ load_stage_sha <- function(conn = NULL,
     map(~ .x %>%
           mutate(across(any_of(c("bdrm_voucher", "building_id", "cost_pha", "fhh_ssn", 
                                  "property_id", "recert_sched", "rent_type", "subs_type",
-                                 "unit_type")), ~ as.character(.)))
-    )
+                                 "unit_type")), ~ as.character(.))))
   
 
   ## Clean up white space ----
   sha_raw <- sha_raw %>%
+    map(~ .x %>% mutate(across(where(is_character), ~ str_squish(.x))))
+  
+  
+  ## Names ----
+  sha_raw <- sha_raw %>%
     map(~ .x %>%
-          mutate(across(where(is_character), ~ str_squish(.x)))
-    )
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ toupper(.))) %>%
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "", NA_character_))) %>%
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "`", "'"))) %>%
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "_", "-"))) %>%
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "NULL|\\.|\"|\\\\", ""))) %>%
+          # Clean up where middle initial seems to be in first name field
+          # NOTE: There are many rows with a middle initial in the fname field AND 
+          # the mname field (and the initials are not always the same).
+          # In those situations, keep existing middle initial and drop from fname if
+          # the initial is the same
+          mutate(f_init = str_sub(fname, -2, -1),
+                 mname = case_when(str_detect(f_init, "[:space:][A-Z]") & is.na(mname) ~ str_sub(fname, -1),
+                                       TRUE ~ mname),
+                 fname = case_when(str_detect(f_init, "[:space:][A-Z]") & str_sub(fname, -1) == mname ~ 
+                                         str_sub(fname, 1, -3),
+                                       TRUE ~ fname)) %>%
+          select(-f_init)
+        ) %>%
+    map(~ if ("hh_fname" %in% names(.x)) {
+      .x %>% mutate(f_init_hh = str_sub(hh_fname, -2, -1),
+                    hh_mname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & is.na(hh_mname) ~ str_sub(hh_fname, -1),
+                                         TRUE ~ hh_mname),
+                    hh_fname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & str_sub(hh_fname, -1) == hh_mname ~ 
+                                           str_sub(hh_fname, 1, -3),
+                                         TRUE ~ hh_fname)) %>%
+        select(-f_init_hh)} 
+      else {.x}) %>%
+    # Combine suffixes into the last name field
+    map(~ if ("lnamesuf" %in% names(.x)) {
+      .x %>% mutate(lname = case_when(!is.na(lnamesuf) ~ paste(lname, lnamesuf),
+                                      TRUE ~ lname))}
+      else {.x}) %>%
+    map(~ if ("hh_lnamesuf" %in% names(.x)) {
+      .x %>% mutate(hh_lname = case_when(!is.na(hh_lnamesuf) ~ paste(hh_lname, hh_lnamesuf),
+                                         TRUE ~ hh_lname))} 
+      else {.x})
+  
+  
+  ## SSNs ----
+  # Some SSNs are HUD/PHA-generated IDs so separate into new field
+  # (note that conversion of legitimate SSN to numeric strips out leading zeros and removes rows with characters)
+  # Need to restore leading zeros
+  # Remove dashes first
+  sha_raw <- sha_raw %>%
+    map(~ .x %>%
+          mutate(across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), ~ str_replace_all(., "-", "")),
+                 across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), 
+                        ~ case_when(. %in% c("010010101", "011223333", "111111111", "112234455", 
+                                             "111119999", "123121234", "123123123", "123456789", 
+                                             "222111212", "222332222",
+                                             "333333333", "444444444", 
+                                             "555112222", "555115555", "555555555", "555555566",
+                                             "699999999",  
+                                             "888888888", "898989898", "898888899") ~ NA_character_,
+                                    as.numeric(.) < 1000000 | as.numeric(.) >= 900000000 ~ NA_character_,
+                                    between(as.numeric(.), 666000000, 666999999) ~ NA_character_,
+                                    str_sub(., -4, -1) == "0000" | str_sub(., 1, 3) == "999" |
+                                      str_detect(., "XXX|A00-0|A000") ~ NA_character_,
+                                    TRUE ~ .)),
+                 across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), ~ ifelse(str_detect(., "[:alpha:]"), ., NA_character_),
+                        .names = "{.col}_new"),
+                 across(any_of(c("ssn", "hh_ssn", "fhh_ssn")),
+                        ~ str_pad(round(as.numeric(.), digits = 0), width = 9, side = "left", pad = "0")))) %>%
+    # Change new column names
+    map(~ .x %>% rename_with(., ~ str_replace(., "ssn_new", "pha_id"), .cols = matches("ssn_new")))
+  
+  
+  ## Program types ----
+  sha_raw <- sha_raw %>%
+    map(~ .x %>%
+          mutate(prog_type = 
+                   case_when(str_detect(tolower(prog_type), "owned") ~ "SHA owned and managed",
+                             str_detect(tolower(prog_type), "collaborative") ~ "Collaborative housing",
+                             str_detect(tolower(prog_type), "tenant") ~ "Tenant based")))
+  
+  
+  ## Income fields ----
+  # Don't want to keep any specific income sources, just totals (avoids duplicate rows)
+  sha_raw <- sha_raw %>%
+    map(~ .x %>%
+          select(-any_of(c("inc_b", "inc_c", "inc_e", "inc_f", "inc_g", "inc_ha", 
+                           "inc_i", "inc_iw", "inc_m", "inc_n","inc_p", "inc_s", 
+                           "inc_ss", "inc_t", "inc_u", "inc_w", "inc_x"))) %>%
+          distinct())
   
   
   # ADDRESS CLEANING ----
@@ -324,7 +419,27 @@ load_stage_sha <- function(conn = NULL,
   # However, with the new approach to processing those files, where only rows from
   # the older files with distinct cert_id, hh_id, mbr_id, and act_date and carried over,
   # there are no longer any multiple heads of household.
+  # However, there are only hh_ssn fields in later files, not names, so want to fix that
   
+  # First keep track of the number of rows in case the join adds some
+  nrow_sha <- sha_raw %>% map(~ .x %>% nrow()) %>% bind_rows()
+  
+  sha_raw <- sha_raw %>%
+    map(~ if ("hh_lname" %in% names(.x) == F) {
+      hh_names <- .x %>%
+        select(cert_id, act_date, hh_ssn, ssn, lname, fname, mname) %>%
+        filter(hh_ssn == ssn) %>%
+        rename(hh_lname = lname,
+               hh_fname = fname,
+               hh_mname = mname) %>%
+        select(-ssn)
+      
+      .x <- left_join(.x, hh_names, by = c("cert_id", "act_date", "hh_ssn"))
+    } else {.x})
+  
+  if (min(sha_raw %>% map(~ .x %>% nrow()) %>% bind_rows() == nrow_sha) == 0) {
+    stop ("Filling in the head of household details created extra rows. Check for duplicate rows in each year.")
+  }
   
   
   # FILL IN GAPS ----
@@ -343,7 +458,16 @@ load_stage_sha <- function(conn = NULL,
   
   sha_long <- sha_raw %>%
     bind_rows() %>%
-    mutate(last_run = last_run)
+    # Make a hash of variables that are used for identity matching
+    mutate(id_hash = as.character(toupper(openssl::sha256(paste(str_replace_na(ssn, ''),
+                                                           str_replace_na(pha_id, ''),
+                                                           str_replace_na(lname, ''),
+                                                           str_replace_na(fname, ''),
+                                                           str_replace_na(mname, ''),
+                                                           str_replace_na(dob, ''),
+                                                           str_replace_na(female, ''),
+                                                           sep = "|")))),
+           last_run = last_run)
   
   
   # QA FINAL DATA ----
@@ -353,7 +477,7 @@ load_stage_sha <- function(conn = NULL,
                                        WHERE qa_type = 'value' AND qa_item = 'row_count' AND
                                        table_name = '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}'
                                        ORDER BY qa_date desc",
-                                                  .con = conn))[1])
+                                                  .con = conn))[1,])
   
   if (is.na(rows_existing)) {
     qa_row_diff_result <- "PASS"
@@ -361,17 +485,16 @@ load_stage_sha <- function(conn = NULL,
     message(qa_row_diff_note)
   } else if (!is.na(rows_existing) & nrow(sha_long) >= rows_existing) {
     qa_row_diff_result <- "PASS"
-    qa_row_diff_note <- glue("There were {format(nrow(sha_long)-rows_existing, big.mark = ',')}", 
+    qa_row_diff_note <- glue("There were {format(nrow(sha_long) - rows_existing, big.mark = ',')}", 
                              " more rows in the lastest stage table")
     message(qa_row_diff_note)
   } else if (!is.na(rows_existing) & nrow(sha_long) < rows_existing) {
     qa_row_diff_result <- "FAIL"
-    qa_row_diff_note <- glue("There were {rows_existing-format(nrow(sha_long), big.mark = ',')}", 
+    qa_row_diff_note <- glue("There were {format(rows_existing - nrow(sha_long), big.mark = ',')}", 
                              " fewer rows in the lastest stage table. See why this is.")
     warning(qa_row_diff_note)
   } 
   
-  message(qa_row_diff_note)
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
@@ -385,7 +508,7 @@ load_stage_sha <- function(conn = NULL,
                                  glue_sql("SELECT TOP 0 * FROM {`to_schema`}.{`to_table`}",
                                           .con = conn)))
   
-  if (str_detect(cols_current, "Error", negate = T)) {
+  if (str_detect(cols_current[1], "Error", negate = T)) {
     if (length(names(cols_current)[names(cols_current) %in% names(sha_long) == F]) > 1) {
       qa_names_result <- "FAIL"
       qa_names_note <- glue("The existing stage table has columns not found in the new data")
