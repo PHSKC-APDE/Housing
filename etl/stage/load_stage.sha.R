@@ -110,6 +110,11 @@ load_stage_sha <- function(conn = NULL,
   
   
   # CLEAN UP ----
+  ## Agency ----
+  sha_raw <- sha_raw %>%
+    map(~ .x %>% mutate(agency = "SHA"))
+  
+  
   ## Action codes/types ----
   sha_raw <- sha_raw %>%
     map(~ .x %>% mutate(act_type = case_when(
