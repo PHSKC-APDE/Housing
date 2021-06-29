@@ -11,8 +11,8 @@
 # conn = ODBC connection to use
 # to_schema = name of the schema to load data to
 # to_table = name of the table to load data to
-# from_schema = name of the schema the raw data are in
-# from_table = name of the table the raw data are in (assumes a common table name prefix)
+# from_schema = name of the schema the input data are in
+# from_table = common prefix of the table the input data are in
 # qa_schema = name of the schema the QA lives in (likely the same as the to_schema if working in HHSAW)
 # qa_table = name of the table that holds QA outcomes
 # file_path = where the KCHA data files live (note that the file names themselves are hard coded for now)
@@ -207,15 +207,16 @@
   # This function creates a vector of unique IDs of any length
   # id_n = how many unique IDs you want generated
   # id_length = how long do you want the ID to get (too short and you'll be stuck in a loop)
-  id_nodups <- function(id_n, id_length) {
-    id_list <- stringi::stri_rand_strings(n = id_n, length = id_length, pattern = "[A-Za-z0-9]")
+  id_nodups <- function(id_n, id_length, seed = 98104) {
+    set.seed(seed)
+    id_list <- stringi::stri_rand_strings(n = id_n, length = id_length, pattern = "[a-z0-9]")
     
     # If any IDs were duplicated (very unlikely), overwrite them with new IDs
     iteration <- 1
     while(any(duplicated(id_list)) & iteration <= 50) {
       id_list[which(duplicated(id_list))] <- stringi::stri_rand_strings(n = sum(duplicated(id_list), na.rm = TRUE),
                                                                         length = id_length,
-                                                                        pattern = "[A-Za-z0-9]")
+                                                                        pattern = "[a-z0-9]")
       iteration <<- iteration + 1
     }
     
@@ -482,7 +483,6 @@
                                by = "id_hash"))
   
   ids_dedup[, clusterid := min(clusterid_1), by = "clusterid_2"]
-  ids_dedup[, c("id_hash", "clusterid")]
   
   
   ## Error check ----
