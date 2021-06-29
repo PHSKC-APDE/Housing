@@ -62,6 +62,9 @@ load_stage_demo <- function(conn = NULL,
   
   
   pha <- setDT(bind_rows(kcha, sha))
+  # Remove the row is missing id_kc_pha since we won't be able to join on this
+  pha <- pha[!is.na(id_kc_pha)]
+
   
   # WORK ON DOB ----
   # Take the most common DOB per ID (use most recent for ties)
@@ -323,8 +326,9 @@ load_stage_demo <- function(conn = NULL,
   elig_demo_final <- list(elig_dob, elig_gender_final, elig_race_final) %>%
     Reduce(function(df1, df2) left_join(df1, df2, by = "id_kc_pha"), .)
  
-  ### Add in date for last run
+  # Add in date for last run
   elig_demo_final <- elig_demo_final %>% mutate(last_run = Sys.time())
+  
   
   # LOAD TO SQL SERVER ----
   message("Loading to SQL")

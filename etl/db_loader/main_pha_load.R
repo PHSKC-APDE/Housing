@@ -70,6 +70,15 @@ if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities"))
 # MAKE DEMO EVER TABLE ----
 # Consolidate non- and mostly non-time varying demographics
 ## Stage ----
+# Bring in functions
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/qa_stage.pha_demo.R")
+
+# Run function
+load_stage_demo(conn = db_hhsaw)
+
+# QA stage table
+qa_stage_pha_demo(conn = db_hhsaw, load_only = T)
 
 
 ## Final ----
