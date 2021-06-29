@@ -10,6 +10,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 02f,,repaymentagreement2f,,,,,,repayment
 02g,,monthlyamountofrepaymentagreement2g,,,,,,repay_amount
 02h,dateofadmission2h,dateofadmission2h,dateofadmission2h,,,h2h,,admit_date
+,,,,earliestmovein,,,,admit_date
 02i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreex,nextreexamdate,,,,reexam_date
 02i,,,projectedeffectivedateofnextreexam2i,,,,,reexam_date
 02j,,dateofadmissiontomtwprogram2j,,,,,,mtw_admit_date
@@ -222,7 +223,6 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,,medicaldisabilityassistanceallowance,,,,,,med_dis_allowance
 ,,,v9,,,,,asset_inc
 ,,,,contractrent,,,,rent_contract
-,,,,earliestmovein,,,,start_pha
 ,,,,buildingstyle,,,,unit_style
 ,,,,utilityreimbursement,,,,utility_reimbursement
 ,,,,voucherpaymentstandard,,,,voucher_pymt_std
