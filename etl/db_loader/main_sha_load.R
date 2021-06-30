@@ -352,7 +352,7 @@ rm(load_raw.sha_hcv_2020, etl_batch_id_hcv_2020)
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.sha.R")
 
 # Run function
-load_stage.sha(conn = db_hhsaw,
+load_stage_sha(conn = db_hhsaw,
                to_schema = "pha",
                to_table = "stage_sha",
                from_schema = "pha",

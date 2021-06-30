@@ -114,6 +114,15 @@ load_stage_kcha <- function(conn = NULL,
                                     TRUE ~ "KCHA")))
   
   
+  ## Port ins/outs ----
+  ### NEEDS REVIEW ----
+  # Look at cost_pha and addresses to flag likely port ins/outs
+  
+  ## Household ID ----
+  ### NEEDS REVIEW ----
+  # Add in an household ID while each household is on a single line
+  
+  
   # COMBINE HOUSEHOLD INCOME SOURCES BEFORE RESHAPING ----
   # Much easier to do when the entire household is on a single row
   # NB. There are many household/date combos repeated due to minor differences
@@ -276,6 +285,7 @@ load_stage_kcha <- function(conn = NULL,
     # Set up variables of interest
     adds_clean <- adds_clean %>%
       mutate(geo_geocode_skip = 0L,
+             across(where(is.character) & contains("clean"), str_squish),
              geo_hash_clean = as.character(toupper(openssl::sha256(paste(stringr::str_replace_na(geo_add1_clean, ''), 
                                                             stringr::str_replace_na(geo_add2_clean, ''), 
                                                             stringr::str_replace_na(geo_city_clean, ''), 
@@ -297,10 +307,22 @@ load_stage_kcha <- function(conn = NULL,
       mutate_if(is.character, list(~ ifelse(. == "", NA_character_, .)))
     
     
+    # Add to ref table
     dbWriteTable(db_hhsaw_prod, 
-                 name = DBI::Id(schema = "ref",  table = "address_clean"),
+                 name = DBI::Id(schema = "ref",  table = "stage_address_clean"),
                  adds_clean,
                  overwrite = F, append = T)
+    
+    # Do some basic QA
+    rows_stage <- as.integer(dbGetQuery(db_hhsaw_prod, "SELECT COUNT (*) AS row_cnt FROM ref.stage_address_clean"))
+    rows_ref <- as.integer(dbGetQuery(db_hhsaw_prod, "SELECT COUNT (*) AS row_cnt FROM ref.address_clean"))
+    
+    if (rows_stage > rows_ref) {
+      dbWriteTable(db_hhsaw_prod, 
+                   name = DBI::Id(schema = "ref",  table = "address_clean"),
+                   adds_clean,
+                   overwrite = F, append = T)
+    }
     
     # Don't need to geocode at this point so skip that part
   }
@@ -317,6 +339,10 @@ load_stage_kcha <- function(conn = NULL,
     map(~ .x %>% left_join(., 
                            select(adds_final, geo_hash_raw:geo_hash_geocode),
                            by = "geo_hash_raw"))
+  
+  
+  # Add in geo_blank
+  ### NNEDS REVIEW ----
   
   
   # RESHAPE AND REORGANIZE ----
@@ -456,7 +482,7 @@ load_stage_kcha <- function(conn = NULL,
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ toupper(.))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ str_replace(., "", NA_character_))) %>%
+                        ~ ifelse(. == "", NA_character_, .))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ str_replace(., "`", "'"))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
