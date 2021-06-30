@@ -71,6 +71,12 @@ load_stage_demo <- function(conn = NULL,
   message("Processing DOB data")
   elig_dob <- pha[, c("id_kc_pha", "act_date", "dob")]
   
+  # Change likely incorrect DOBs to be correct century
+  # May need to tweak cutoff points as years go on
+  elig_dob[year(dob) > 2030 | year(dob) < 1000, dob := as.Date(format(dob, "19%y-%m-%d"))]
+  pha[between(year(dob), 1026, 1880), dob := as.Date(format(dob, "19%y-%m-%d"))]
+  elig_dob[between(year(dob), 1000, 1025), dob := as.Date(format(dob, "20%y-%m-%d"))]
+  
   # Count number of times each DOB appears for an ID
   elig_dob[, dob_cnt := .N, by = c("id_kc_pha", "dob")]
   elig_dob <- elig_dob[elig_dob[order(id_kc_pha, -dob_cnt, -act_date), .I[1], by = "id_kc_pha"]$V1]
@@ -78,6 +84,20 @@ load_stage_demo <- function(conn = NULL,
   # Keep relevant columns
   elig_dob[, c("act_date", "dob_cnt") := NULL]
   elig_dob <- unique(elig_dob)
+  
+  
+  # WORK ON ADMIT DATE ----
+  # Take the most common admit date per ID (use oldest for ties)
+  message("Processing date person entered KCHA/SHA")
+  elig_admit <- pha[, c("id_kc_pha", "act_date", "admit_date")]
+  
+  # Count number of times each admit date appears for an ID
+  elig_admit[, admit_cnt := .N, by = c("id_kc_pha", "admit_date")]
+  elig_admit <- elig_admit[elig_admit[order(id_kc_pha, -admit_cnt, admit_date), .I[1], by = "id_kc_pha"]$V1]
+  
+  # Keep relevant columns
+  elig_admit[, c("act_date", "admit_cnt") := NULL]
+  elig_admit <- unique(elig_admit)
   
   
   # WORK ON GENDER ----
@@ -323,7 +343,7 @@ load_stage_demo <- function(conn = NULL,
   
   # JOIN ALL TABLES ----
   message("Bringing it all together")
-  elig_demo_final <- list(elig_dob, elig_gender_final, elig_race_final) %>%
+  elig_demo_final <- list(elig_dob, elig_admit, elig_gender_final, elig_race_final) %>%
     Reduce(function(df1, df2) left_join(df1, df2, by = "id_kc_pha"), .)
  
   # Add in date for last run

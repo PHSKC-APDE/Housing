@@ -24,6 +24,7 @@
 # LOAD LIBRARIES AND FUNCTIONS ----
 library(data.table) # Manipulate data
 library(tidyverse) # Manipulate data
+library(lubridate) # Work with dates
 library(odbc) # Read to and write from SQL
 library(configr) # Read in YAML files
 library(glue) # Safely combine SQL code
@@ -42,7 +43,7 @@ qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
 
 # Connect to HHSAW
-db_hhsaw <- DBI::dbConnect(odbc::odbc(),
+conn <- DBI::dbConnect(odbc::odbc(),
                            driver = "ODBC Driver 17 for SQL Server",
                            server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
                            database = "hhs_analytics_workspace",
@@ -82,7 +83,11 @@ qa_stage_pha_demo(conn = db_hhsaw, load_only = T)
 
 
 ## Final ----
-
+# Manually for now, fix later
+if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
+  dbExecute(db_hhsaw, "DROP TABLE pha.final_demo")
+}
+dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 
 
 # MERGE AND CONSOLIDATE KCHA AND PHA DATA ----
