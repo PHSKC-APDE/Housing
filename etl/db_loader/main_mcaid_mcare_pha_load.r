@@ -131,15 +131,12 @@ timevar.mm[, sorter := NULL]
 
 
 ## Clean / prep housing data -----
+### elig ----
 # merge on id_apde
 elig.pha <- merge(elig.pha, xwalk, by = "id_kc_pha", all.x = TRUE, all.y = FALSE)
 elig.pha[, id_kc_pha := NULL]
 
-timevar.pha <- merge(timevar.pha, xwalk, by = "id_kc_pha", all.x = TRUE, all.y = FALSE)
-timevar.pha[, id_kc_pha := NULL]
-rm(xwalk)
-
-# Some PHA IDs linked to the same id_apde so need to take remove dups
+# Some PHA IDs linked to the same id_apde so need to take remove dups in demo
 elig.pha <- unique(elig.pha)
 set.seed(98104)
 elig.pha[, sorter := sample(1000, .N), by = "id_apde"]
@@ -147,6 +144,19 @@ setorder(elig.pha, id_apde, sorter)
 elig.pha <- elig.pha[elig.pha[, .I[1:1], by = id_apde]$V1]
 elig.pha[, sorter := NULL]
 
+# Rename as needed
+setnames(elig.pha, "admit_date", "start_housing")
+
+# ascribe ever KC residence status
+elig.pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
+
+
+
+### timevar ----
+timevar.pha <- merge(timevar.pha, xwalk, by = "id_kc_pha", all.x = TRUE, all.y = FALSE)
+timevar.pha[, id_kc_pha := NULL]
+
+# Need to remove dups in timevar table as well
 timevar.pha <- unique(timevar.pha)
 set.seed(98104)
 timevar.pha[, sorter := sample(1000, .N), by = c("id_apde", "from_date", "to_date")]
@@ -154,15 +164,39 @@ setorder(timevar.pha, id_apde, from_date, to_date, sorter)
 timevar.pha <- timevar.pha[timevar.pha[, .I[1:1], by = c("id_apde", "from_date", "to_date")]$V1]
 timevar.pha[, sorter := NULL]
 
+# Also need to reset the from/to dates because there will still be overlap, which throws things off
+# Truncate overlapping dates and remove any single day lines that overlap
+# Assume that most recent program/agency is the one to count 
+# (will be biased to the second one alphabetically when start dates are the same, if any remain)
+setorder(timevar.pha, id_apde, from_date, to_date)
+# Make a note of which rows were truncated/deleted
+timevar.pha[, truncated := ifelse(
+  id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & to_date >= lead(from_date, 1), 1, 0)]
+# Now truncate
+timevar.pha[, to_date := as.Date(
+  case_when(
+    # If the start dates aren't the same, use next start date - 1 day
+    id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & to_date >= lead(from_date, 1) & 
+      from_date != lead(from_date, 1) ~ lead(from_date, 1) - 1,
+    #  If the start dates are the same, flag for deletion by setting to from_date
+    id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & to_date >= lead(from_date, 1) & 
+      from_date == lead(from_date, 1) ~ from_date,
+    TRUE ~ to_date
+  ), origin = "1970-01-01")]
 
-# Rename as needed
-setnames(elig.pha, "admit_date", "start_housing")
+# See how many rows were affected
+sum(timevar.pha$truncated, na.rm = T)
+
+# Remove any new duplicates and single-day rows
+timevar.pha <- timevar.pha[!(from_date == to_date & truncated == 1)]
+timevar.pha <- unique(timevar.pha)
+
+timevar.pha[, truncated := NULL]
+
 
 # add in geo_ data
 timevar.pha <- merge(timevar.pha, ref.geo, by = "geo_hash_geocode", all.x = T, all.y = F)
 
-# ascribe ever KC residence status
-elig.pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives in either Seattle or King County Pubic Housing
 
 
 # CREATE MCAID-MCARE-PHA ELIG_DEMO -----
@@ -386,6 +420,7 @@ temp_ext[, enroll_type :=
            )]
 
 # Check no bad overlaps
+temp_ext %>% count(enroll_type)
 if ("x" %in% unique(temp_ext$enroll_type)) {
   stop("Unexpected enroll_type values produced")
 }
@@ -487,14 +522,19 @@ linked[, from_date := i.from_date] # the complete set of proper from_dates are i
 linked[, to_date := i.to_date] # the complete set of proper to_dates are in i.to_date
 linked[, c("i.from_date", "i.to_date") := NULL] # no longer needed    
 
-### Append linked and non-linked data ----
+# Fix formats
 linked[, c("from_date", "to_date") := lapply(.SD, as.Date, origin = "1970-01-01"), .SDcols = c("from_date", "to_date")]
+
+### Append linked and non-linked data ----
 timevar <- rbindlist(list(linked, timevar.pha.solo, timevar.mm.solo), use.names = TRUE, fill = TRUE)
 setkey(timevar, id_apde, from_date) # order dual data     
 
 ### Collapse data if dates are contiguous and all data is the same ----
-timevar[, gr := cumsum(from_date - shift(to_date, fill=1) != 1), by = c(setdiff(names(timevar), c("from_date", "to_date")))] # unique group # (gr) for each set of contiguous dates & constant data 
-timevar <- timevar[, .(from_date=min(from_date), to_date=max(to_date)), by = c(setdiff(names(timevar), c("from_date", "to_date")))] 
+# This is very slow, look at other approaches
+timevar[, gr := cumsum(from_date - shift(to_date, fill = 1) != 1), 
+        by = c(setdiff(names(timevar), c("from_date", "to_date")))] # unique group # (gr) for each set of contiguous dates & constant data 
+timevar <- timevar[, .(from_date = min(from_date), to_date = max(to_date)), 
+                   by = c(setdiff(names(timevar), c("from_date", "to_date")))] 
 timevar[, gr := NULL]
 setkey(timevar, id_apde, from_date)
 
@@ -562,7 +602,7 @@ kc_zips <- read.csv(text = httr::content(httr::GET(
   mutate(geo_zip = as.character(geo_zip))
 timevar[, geo_kc := 0]
 timevar[geo_county_code == "033", geo_kc := 1]
-timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc_zips$geozip)), geo_kc := 1]
+timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc_zips$geo_zip)), geo_kc := 1]
 rm(kc_zips)
 
 #-- create time stamp ----
@@ -804,13 +844,15 @@ lapply(seq(start, cycles), function(i) {
 })
 
 
-### Simple QA ----
-#-- confirm that all rows were loaded to SQL ----
+## Simple QA ----
+### confirm that all rows were loaded to SQL ----
 stage.count <- as.numeric(odbc::dbGetQuery(db_apde51, "SELECT COUNT (*) FROM stage.mcaid_mcare_pha_elig_timevar"))
-if(stage.count != nrow(timevar))
-  stop("Mismatching row count, error writing data")    
+if(stage.count != nrow(timevar)) {
+  stop("Mismatching row count, error writing data")  
+}
 
-#-- check that rows in stage are not less than the last time that it was created ----
+
+### check that rows in stage are not less than the last time that it was created ----
 last_run <- as.POSIXct(odbc::dbGetQuery(db_apde51, "SELECT MAX (last_run) FROM stage.mcaid_mcare_pha_elig_timevar")[[1]]) # data for the run that was just uploaded
 
 # count number of rows
@@ -867,7 +909,7 @@ if (row_diff < 0) {
   
 }
 
-#-- check that the number of distinct IDs not less than the last time that it was created ----
+### check that the number of distinct IDs not less than the last time that it was created ----
 # get count of unique id 
 current.unique.id <- as.numeric(odbc::dbGetQuery(
   db_apde51, "SELECT COUNT (DISTINCT id_apde) 
@@ -986,6 +1028,13 @@ if(problems >1){
 }
 
 
+rm(cycles, max_rows, cycles)
+rm(ref.geo)
+rm(keep.elig, keep.timevar)
+rm(table_config_demo, table_config_timevar)
+rm(xwalk)
+rm(previous.unique.id, previous_rows, current.unique.id, stage.count, id_diff, row_diff)
+rm(elig, timevar)
 
 
 # the end ----  
