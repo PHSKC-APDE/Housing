@@ -90,10 +90,24 @@ if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
 dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 
 
-# MERGE AND CONSOLIDATE KCHA AND PHA DATA ----
+# MAKE TIMEVARE TABLE ----
+# Consolidate time varying data
 ## Stage ----
+# Bring in functions
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/qa_stage.pha_timevar.R")
+
+# Run function
+load_stage_timevar(conn = db_hhsaw)
+
+# QA stage table
+qa_stage_pha_timevar(conn = db_hhsaw, load_only = T)
 
 
 ## Final ----
-
+# Manually for now, fix later
+if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_timevar"))) {
+  dbExecute(db_hhsaw, "DROP TABLE pha.final_timevar")
+}
+dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
 
