@@ -24,10 +24,6 @@ library(glue) # Used to safely make SQL queries
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
-
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
-
-
 #### FUNCTIONS ####
 ### Standard recode/rename function
 recode_f <- function(df) {
@@ -66,7 +62,7 @@ recode_f <- function(df) {
                           pha_operator),
     pha_portfolio = case_when(
       pha_operator == "NON-PHA OPERATED" ~ NA_character_,
-      pha_subsidy == "HARD UNIT" & pha_portfolio == "" ~ "Unknown",
+      pha_subsidy == "HARD UNIT" & (pha_portfolio == "" | is.na(pha_portfolio)) ~ "Unknown",
       pha_subsidy == "TENANT BASED/SOFT UNIT" & pha_portfolio == "" ~ NA_character_,
       TRUE ~ pha_portfolio)
   )]
@@ -150,42 +146,81 @@ acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
     ON COALESCE(a.id_apde, b.id_apde) = c.id_apde",
     .con = db_claims51)
   
-  output <- dbGetQuery(db_claims51, sql_query) %>% 
-    # Add additional recodes (do this BEFORE standard recoding because of time_housing)
-    mutate_at(vars(first_service_date, dob), list( ~ as.Date(.))) %>%
-    mutate(age_yr = floor(interval(start = dob, 
-                                   end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
-                          / years(1)),
-           adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
-           senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
-           agegrp = case_when(
-             age_yr < 18 ~ "<18",
-             data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-             data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
-             data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
-             age_yr >= 65 ~ "65+",
-             is.na(age_yr) ~ NA_character_),
-           agegrp_expanded = case_when(
-             age_yr < 10 ~ "<10",
-             data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
-             data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-             data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
-             data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
-             data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
-             age_yr >= 75 ~ "75+",
-             is.na(age_yr) ~ NA_character_),
-           age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
-                              TRUE ~ NA_character_),
-           time_housing_yr = 
-             round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
-                   / years(1), 1),
-           time_housing = case_when(
-             is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
-             time_housing_yr < 3 ~ "<3 years",
-             between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
-             time_housing_yr >= 6 ~ "6+ years",
-             TRUE ~ "Unknown")
-    )
+  output <- setDT(dbGetQuery(db_claims51, sql_query))
+  
+  # Add additional recodes (do this BEFORE standard recoding because of time_housing)
+  output[, `:=` (first_service_date = as.Date(first_service_date),
+                 dob = as.Date(dob))]
+  output[, age_yr := floor(interval(start = dob, 
+                                    end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
+                           / years(1))]
+  output[, `:=` (
+    adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
+    senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
+    agegrp = case_when(
+      age_yr < 18 ~ "<18",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      age_yr >= 65 ~ "65+",
+      is.na(age_yr) ~ NA_character_),
+    agegrp_expanded = case_when(
+      age_yr < 10 ~ "<10",
+      data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+      age_yr >= 75 ~ "75+",
+      is.na(age_yr) ~ NA_character_),
+    age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
+                       TRUE ~ NA_character_)
+  )]
+  output[, time_housing_yr := 
+           round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
+                 / years(1), 1)]
+  output[, time_housing := case_when(is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
+                                     time_housing_yr < 3 ~ "<3 years",
+                                     between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
+                                     time_housing_yr >= 6 ~ "6+ years",
+                                     TRUE ~ "Unknown")]
+  
+  # output %>% 
+  #   # Add additional recodes (do this BEFORE standard recoding because of time_housing)
+  #   mutate_at(vars(first_service_date, dob), list( ~ as.Date(.))) %>%
+  #   mutate(age_yr = floor(interval(start = dob, 
+  #                                  end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
+  #                         / years(1)),
+  #          adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
+  #          senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
+  #          agegrp = case_when(
+  #            age_yr < 18 ~ "<18",
+  #            data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+  #            data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+  #            data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+  #            age_yr >= 65 ~ "65+",
+  #            is.na(age_yr) ~ NA_character_),
+  #          agegrp_expanded = case_when(
+  #            age_yr < 10 ~ "<10",
+  #            data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+  #            data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+  #            data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+  #            data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+  #            data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+  #            age_yr >= 75 ~ "75+",
+  #            is.na(age_yr) ~ NA_character_),
+  #          age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
+  #                             TRUE ~ NA_character_),
+  #          time_housing_yr = 
+  #            round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
+  #                  / years(1), 1),
+  #          time_housing = case_when(
+  #            is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
+  #            time_housing_yr < 3 ~ "<3 years",
+  #            between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
+  #            time_housing_yr >= 6 ~ "6+ years",
+  #            TRUE ~ "Unknown")
+  #   )
   
   # Run through standardized recoding/renaming
   output <- recode_f(output)
@@ -248,7 +283,7 @@ acute_persons_f <- function(type = c("ed", "hosp", "inj", "wc"), year = 2012,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
+        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1 {pop_sql}) a
     LEFT JOIN
       (SELECT DISTINCT id_apde, 1 AS event
@@ -310,7 +345,7 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
+        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1) a
     LEFT JOIN
       (SELECT id_apde, 1 AS condition 
@@ -400,7 +435,7 @@ mh_f <- function(year = 2014,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.stage.mcaid_mcare_pha_elig_calyear
+        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND pop = 1 {enroll_sql}) x
     
     --pull people identified to have BH conditions from 2-year lookback
@@ -701,13 +736,13 @@ mh_f <- function(year = 2014,
 
 #### BRING IN DATA ####
 ### Years to look over
-years <- seq(2012, 2019)
+years <- seq(2012, 2020)
 years_mcare <- seq(2012, 2017)
 
 
 ### Precalculated calendar year table
 # Use stage for now
-mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM stage.mcaid_mcare_pha_elig_calyear")
+mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM final.mcaid_mcare_pha_elig_calyear")
 
 mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
   mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
@@ -878,7 +913,7 @@ lapply(seq(start, cycles), function(i) {
                  overwrite = F, append = T)
   }
 })
-
+dbDisconnect(db_extractstore51)
 
 
 #### POPULATION TO JOIN TO ACUTE/CHRONIC DATA ####
@@ -1052,6 +1087,7 @@ rm(pop_enroll_all, pop_enroll_bivariate, pop_enroll_total)
 rm(pop_acute_mm, pop_acute_md, pop_acute_md_wc)
 rm(pop_health_bivariate, pop_health_univariate, 
    pop_health_total_chronic, pop_health_total_acute)
+rm(db_extractstore51)
 #### END POPULATION ####
 
 
@@ -1276,12 +1312,6 @@ mi_mcaid <- bind_rows(lapply(years, eventcount_chronic_f,
 
 #### MENTAL HEALTH CONDITIONS ####
 # Start at 2014 since there is a two-year lookback
-system.time(test_all_nosum <- mh_f(year = 2014, summarise = F, source = "all"))
-system.time(test_all_sum <- mh_f(year = 2014, summarise = T, source = "all"))
-system.time(test_mcaid_nosum <- mh_f(year = 2014, summarise = F, source = "mcaid"))
-system.time(test_mcaid_sum <- mh_f(year = 2014, summarise = T, source = "mcaid"))
-
-
 mh_all <- bind_rows(lapply(seq(2014, max(years_mcare)), mh_f, 
                            summarise = T,
                            source = "all"))
@@ -1381,7 +1411,7 @@ health_events_total <- health_events %>%
     category2 = "total", group2 = "total")
 
 
-#### Combine into one data frame ####
+#### COMBINE INTO ONE DATA FRAME ####
 health_events_combined <- bind_rows(health_events_bivariate, health_events_univariate, health_events_total) %>%
   # TEMP: filter out source/year combos with no populations
   filter((source == "Medicaid and Medicare" & year <= max(years_mcare)) |
@@ -1548,8 +1578,15 @@ health_events_pop_final_suppressed <- health_events_pop_final %>%
               acute == 0 & pop_supp_flag == 1 ~ NA_real_,
               TRUE ~ round(., 1)
             ))) %>%
-  mutate_at(vars(rest_count, rest_pop), 
-            list( ~ ifelse(suppressed == 1 | pop_supp_flag == 1, NA_integer_, .))) %>%
+  # Suppress rest PHA details only if 1 portfolio-level is suppressed
+  group_by(source, indicator, year, wc_flag, full_criteria, agency, category1, category2) %>%
+  mutate(suppress_cnt = sum(suppressed), pop_suppress_cnt = sum(pop_supp_flag)) %>%
+  ungroup() %>%
+  mutate(rest_count = ifelse(suppress_cnt == 1, NA_integer_, rest_count),
+         rest_pt = ifelse(suppress_cnt == 1, NA_integer_, rest_count),
+         rest_denominator = ifelse(suppress_cnt == 1, NA_integer_, rest_count),
+         rest_pop = ifelse(!is.na(pop_suppress_cnt) & pop_suppress_cnt == 1,
+                           NA_integer_, rest_pop)) %>%
   select(source, year, acute, indicator, wc_flag, full_criteria, agency, 
          category1, group1, category2, group2, count_supp, denominator, pt, pop_ever_supp, pop_supp, rate:ci_ub, 
          rest_count, rest_denominator, rest_pop, rest_pt, rest_pha_rate, rest_ci_lb, rest_ci_ub,
@@ -1582,7 +1619,10 @@ health_events_pop_final_suppressed <- health_events_pop_final_suppressed %>%
               . == "voucher" ~ "Voucher type",
               . == "zip" ~ "ZIP code",
               TRUE ~ .))) %>%
-  mutate_at(vars(group1, group2), list(~ case_when(. == "overall" ~ "Overall", TRUE ~ .))) %>%
+  # Keep Lake City Court for now
+  mutate(across(contains("group"), ~ case_when(. == "overall" ~ "Overall",
+                                               str_detect(., "LAKE CITY COURT") ~ "LAKE CITY COURT",
+                                               TRUE ~ .))) %>%
   # Add timestamp for load
   mutate(run_date = Sys.time())
 
@@ -1602,7 +1642,7 @@ lapply(seq(start, cycles), function(i) {
   if (i == 1) {
     dbWriteTable(db_extractstore51,
                  name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
-                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row]),
+                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row, ]),
                  overwrite = T, append = F,
                  field.types = c(acute = "tinyint",
                                  year = "integer",
@@ -1623,7 +1663,7 @@ lapply(seq(start, cycles), function(i) {
   } else {
     dbWriteTable(db_extractstore51,
                  name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_events"),
-                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row]),
+                 value = as.data.frame(health_events_pop_final_suppressed[start_row:end_row, ]),
                  overwrite = F, append = T)
   }
 })
@@ -1667,6 +1707,7 @@ timevar_mcaid[, to_date := as.Date(to_date, origin = "1970-01-01")]
 
 
 ### Run queries
+## acute_cause_nonpha ----
 acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1718,6 +1759,7 @@ acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
 }))
 
 
+## acute_cause_nonpha_mcaid ----
 acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1769,6 +1811,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
 }))
 
 
+## acute_cause_kcha ----
 acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1820,6 +1863,7 @@ acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
 }))
 
 
+## acute_cause_kcha_mcaid ----
 acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1871,6 +1915,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
 }))
 
 
+## acute_cause_sha ----
 acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1922,6 +1967,7 @@ acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
 }))
 
 
+## acute_cause_sha_mcaid ----
 acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
   # Set up years
   year_from <- paste0(x, "-01-01")
@@ -1973,7 +2019,7 @@ acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
 }))
 
 
-# Combine data and export
+## Combine data and export ----
 acute_cause <- bind_rows(acute_cause_nonpha, acute_cause_nonpha_mcaid, 
                          acute_cause_kcha, acute_cause_kcha_mcaid, 
                          acute_cause_sha, acute_cause_sha_mcaid) %>%
@@ -1997,7 +2043,7 @@ acute_cause <- bind_rows(acute_cause_nonpha, acute_cause_nonpha_mcaid,
   mutate(run_date = Sys.time())
 
 
-### Write to SQL
+## Write to SQL ----
 db_extractstore51 <- dbConnect(odbc(), "PHExtractStore51")
 DBI::dbWriteTable(db_extractstore51,
                   name = DBI::Id(schema = "APDE_WIP", table = "mcaid_mcare_pha_event_causes"),

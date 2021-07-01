@@ -1037,4 +1037,19 @@ rm(previous.unique.id, previous_rows, current.unique.id, stage.count, id_diff, r
 rm(elig, timevar)
 
 
-# the end ----  
+
+# CREATE CALYEAR TABLE ----
+## Stage ----
+# Bring in and run function (will take a long time)
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/analyses/load_stage.mcaid_mcare_pha_elig_calyear.R")
+
+# QA stage table
+# Needs work, but look at counts overall, by year, and then for mcaid/mcare/pha in a given year (e.g., 2017)
+
+
+## Final ----
+# Need to manually run SQL script because of permissions issue, can't alter schema
+# Decide whether to archive first or not (currently not)
+
+
+

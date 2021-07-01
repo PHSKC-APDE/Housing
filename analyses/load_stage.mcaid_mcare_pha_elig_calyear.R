@@ -233,12 +233,8 @@ lapply(seq(start, cycles), function(i) {
 })
 
 
-### Add index
-add_index_f(db_apde51, table_config = table_config_stage, drop_index = T)
-
-
 #### QA TABLE AND MOVE TO FINAL ####
-# Move into new file?
+# Needs a separate SQL script, also part of main_mcaid_mcare_pha_load.R script
 
 
 
