@@ -76,17 +76,27 @@ if(!require(phonics)){
   require(phonics)
 }
 
+
 script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- "local path"
+
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA, "kcha_data")
 
 
 
 if (sql == TRUE) {
-  db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+  db_claims <- DBI::dbConnect(odbc::odbc(),
+                              driver = "ODBC Driver 17 for SQL Server",
+                              server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                              database = "hhs_analytics_workspace",
+                              uid = keyring::key_list("hhsaw_dev")[["username"]],
+                              pwd = keyring::key_get("hhsaw_dev", keyring::key_list("hhsaw_dev")[["username"]]),
+                              Encrypt = "yes",
+                              TrustServerCertificate = "yes",
+                              Authentication = "ActiveDirectoryPassword")
 }
 
 #####################################
@@ -165,7 +175,7 @@ if (UW == TRUE) {
 }
 
 # Bring in variable name mapping table
-fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv"), 
+fields <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/processing/Field%20name%20mapping.csv"), 
                    header = T, stringsAsFactors = F)
 
 
@@ -309,7 +319,6 @@ kcha_2019_2019_full <- list(kcha_p1_2019_2019, kcha_p2_2019_2019, kcha_p3_2019_2
   Reduce(function(dtf1, dtf2) full_join(
     dtf1, dtf2, by = c("householdid", "certificationid", "vouchernumber", "h2a", "h2b")), .)
 nrow(kcha_2019_2019_full) == nrow(kcha_p1_2019_2019)
-
 
 ### Rename and reformat a few variables to make for easier appending
 # Dates in older data come as integers with dropped leading zeros 
@@ -867,11 +876,11 @@ if (sql == TRUE) {
   
   tbl_id_meta <- DBI::Id(schema = "stage", table = "pha_kcha")
   
-  if (dbExistsTable(db_apde51, tbl_id_meta)) {
-    dbRemoveTable(db_apde51, tbl_id_meta)
+  if (dbExistsTable(db_claims, tbl_id_meta)) {
+    dbRemoveTable(db_claims, tbl_id_meta)
   }
   
-  dbWriteTable(db_apde51, tbl_id_meta, kcha_long, overwrite = T)
+  dbWriteTable(db_claims, tbl_id_meta, kcha_long, overwrite = T)
   rm(tbl_id_meta)
 }
 

@@ -30,8 +30,6 @@ library(claims) # Used to aggregate data
 db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 db_claims51 <- dbConnect(odbc(), "PHClaims51")
 
-housing_path <- "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data"
-
 
 #### BRING IN DATA ####
 ### Main merged data
@@ -69,7 +67,7 @@ mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar %>%
 # Used for chronic disease denominator and enrollment analyses
 
 # Set up calendar years
-years <- seq(2012, 2019)
+years <- seq(2012, 2020)
 
 allocated <- bind_rows(lapply(seq_along(years), function(x) {
   
@@ -89,10 +87,15 @@ allocated <- bind_rows(lapply(seq_along(years), function(x) {
 
 
 ### Fix up impossible pt_tot values
-# A handful (~60) rows have pt_tot >365/6
+# A handful of rows (currently ~600/200 IDs) have pt_tot >365/6
 # Some/most stem from duplicate rows in the PHA data where a person was recorded
 # at multiple addresses during the same time period.
 # For now, just truncate to 365/6
+# First check that it is only a handful of rows
+if (n_distinct(allocated$id_apde[allocated$pt_tot > 366]) > 200) {
+  stop("More people than expected had pt_tot > 366 days")
+}
+
 allocated <- allocated %>%
   mutate(pt_tot = case_when(
     year %in% c(2012, 2016, 2020) & pt_tot > 366 ~ 366, 
@@ -191,12 +194,12 @@ mcaid_mcare_pha_elig_calyear[, last_run := Sys.time()]
 
 #### WRITE DATA TO SQL SERVER ####
 table_config_stage <- yaml::yaml.load(httr::content(httr::GET(
-  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml")))
+  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml")))
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
 
 
 # Ensure columns are in the correct order
-# First see which columns aren't in either source
+# First see which columns aren't in either source (should be pt_allocate in local that will be dropped)
 names(mcaid_mcare_pha_elig_calyear)[!names(mcaid_mcare_pha_elig_calyear) %in% names(table_config_stage$vars)]
 names(table_config_stage$vars)[!names(table_config_stage$vars) %in% names(mcaid_mcare_pha_elig_calyear)]
 
@@ -230,12 +233,8 @@ lapply(seq(start, cycles), function(i) {
 })
 
 
-### Add index
-add_index_f(db_apde51, table_config = table_config_stage, drop_index = T)
-
-
 #### QA TABLE AND MOVE TO FINAL ####
-# Move into new file?
+# Needs a separate SQL script, also part of main_mcaid_mcare_pha_load.R script
 
 
 

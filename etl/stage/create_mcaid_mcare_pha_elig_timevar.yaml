@@ -1,0 +1,45 @@
+schema: stage
+table: mcaid_mcare_pha_elig_timevar
+index_type: ccs
+index_name: idx_ccs_final_mcaid_mcare_pha_elig_timevar
+vars:
+    id_apde: CHAR(10)
+    from_date: DATE
+    to_date: DATE
+    contiguous: TINYINT
+    mcaid: TINYINT
+    mcare: TINYINT
+    pha: TINYINT
+    apde_dual: TINYINT
+    mcaid_mcare_pha: TINYINT
+    geo_kc: TINYINT
+    part_a: TINYINT
+    part_b: TINYINT
+    part_c: TINYINT
+    partial: TINYINT
+    buy_in: TINYINT
+    dual: TINYINT
+    tpl: TINYINT
+    bsp_group_cid: INTEGER
+    full_benefit: TINYINT
+    full_criteria: TINYINT
+    cov_type: CHAR(3)
+    mco_id: INT
+    pha_agency: VARCHAR(7)
+    pha_subsidy: VARCHAR(30)
+    pha_voucher: VARCHAR(30)
+    pha_operator: VARCHAR(30)
+    pha_portfolio: VARCHAR(100)
+    geo_add1: VARCHAR(255)
+    geo_add2: VARCHAR(255)
+    geo_city: VARCHAR(255)
+    geo_state: VARCHAR(255)
+    geo_zip: VARCHAR(255)
+    geo_zip_centroid: TINYINT
+    geo_street_centroid: TINYINT
+    geo_county_code: varchar(255)
+    geo_tract_code: VARCHAR(255)
+    geo_hra_code: SMALLINT
+    geo_school_code: VARCHAR(255)
+    cov_time_day: SMALLINT
+    last_run: DATETIME

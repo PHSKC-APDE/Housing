@@ -49,7 +49,7 @@ if (UW == TRUE) {
 
 
 pha_cleanadd_sort <- pha_cleanadd %>% arrange(pid, act_date, agency_new, prog_type)
-
+}
 
 #### Create key variables ####
 ### Final agency and program fields

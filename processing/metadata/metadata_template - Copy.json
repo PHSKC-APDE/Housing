@@ -16,7 +16,6 @@
         "sha5b_2006_2017_fn": "file_name.type",
         "sha5a_2018_2018_fn": "file_name.type",
         "sha5b_2018_2018_fn": "file_name.type",
-        "sha6_2019_2019_fn": "file_name.type",
         "sha_vouch_type_fn": "file_name.type",
         "sha_prog_codes_fn": "file_name.type",
         "sql": "TRUE if you're using this",
@@ -46,9 +45,9 @@
         "add_2018": "TRUE if you have 2018 data to load"
     },
     "combined": {
-        "housing_path": "//phdata01/DROF_DATA/DOH DATA/Housing/Organized_data/",
-        "sql": "TRUE",
-        "UW": "FALSE",
+        "housing_path": "path_to_housing/OrganizedData_folder",
+        "sql": "FALSE if not using or TRUE if using",
+        "UW": "TRUE for UW specific code",
         "pha_fn":"file_name.type",
         "pha_clean_fn": "file_name.type",
         "pha_recoded_fn":"file_name.type",
@@ -63,3 +62,4 @@
         "PHA_addresses_matched_google_fn": "file_name.type",
     }
 }
+
