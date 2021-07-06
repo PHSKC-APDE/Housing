@@ -72,8 +72,8 @@ if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities"))
 # Consolidate non- and mostly non-time varying demographics
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.pha_demo.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/qa_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_demo.R")
 
 # Run function
 load_stage_demo(conn = db_hhsaw)
@@ -94,8 +94,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 # Consolidate time varying data
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/load_stage.pha_timevar.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/qa_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_timevar.R")
 
 # Run function
 load_stage_timevar(conn = db_hhsaw)

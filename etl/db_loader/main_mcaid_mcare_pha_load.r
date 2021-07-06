@@ -49,9 +49,9 @@ library(data.table) # Used to manipulate data
 
 kc_zips_url <- "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv"
 
-yaml_elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/create_mcaid_mcare_pha_elig_demo.yaml"
+yaml_elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/create_mcaid_mcare_pha_elig_demo.yaml"
 
-yaml_timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/etl/stage/create_mcaid_mcare_pha_elig_timevar.yaml"
+yaml_timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/create_mcaid_mcare_pha_elig_timevar.yaml"
 
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/alter_schema.R")
 source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
@@ -1041,7 +1041,7 @@ rm(elig, timevar)
 # CREATE CALYEAR TABLE ----
 ## Stage ----
 # Bring in and run function (will take a long time)
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2019/analyses/load_stage.mcaid_mcare_pha_elig_calyear.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/analyses/load_stage.mcaid_mcare_pha_elig_calyear.R")
 
 # QA stage table
 # Needs work, but look at counts overall, by year, and then for mcaid/mcare/pha in a given year (e.g., 2017)
