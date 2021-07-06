@@ -172,7 +172,7 @@ load_raw.sha_hcv_2006_2017 <- function(conn = NULL,
   # Join back and remove duplicates
   sha_hcv_p1_2006_2017 <- left_join(sha_hcv_p1_2006_2017, sha_hcv_p1_2006_2017_race,
                                     by = c("cert_id", "hh_id", "mbr_id")) %>%
-    select(-race) %>% distinct())
+    select(-race) %>% distinct()
   rm(sha_hcv_p1_2006_2017_race)
   
   
