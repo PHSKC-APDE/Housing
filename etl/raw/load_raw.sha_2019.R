@@ -246,7 +246,7 @@ load_raw.sha_2019 <- function(conn = NULL,
   
   ## Fix up date formats ----
   sha_2019 <- sha_2019 %>%
-    mutate(across(c(ends_with("_date"), start_pha, dob), ~ as.Date(.x, format = "%m/%d/%Y")),
+    mutate(across(c(ends_with("_date"), dob), ~ as.Date(.x, format = "%m/%d/%Y")),
            geo_zip_raw = as.character(geo_zip_raw))
   
   

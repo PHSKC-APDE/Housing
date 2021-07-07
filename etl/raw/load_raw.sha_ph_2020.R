@@ -114,11 +114,12 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
   # Are there any new codes/types not seen before?
   act_types <- sort(unique(sha_ph_2020$CERT_TYPE[!is.na(sha_ph_2020$CERT_TYPE)]))
   act_types_expected <- c(
-    "Annual HQS Inspection Only", "Annual Recertification", "Annual Reexamination", "Annual Reexamination Searching", 
+    "Annual HQS Inspection Only", "AR", "Annual Recertification", "Annual Reexamination", "Annual Reexamination Searching", 
     "End Participation", "Expiration of Voucher", "FSS/MTW Self-Sufficiency Only", "FSS/WtW Addendum Only",  
     "Gross Rent Change", "Historical Adjustment",  "Interim Reexamination", "Issuance of Voucher", 
-    "Move In", "Move Out", "New Admission", "Other Change of Unit", "Port-Out Update (Not Submitted To MTCS)", 
-    "Portability Move-in", "Portability Move-out", "Termination", "Unit Transfer", "Void")
+    "MI", "Move In", "Move Out", "New Admission", "Other Change of Unit", "Port-Out Update (Not Submitted To MTCS)", 
+    "Portability Move-in", "Portability Move-out", "Termination", "Unit Transfer", "Void",
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "99")
   
   
   if (is.character(sha_ph_2020$CERT_TYPE) & length(act_types[act_types %in% act_types_expected == F]) > 0) {
@@ -127,9 +128,9 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
                         "Update stage.sha recoding as appropriate.")
     qa_act_result <- "FAIL"
     warning(qa_act_note)
-  } else if (is.integer(sha_ph_2020$CERT_TYPE) & min(act_types %in% 1:15) == 0) {
+  } else if (is.integer(sha_ph_2020$CERT_TYPE) & min(act_types %in% c(1:15, 99)) == 0) {
     qa_act_note <- glue("The following unexpected action types were present: ",
-                        "{glue_collapse(act_types[act_types %in% 1:15 == FALSE], sep = ', ')}")
+                        "{glue_collapse(act_types[act_types %in% c(1:15, 99) == FALSE], sep = ', ')}")
     qa_act_result <- "FAIL"
     warning(qa_act_note)
   } else {
@@ -149,7 +150,8 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
   ## Program types ----
   # Are there any new program types not seen before?
   prog_types <- sort(unique(sha_ph_2020$PROGRAM_TYPE[!is.na(sha_ph_2020$PROGRAM_TYPE)]))
-  prog_types_expected = c("Collaborative Housing", "SHA Owned and Managed", "Tenant Based")
+  prog_types_expected = c("Collaborative Housing", "Collaborative_Housing", "Partnership_Units", 
+                          "SHA Owned and Managed", "SHA_Owned_Managed", "Tenant Based", "Tenant_Based")
   
   if (length(prog_types[prog_types %in% prog_types_expected == F]) > 0) {
     qa_prog_note <- glue("The following unexpected program types were present: ",
@@ -173,19 +175,19 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
   
   ## Portfolios/building IDs ----
   # Do any building IDs/property IDs fail to join to the ref table?
-  portfolios_miss <- sha_ph_2020 %>%
+  portfolio_miss <- sha_ph_2020 %>%
     filter(str_detect(tolower(PROGRAM_TYPE), "owned") & str_detect(tolower(PROGRAM_TYPE), "managed")) %>%
     distinct(BUILDING_ID) %>%
     mutate(BUILDING_ID = as.character(BUILDING_ID)) %>%
     left_join(., sha_portfolios, by = c("BUILDING_ID" = "building_id")) %>%
     filter(is.na(portfolio))
   
-  portfolio_impact <- inner_join(portfolios_miss, 
+  portfolio_impact <- inner_join(portfolio_miss, 
                                  select(sha_ph_2020, BUILDING_ID) %>% 
                                    mutate(BUILDING_ID = as.character(BUILDING_ID)))
   
-  if (nrow(portfolios_miss) > 0) {
-    qa_portfolio_note <- glue("There were {nrow(portfolios_miss)} PH building IDs found in {nrow(portfolio_impact)} ",
+  if (nrow(portfolio_miss) > 0) {
+    qa_portfolio_note <- glue("There were {nrow(portfolio_miss)} PH building IDs found in {nrow(portfolio_impact)} ",
                               "rows that did not match to a portfolio. Need to update ref table.")
     qa_portfolio_result <- "FAIL"
     warning(qa_portfolio_note)
@@ -234,7 +236,7 @@ load_raw.sha_ph_2020 <- function(conn = NULL,
     rm(dates)
     rm(act_types, act_types_expected)
     rm(prog_types, prog_types_expected)
-    rm(portfolios_miss, portfolios_impact)
+    rm(portfolio_miss, portfolios_impact)
   }
   
   

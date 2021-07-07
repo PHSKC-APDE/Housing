@@ -34,11 +34,8 @@ library(apde) # Handy functions for working with data in APDE
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/db_loader/etl_log.R")
 
 
-
-
 # SET UP VARIABLES AND CONNECTIONS ----
-options(max.print = 350, tibble.print_max = 50, warning.length = 8170,
-        scipen = 999)
+options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 999)
 
 # Assuming we are working in HHSAW so can pre-load these values
 qa_schema <- "pha"
@@ -49,7 +46,7 @@ file_path_kcha <- "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data"
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                        driver = "ODBC Driver 17 for SQL Server",
-                       server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                       server = "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433",
                        database = "hhs_analytics_workspace",
                        uid = keyring::key_list("hhsaw")[["username"]],
                        pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
@@ -205,7 +202,7 @@ rm(load_raw.kcha_2019, etl_batch_id_2019)
 
 # LOAD 2020 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/azure2020/etl/raw/load_raw.kcha_2020.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2020.R")
 
 # Set up etl_batch_id
 etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,

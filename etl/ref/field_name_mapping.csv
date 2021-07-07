@@ -10,7 +10,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 02f,,repaymentagreement2f,,,,,,repayment
 02g,,monthlyamountofrepaymentagreement2g,,,,,,repay_amount
 02h,dateofadmission2h,dateofadmission2h,dateofadmission2h,,,h2h,,admit_date
-,,,,earliestmovein,,,,admit_date
+02h,,,,earliestmovein,,,,admit_date
 02i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreex,nextreexamdate,,,,reexam_date
 02i,,,projectedeffectivedateofnextreexam2i,,,,,reexam_date
 02j,,dateofadmissiontomtwprogram2j,,,,,,mtw_admit_date
@@ -96,11 +96,11 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 21i,renttoowner21i,renttoowner21i,renttoowner21i,haptoowner,,h21i,,rent_owner
 21j,utilityallowancemonthlyallowances21j,utilityallowancemonthlyallowances21j,utilityallowancemonthlyallowance,utilityallowance,,h21j,,tb_util_allow
 21j,,,utilityallowancemonthlyallowance21j,,,,,tb_util_allow
-,,,utilityallowancemonthlyallowances21j,,,,,tb_util_allow
+21j,,,utilityallowancemonthlyallowances21j,,,,,tb_util_allow
 21k,grossrentofunit21k,grossrentofunit21k,grossrentofunit21k,unitgrossrent,,h21k,,rent_gross
 21m,flatsubsidyamount21m,flatsubsidyamount21m,flatsubsidyamount21m,,,h21m,,rent_subs
 21m,,,flatsubsidyammount21m,,,,,rent_subs
-,,,flastsubsidyammount21m,,,,,rent_subs
+21m,,,flastsubsidyammount21m,,,,,rent_subs
 21n,tenantrenttoowner21n,tenantrenttoowner21n,tenantrenttoowner21n,tenantrenttoowner,,h21n,,rent_tenant_owner
 21p,mixedfamilytenantrenttoowner21p,mixedfamilytenantrenttoowner21p,mixedfamilytenantrenttoowner21p,,,h21p,,rent_mixfam_owner
 21q,ceilingrentindicator21q,ceilingrentindicator21q,ceilingrentindicator21q,,,h21q,,tb_rent_ceiling
@@ -247,3 +247,4 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,fh
 ,,,,annualgrossincomefromtanf,,,,inc_t
 ,,,,annualgrossincomefromtanfformerlyafdc,,,,inc_t
 ,,,,annualgrossincomefromgeneralassistance,,,,inc_g
+,,,,vps,,,,vps

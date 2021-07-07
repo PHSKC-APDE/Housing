@@ -134,7 +134,7 @@ load_stage_sha <- function(conn = NULL,
       act_type == "Void" ~ 15L,
       act_type == "Port-Out Update (Not Submitted To MTCS)" ~ 16L,
       act_type == "Gross Rent Change" ~ 17L,
-      act_type == 99 ~ NA_integer_,
+      as.integer(act_type) == 99 ~ NA_integer_,
       TRUE ~ as.integer(act_type)))
     )
   
@@ -254,6 +254,7 @@ load_stage_sha <- function(conn = NULL,
           mutate(prog_type = 
                    case_when(str_detect(tolower(prog_type), "owned") ~ "SHA owned and managed",
                              str_detect(tolower(prog_type), "collaborative") ~ "Collaborative housing",
+                             str_detect(tolower(prog_type), "partnership") ~ "Collaborative housing",
                              str_detect(tolower(prog_type), "tenant") ~ "Tenant based")))
   
   
@@ -268,10 +269,44 @@ load_stage_sha <- function(conn = NULL,
   
   
   ## Port ins/outs ----
-  ### NEEDS REVIEW ----
-  # Look at cost_pha and addresses to flag likely port ins/outs
+  sha_raw <- sha_raw %>%
+    map(~ if ("cost_pha" %in% names(.x)) {
+      .x %>%
+        mutate(
+          # Port in
+          port_in = case_when(
+            prog_type == "PORT" ~ 1L,
+            act_type == 4 ~ 1L,
+            cost_pha != "" & cost_pha != "WA001" & 
+              # SHA seems to point to another billed PHA even when the person has ported out from SHA to another PHA, need to ignore this
+              !(str_detect(geo_add1_raw, "PORT OUT") & act_type %in% c(5, 16)) ~ 1L,
+            TRUE ~ 0L),
+          # Port out
+          # Seems to be that when SHA is missing address data and the action code == 
+          # Port-Out Update (Not Submitted To MTCS) (recoded as 16), the person is in another housing authority.
+          port_out_sha = case_when(
+            str_detect(geo_add1_raw, "PORT OUT") | act_type == 5 ~ 1,
+            act_type == 16 & cost_pha != "" ~ 1,
+            TRUE ~ 0)
+        )
+    } else {
+      .x %>%
+        mutate(
+          # Port in
+          port_in = case_when(
+            act_type == 4 ~ 1L,
+            TRUE ~ 0L),
+          # Port out
+          # Seems to be that when SHA is missing address data and the action code == 
+          # Port-Out Update (Not Submitted To MTCS) (recoded as 16), the person is in another housing authority.
+          port_out_sha = case_when(
+            str_detect(geo_add1_raw, "PORT OUT") | act_type == 5 ~ 1,
+            act_type == 16 ~ 1,
+            TRUE ~ 0)
+        )
+    })
   
-  
+
   # ADDRESS CLEANING ----
   ## Make a geo_hash_raw field for easier joining
   sha_raw <- sha_raw %>%
@@ -434,7 +469,7 @@ load_stage_sha <- function(conn = NULL,
     map(~ .x %>% left_join(., 
                            select(adds_final, geo_hash_raw:geo_hash_geocode),
                            by = "geo_hash_raw") %>%
-          select(-matches("geo_*_raw")))
+          select(-matches("geo_(.)*_raw")))
   
   # Add in geo_blank
   sha_raw <- sha_raw %>%
@@ -463,7 +498,8 @@ load_stage_sha <- function(conn = NULL,
         rename(hh_lname = lname,
                hh_fname = fname,
                hh_mname = mname) %>%
-        select(-ssn)
+        select(-ssn) %>%
+        distinct()
       
       .x <- left_join(.x, hh_names, by = c("cert_id", "act_date", "hh_ssn"))
     } else {.x})
@@ -559,7 +595,7 @@ load_stage_sha <- function(conn = NULL,
     message(qa_names_note)
   }
   
-  message(qa_names_note)
+  
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 

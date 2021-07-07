@@ -52,13 +52,13 @@ load_raw.kcha_2020 <- function(conn = NULL,
   if (nrow(kcha_p1_2020) == nrow(kcha_p2_2020) & nrow(kcha_p1_2020) == nrow(kcha_p3_2020)) {
     qa_row_result <- "PASS"
     qa_row_note <- glue("Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2020), big.mark = ',')}")
-    message(qa_row)
+    message(qa_row_note)
   } else if (nrow(kcha_p1_2020) != nrow(kcha_p1_2020) | nrow(kcha_p1_2020) != nrow(kcha_p3_2020)) {
     qa_row_result <- "FAIL"
     qa_row_note <- glue("Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2020), big.mark = ',')}, ",
                    "Panel 2 = {format(nrow(kcha_p2_2020), big.mark = ',')}, ", 
                    "Panel 3 = {format(nrow(kcha_p3_2020), big.mark = ',')}")
-    warning(qa_row)
+    warning(qa_row_note)
   }
   
   DBI::dbExecute(conn,
@@ -73,7 +73,7 @@ load_raw.kcha_2020 <- function(conn = NULL,
   # How do the number of rows compare to last time?
   rows_2019 <- as.integer(dbGetQuery(conn,
     glue_sql("SELECT qa_result FROM {`qa_schema`}.{`qa_table`} 
-             WHERE table_name = 'raw.kcha_2019' AND qa_type = 'value' AND 
+             WHERE table_name = 'pha.raw_kcha_2019' AND qa_type = 'value' AND 
              qa_item = 'row_count'", .con = conn)))
   
   row_diff <- nrow(kcha_p1_2020) - rows_2019
@@ -82,12 +82,12 @@ load_raw.kcha_2020 <- function(conn = NULL,
                       "{ifelse(row_diff < 0, 'fewer', 'more')} rows in 2020 than 2019")
   
   # Arbitrarily set 10% changes as threshold for alert
-  if (row_pct > 10) {
+  if (!is.na(row_pct) & row_pct > 10) {
     qa_row_diff_result <- "FAIL"
-    warning(qa_row_diff)
-  } else if (row_pct <= 10) {
+    warning(qa_row_diff_note)
+  } else if (!is.na(row_pct) & row_pct <= 10) {
     qa_row_diff_result <- "PASS"
-    message(qa_row_diff)
+    message(qa_row_diff_note)
   } else {
     qa_row_diff_result <- "FAIL"
     message("Something went wrong when checking the number of last year's rows. Check code.")
@@ -105,7 +105,8 @@ load_raw.kcha_2020 <- function(conn = NULL,
   # Are there any new names not seen before?
   # Note that the fields list has names for when the data are pivoted so need to account for this
   names <- c(names(kcha_p1_2020), names(kcha_p2_2020), names(kcha_p3_2020))
-  names[str_detect(names, "^h[0-9]{1,2}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9][a-z][0-9]{2}$")], 1, 3)
+  names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")], 1, 3)
+  names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")], 1, 4)
   # Just simplify all the expected race/eth and income groups into one
   names[str_detect(names, "^h3k[0-9]{2}[a-e]")] <- "h3k1"
   names[str_detect(names, "^h19[a-f][0-9]{1,2}[a-b]")] <- "h19a1"
@@ -235,6 +236,7 @@ load_raw.kcha_2020 <- function(conn = NULL,
   } else {
     # Clean up QA objects if everything passed
     rm(list = ls(pattern = "^qa_"))
+    rm(list = ls(pattern = "^row(s)?_"))
     rm(names)
     rm(dates)
     rm(prog_types)

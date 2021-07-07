@@ -35,8 +35,7 @@ devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/maste
 
 
 # SET UP VARIABLES AND CONNECTIONS ----
-options(max.print = 350, tibble.print_max = 50, warning.length = 8170,
-        scipen = 999)
+options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 999)
 
 # Assuming we are working in HHSAW so can pre-load these values
 qa_schema <- "pha"
@@ -47,7 +46,7 @@ file_path_sha <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data"
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                            driver = "ODBC Driver 17 for SQL Server",
-                           server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                           server = "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433",
                            database = "hhs_analytics_workspace",
                            uid = keyring::key_list("hhsaw")[["username"]],
                            pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
@@ -198,7 +197,7 @@ load_raw.sha_ph_2012_2017(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2012_2017, etl_batch_id_ph_2012)
+rm(load_raw.sha_ph_2012_2017, etl_batch_id_ph_2017)
 
 
 # LOAD 2018 HCV DATA ----
@@ -281,6 +280,8 @@ load_raw.sha_2019(conn = db_hhsaw,
                   qa_schema = qa_schema,
                   qa_table = qa_table,
                   file_path = file_path_sha,
+                  date_min = "2019-01-01",
+                  date_max = "2019-12-31",
                   etl_batch_id = etl_batch_id_2019)
 
 
@@ -310,6 +311,8 @@ load_raw.sha_ph_2020(conn = db_hhsaw,
                      qa_schema = qa_schema,
                      qa_table = qa_table,
                      file_path = file_path_sha,
+                     date_min = "2020-01-01",
+                     date_max = "2020-12-31",
                      etl_batch_id = etl_batch_id_ph_2020)
 
 
@@ -339,6 +342,8 @@ load_raw.sha_hcv_2020(conn = db_hhsaw,
                       qa_schema = qa_schema,
                       qa_table = qa_table,
                       file_path = file_path_sha,
+                      date_min = "2020-01-01",
+                      date_max = "2020-12-31",
                       etl_batch_id = etl_batch_id_hcv_2020)
 
 
