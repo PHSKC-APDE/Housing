@@ -31,10 +31,6 @@ load_stage_timevar <- function(conn = NULL,
   
   
   # BRING IN DATA AND COMBINE ----
-  # Once upstream stage files are changes, change the following:
-  # - subsidy_id, certificationid, vouchernumber (a proper household ID will exist)
-  # - all the hh_fields (replaced by a proper hh_id)
-  
   kcha <- dbGetQuery(
     conn,
     glue_sql(
@@ -44,10 +40,10 @@ load_stage_timevar <- function(conn = NULL,
       id_hash, ssn, lname, fname, relcode, disability, 
       hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, hh_inc_vary, 
       hh_id, subsidy_id, cert_id, vouch_num, 
-      geo_add1_raw, geo_add2_raw, portability, cost_pha, 
+      port_in, port_out_kcha, portability, cost_pha, 
       subs_type, major_prog, prog_type, vouch_type,
       geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-      geo_hash_clean, portfolio, portfolio_type
+      geo_hash_clean, geo_blank, portfolio, portfolio_type
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
       LEFT JOIN
       (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
@@ -59,24 +55,20 @@ load_stage_timevar <- function(conn = NULL,
   
   
   # Once upstream stage files are changes, change the following:
-  # - 'SHA' as agency (the actual agency iield will be fixed)
-  # - geo_add1_raw and geo_add2_raw (replace with port flag)
-  # - all the geo_..._clean fields except geo_hash_clean (replace with geo_blank)
-  # - all the hh_fields (replaced by a proper hh_id)
   sha <- dbGetQuery(
     conn,
     glue_sql(
       "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
       FROM 
-      (SELECT 'SHA' AS agency, act_type, act_date, pha_source, 
+      (SELECT agency, act_type, act_date, pha_source, 
       id_hash, ssn, lname, fname, relcode, disability, 
       hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, 
       cert_id, incasset_id, 
-      geo_add1_raw, geo_add2_raw, portability, cost_pha, 
+      port_in, port_out_sha, portability, cost_pha, 
       recert_sched,
       subs_type, major_prog, prog_type, vouch_type,
       geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-      geo_hash_clean, portfolio, property_id
+      geo_hash_clean, geo_blank, portfolio, property_id
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
       LEFT JOIN
       (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
@@ -87,12 +79,7 @@ load_stage_timevar <- function(conn = NULL,
       .con = conn))
   
   
-  # Once upstream stage files are changes, change the following:
-  # - recoding agency (the actual agency field will be fixed)
-  pha <- setDT(bind_rows(kcha %>% mutate(mbr_num = as.integer(str_remove(mbr_num, "p")),
-                                         agency = case_when(str_detect(tolower(agency), "sedro") ~ "SWHA",
-                                                            TRUE ~ "KCHA")), 
-                         sha))
+  pha <- setDT(bind_rows(kcha, sha))
   
   # Remove the rows with missing id_kc_pha since we won't be able to join on this
   pha <- pha[!is.na(id_kc_pha)]
@@ -110,7 +97,7 @@ load_stage_timevar <- function(conn = NULL,
   # Also flag when there is >1 row per ID/HH_ID combo
   pha[, hh_id_cnt := .N, by = c("id_kc_pha", "hh_id_tmp")]
   
-  # Also make a head of household ID to track hosueholds across time
+  # Also make a head of household ID to track households across time
   pha[, hh_id_long := .GRP, by = c("hh_ssn", "hh_lname", "hh_fname")]
   
   
@@ -209,12 +196,6 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## Age ----
-  ### REVIEW POINT ----
-  # This should be fixed in the demo table and not be necessary
-  pha[year(dob) > 2030 | year(dob) < 1000, dob := as.Date(format(dob, "19%y-%m-%d"))]
-  pha[between(year(dob), 1026, 1880), dob := as.Date(format(dob, "19%y-%m-%d"))]
-  pha[between(year(dob), 1000, 1025), dob := as.Date(format(dob, "20%y-%m-%d"))]
-  
   # Use this to determine time between recertifications
   pha[, age := round(interval(start = dob, end = act_date) / years(1), 1)]
   
@@ -228,15 +209,6 @@ load_stage_timevar <- function(conn = NULL,
               senior = ifelse(age >= 62, 1, 0))]
   
   pha %>% count(adult, senior)
-  
-  
-  ## geo_blank ----
-  # Easier to flag when an address is empty rather than refer to a long hash
-  # This should be set up earlier eventually
-  pha[, geo_blank := 0L]
-  pha[geo_hash_clean %in% c("45CA31C3315A5978F40438AAB46040D75E99C9B125C2FD01DB6E10AC80BEF906",
-                            "8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104"), 
-      geo_blank := 1L]
   
   
   ## Concatenated agency field ----
@@ -261,19 +233,6 @@ load_stage_timevar <- function(conn = NULL,
   hh[, has_hh := sum(hh_flag), by = "hh_id_tmp"]
   
   hh %>% count(agency, has_hh)
-  
-  
-  hh[has_hh == 0]
-  hh[hh_id_tmp == 382569]
-  
-  
-  hh[agency == "KCHA" & has_hh == 2]
-  
-  
-  hh[hh_id_tmp == 5618]
-  pha[id_kc_pha %in% c("07hgtlqdyt", "et4fcmet9f") & act_date == "2011-10-01"]
-  
-  pha[hh_id_tmp == 398219]
   
   
   
@@ -326,70 +285,41 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## Make port in and out variables ----
-  # (will be refined further after additional row consolidation)
-  
-  ### Port in
-  pha_sort[, port_in := ifelse(
-    # Need to avoid catching 'SUPPORTIVE HOUSING'
-    prog_type == "PORT" | act_type == 4 |
-      (agency == "KCHA" & cost_pha != "" & cost_pha != "WA002") |
-      (agency == "SHA" & cost_pha != "" & cost_pha != "WA001" &
-         # SHA seems to point to another billed PHA even when the person has ported out from SHA to another PHA, need to ignore this
-         !(agency == "SHA" & (str_detect(geo_add1_raw, "PORT OUT")) & 
-             act_type %in% c(5, 16))),
-    # The portability flag seems unreliable so ignoring for now
-    #| (portability %in% c("Y", "Yes") & !is.na(portability)),
-    1, 0)]
-  
   ### Port out
-  # Seems to be that when SHA is missing address data and the action code == 
-  # Port-Out Update (Not Submitted To MTCS) (recoded as 16),
-  # the person is in another housing authority.
-  pha_sort[, ':=' (
-    port_out_kcha = case_when(
-      agency == "KCHA" & (str_detect(geo_add1_raw, "PORTABLE") | act_type == 5) ~ 1,
-      TRUE ~ 0),
-    port_out_sha = case_when(
-      agency == "SHA" & (str_detect(geo_add1_raw, "PORT OUT") | act_type == 5) ~ 1,
-      agency == "SHA" & act_type == 16 & cost_pha != "" ~ 1,
-      TRUE ~ 0
-    )
-  )]
+  pha_sort[, port_out_kcha := 
+             case_when(
+               id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & 
+                 abs(act_date - lead(act_date, 1)) <= 31 & 
+                 agency == "SHA" & lead(agency, 1) == "KCHA" & 
+                 (lead(port_out_kcha, 1) == 1 | port_in == 1) &
+                 !lead(act_type, 1) %in% c(1, 4) & 
+                 cost_pha %in% c("", "WA002") & act_type != 16 ~ 1L, 
+               id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) & 
+                 abs(act_date - lag(act_date, 1)) < 31 & 
+                 agency == "SHA" & lag(agency, 1) == "KCHA" & 
+                 (lag(port_out_kcha, 1) == 1 | port_in == 1) &
+                 lag(act_type, 1) != 4 & 
+                 cost_pha %in% c("", "WA002") & act_type != 16 ~ 1L,
+               TRUE ~ port_out_kcha)]
   
-  pha_sort[, ':=' (
-    port_out_kcha = case_when(
-      ((id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & 
-          abs(act_date - lead(act_date, 1)) <= 31 & 
-          agency == "SHA" & lead(agency, 1) == "KCHA" & 
-          (lead(port_out_kcha, 1) == 1 | port_in == 1) &
-          !lead(act_type, 1) %in% c(1, 4)) |
-         (id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) & 
-            abs(act_date - lag(act_date, 1)) < 31 & 
-            agency == "SHA" & lag(agency, 1) == "KCHA" & 
-            (lag(port_out_kcha, 1) == 1 | port_in == 1) &
-            lag(act_type, 1) != 4)) & 
-        cost_pha %in% c("", "WA002") & act_type != 16 ~ 1,
-      TRUE ~ port_out_kcha),
-    port_out_sha = case_when(
-      ((id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
-          abs(act_date - lead(act_date, 1)) < 31 & 
-          agency == "KCHA" & lead(agency, 1) == "SHA" & 
-          (lead(port_out_sha, 1) == 1 | port_in == 1) &
-          lead(act_type, 1) != 4) |
-         (id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
-            abs(act_date - lag(act_date, 1)) < 31 & 
-            agency == "KCHA" & lag(agency, 1) == "SHA" & 
-            (lag(port_out_sha, 1) == 1 | port_in == 1) &
-            lag(act_type, 1) != 4)) &
-        cost_pha %in% c("", "WA001") ~ 1,
-      TRUE ~ port_out_sha))]
+  pha_sort[, port_out_sha := 
+             case_when(
+               id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+                 abs(act_date - lead(act_date, 1)) < 31 & 
+                 agency == "KCHA" & lead(agency, 1) == "SHA" & 
+                 (lead(port_out_sha, 1) == 1 | port_in == 1) &
+                 lead(act_type, 1) != 4 & cost_pha %in% c("", "WA001") ~ 1,
+               id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+                 abs(act_date - lag(act_date, 1)) < 31 & 
+                 agency == "KCHA" & lag(agency, 1) == "SHA" & 
+                 (lag(port_out_sha, 1) == 1 | port_in == 1) &
+                 lag(act_type, 1) != 4 &
+                 cost_pha %in% c("", "WA001") ~ 1,
+               TRUE ~ port_out_sha)]
   
-  pha_sort[, ':=' (port_out_kcha = ifelse(
-    agency == "SHA" & cost_pha == "WA002" & 
-      # SHA seems to point to another billed PHA even when the person has 
-      # ported out from SHA to another PHA, need to ignore this
-      !(str_detect(geo_add1_raw, "PORT OUT") & act_type %in% c(5, 16)), 1, port_out_kcha),
-    port_out_sha = ifelse(agency == "KCHA" & cost_pha == "WA001", 1, port_out_sha))]
+  pha_sort[, port_out_kcha := ifelse(agency == "SHA" & cost_pha == "WA002" & 
+                                      port_out_sha == 0L & !is.na(port_out_sha), 1, port_out_kcha)]
+  pha_sort[, port_out_sha := ifelse(agency == "KCHA" & cost_pha == "WA001", 1, port_out_sha)]
   
   
   
@@ -1292,7 +1222,6 @@ load_stage_timevar <- function(conn = NULL,
   
   # FINALIZE TABLE ----
   pha_timevar <- pha_sort
-  setnames(pha_timevar, c("startdate", "enddate"), c("from_date", "to_date"))
   
   ## Coverage time ----
   setorder(pha_timevar, id_kc_pha, from_date, to_date)

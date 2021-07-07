@@ -43,22 +43,16 @@ load_stage_demo <- function(conn = NULL,
   sha <- dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.act_date, a.admit_date, a.start_pha,
+      "SELECT DISTINCT b.id_kc_pha, a.act_date, a.admit_date, 
       a.dob, a.gender, a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
       FROM 
-      (SELECT id_hash, act_date, admit_date, start_pha, dob, gender, 
+      (SELECT id_hash, act_date, admit_date, dob, gender, 
         r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
       LEFT JOIN
       (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
       ON a.id_hash = b.id_hash",
       .con = conn))
-  
-  
-  # Temp until SHa stage can be rerun
-  sha <- sha %>%
-    mutate(admit_date = coalesce(admit_date, start_pha)) %>%
-    select(-start_pha)
   
   
   pha <- setDT(bind_rows(kcha, sha))

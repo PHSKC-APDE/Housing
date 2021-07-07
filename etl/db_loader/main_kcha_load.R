@@ -236,7 +236,7 @@ rm(load_raw.kcha_2020, etl_batch_id_2020)
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.kcha.R")
 
 # Run function
-load_stage.kcha(conn = db_hhsaw,
+load_stage_kcha(conn = db_hhsaw,
                 to_schema = "pha",
                 to_table = "stage_kcha",
                 from_schema = "pha",

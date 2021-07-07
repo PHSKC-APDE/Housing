@@ -214,7 +214,7 @@ load_stage_kcha <- function(conn = NULL,
   ## Load to a temp SQL table for cleaning (have to use prod HHSAW here) ----
   db_hhsaw_prod <- dbConnect(odbc(), "hhsaw_prod", uid = keyring::key_list("hhsaw")[["username"]])
   
-  try(dbRemoveTable(db_hhsaw_prod, "##kcha_adds"))
+  try(dbRemoveTable(db_hhsaw_prod, "##kcha_adds"), silent = T)
   odbc::dbWriteTable(db_hhsaw_prod,
                      name = "##kcha_adds",
                      value = adds_distinct,
@@ -474,6 +474,11 @@ load_stage_kcha <- function(conn = NULL,
   
   
   # ADDITIONAL CLEAN UP AFTER RESHAPING ----
+  ## Member numbers ----
+  kcha_long <- kcha_long %>%
+    map(~ .x %>%
+          mutate(mbr_num = as.integer(str_remove(mbr_num, "p"))))
+  
   ## Binary recodes ----
   kcha_long <- kcha_long %>%
     map(~ .x %>%
