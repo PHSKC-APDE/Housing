@@ -17,7 +17,7 @@
 # date_max = the maximum action date expected in the data
 # etl_batch_id = the value in the ETL logging table that corresponds to these data
 
-load_raw.sha_hcv_2020 <- function(conn = NULL,
+load_raw_sha_hcv_2020 <- function(conn = NULL,
                               to_schema = NULL,
                               to_table = NULL,
                               qa_schema = NULL,
