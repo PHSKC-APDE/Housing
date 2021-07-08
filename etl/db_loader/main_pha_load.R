@@ -43,9 +43,9 @@ qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
 
 # Connect to HHSAW
-conn <- DBI::dbConnect(odbc::odbc(),
+db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                            driver = "ODBC Driver 17 for SQL Server",
-                           server = "tcp:kcitazrhpasqldev20.database.windows.net,1433",
+                           server = "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433",
                            database = "hhs_analytics_workspace",
                            uid = keyring::key_list("hhsaw")[["username"]],
                            pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
@@ -72,8 +72,8 @@ if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities"))
 # Consolidate non- and mostly non-time varying demographics
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_demo.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage_pha_demo.R")
 
 # Run function
 load_stage_demo(conn = db_hhsaw)
@@ -94,8 +94,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 # Consolidate time varying data
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_timevar.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage_pha_timevar.R")
 
 # Run function
 load_stage_timevar(conn = db_hhsaw)

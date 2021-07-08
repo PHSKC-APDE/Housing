@@ -57,7 +57,7 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
 
 # LOAD 2004-2006 PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_ph_2004_2006.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_ph_2004_2006.R")
 
 # Set up etl_batch_id
 etl_batch_id_ph_2006 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -71,7 +71,7 @@ etl_batch_id_ph_2006 <- load_metadata_etl_log(conn = db_hhsaw,
                                               note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_ph_2004_2006(conn = db_hhsaw,
+load_raw_sha_ph_2004_2006(conn = db_hhsaw,
                           to_schema = "pha",
                           to_table = "raw_sha_ph_2004_2006",
                           qa_schema = qa_schema,
@@ -81,12 +81,12 @@ load_raw.sha_ph_2004_2006(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2004_2006, etl_batch_id_ph_2006)
+rm(load_raw_sha_ph_2004_2006, etl_batch_id_ph_2006)
 
 
 # LOAD 2004-2006 HCV DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_hcv_2004_2006.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_hcv_2004_2006.R")
 
 # Set up etl_batch_id
 etl_batch_id_hcv_2006 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -100,7 +100,7 @@ etl_batch_id_hcv_2006 <- load_metadata_etl_log(conn = db_hhsaw,
                                                note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_hcv_2004_2006(conn = db_hhsaw,
+load_raw_sha_hcv_2004_2006(conn = db_hhsaw,
                            to_schema = "pha",
                            to_table = "raw_sha_hcv_2004_2006",
                            qa_schema = qa_schema,
@@ -110,12 +110,12 @@ load_raw.sha_hcv_2004_2006(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_hcv_2004_2006, etl_batch_id_hcv_2006)
+rm(load_raw_sha_hcv_2004_2006, etl_batch_id_hcv_2006)
 
 
 # LOAD 2006-2017 HCV DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_hcv_2006_2017.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_hcv_2006_2017.R")
 
 # Set up etl_batch_id
 etl_batch_id_hcv_2017 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -129,7 +129,7 @@ etl_batch_id_hcv_2017 <- load_metadata_etl_log(conn = db_hhsaw,
                                                note = "Initial delivery of data, also covers 2006-2016 file delivered 2017-03-31")
 
 # Run function
-load_raw.sha_hcv_2006_2017(conn = db_hhsaw,
+load_raw_sha_hcv_2006_2017(conn = db_hhsaw,
                            to_schema = "pha",
                            to_table = "raw_sha_hcv_2006_2017",
                            qa_schema = qa_schema,
@@ -138,12 +138,12 @@ load_raw.sha_hcv_2006_2017(conn = db_hhsaw,
                            etl_batch_id = etl_batch_id_hcv_2017)
 
 # Clean up
-rm(load_raw.sha_hcv_2006_2017, etl_batch_id_hcv_2017)
+rm(load_raw_sha_hcv_2006_2017, etl_batch_id_hcv_2017)
 
 
 # LOAD 2007-2012 PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_ph_2007_2012.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_ph_2007_2012.R")
 
 # Set up etl_batch_id
 etl_batch_id_ph_2012 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -157,7 +157,7 @@ etl_batch_id_ph_2012 <- load_metadata_etl_log(conn = db_hhsaw,
                                               note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_ph_2007_2012(conn = db_hhsaw,
+load_raw_sha_ph_2007_2012(conn = db_hhsaw,
                           to_schema = "pha",
                           to_table = "raw_sha_ph_2007_2012",
                           qa_schema = qa_schema,
@@ -167,13 +167,13 @@ load_raw.sha_ph_2007_2012(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2007_2012, etl_batch_id_ph_2012)
+rm(load_raw_sha_ph_2007_2012, etl_batch_id_ph_2012)
 
 
 
 # LOAD 2012-2017 PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_ph_2012_2017.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_ph_2012_2017.R")
 
 # Set up etl_batch_id
 etl_batch_id_ph_2017 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -187,7 +187,7 @@ etl_batch_id_ph_2017 <- load_metadata_etl_log(conn = db_hhsaw,
                                               note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_ph_2012_2017(conn = db_hhsaw,
+load_raw_sha_ph_2012_2017(conn = db_hhsaw,
                           to_schema = "pha",
                           to_table = "raw_sha_ph_2012_2017",
                           qa_schema = qa_schema,
@@ -197,12 +197,12 @@ load_raw.sha_ph_2012_2017(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2012_2017, etl_batch_id_ph_2017)
+rm(load_raw_sha_ph_2012_2017, etl_batch_id_ph_2017)
 
 
 # LOAD 2018 HCV DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_hcv_2018.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_hcv_2018.R")
 
 # Set up etl_batch_id
 etl_batch_id_hcv_2018 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -216,7 +216,7 @@ etl_batch_id_hcv_2018 <- load_metadata_etl_log(conn = db_hhsaw,
                                                note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_hcv_2018(conn = db_hhsaw,
+load_raw_sha_hcv_2018(conn = db_hhsaw,
                       to_schema = "pha",
                       to_table = "raw_sha_hcv_2018",
                       qa_schema = qa_schema,
@@ -226,12 +226,12 @@ load_raw.sha_hcv_2018(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_hcv_2018, etl_batch_id_hcv_2018)
+rm(load_raw_sha_hcv_2018, etl_batch_id_hcv_2018)
 
 
 # LOAD 2018 PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_ph_2018.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_ph_2018.R")
 
 # Set up etl_batch_id
 etl_batch_id_ph_2018 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -245,7 +245,7 @@ etl_batch_id_ph_2018 <- load_metadata_etl_log(conn = db_hhsaw,
                                               note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_ph_2018(conn = db_hhsaw,
+load_raw_sha_ph_2018(conn = db_hhsaw,
                      to_schema = "pha",
                      to_table = "raw_sha_ph_2018",
                      qa_schema = qa_schema,
@@ -255,12 +255,12 @@ load_raw.sha_ph_2018(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2018, etl_batch_id_ph_2018)
+rm(load_raw_sha_ph_2018, etl_batch_id_ph_2018)
 
 
 # LOAD 2019 HCV AND PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_2019.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_2019.R")
 
 # Set up etl_batch_id
 etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -274,7 +274,7 @@ etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_2019(conn = db_hhsaw,
+load_raw_sha_2019(conn = db_hhsaw,
                   to_schema = "pha",
                   to_table = "raw_sha_2019",
                   qa_schema = qa_schema,
@@ -286,12 +286,12 @@ load_raw.sha_2019(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_2019, etl_batch_id_2019)
+rm(load_raw_sha_2019, etl_batch_id_2019)
 
 
 # LOAD 2020 PH DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_ph_2020.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_ph_2020.R")
 
 # Set up etl_batch_id
 etl_batch_id_ph_2020 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -305,7 +305,7 @@ etl_batch_id_ph_2020 <- load_metadata_etl_log(conn = db_hhsaw,
                                               note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_ph_2020(conn = db_hhsaw,
+load_raw_sha_ph_2020(conn = db_hhsaw,
                      to_schema = "pha",
                      to_table = "raw_sha_ph_2020",
                      qa_schema = qa_schema,
@@ -317,12 +317,12 @@ load_raw.sha_ph_2020(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_ph_2020, etl_batch_id_ph_2020)
+rm(load_raw_sha_ph_2020, etl_batch_id_ph_2020)
 
 
 # LOAD 2020 HCV DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.sha_hcv_2020.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_hcv_2020.R")
 
 # Set up etl_batch_id
 etl_batch_id_hcv_2020 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -336,7 +336,7 @@ etl_batch_id_hcv_2020 <- load_metadata_etl_log(conn = db_hhsaw,
                                                note = "Initial delivery of data")
 
 # Run function
-load_raw.sha_hcv_2020(conn = db_hhsaw,
+load_raw_sha_hcv_2020(conn = db_hhsaw,
                       to_schema = "pha",
                       to_table = "raw_sha_hcv_2020",
                       qa_schema = qa_schema,
@@ -348,13 +348,13 @@ load_raw.sha_hcv_2020(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.sha_hcv_2020, etl_batch_id_hcv_2020)
+rm(load_raw_sha_hcv_2020, etl_batch_id_hcv_2020)
 
 
 
 # MAKE STAGE SHA TABLE ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.sha.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_sha.R")
 
 # Run function
 load_stage_sha(conn = db_hhsaw,

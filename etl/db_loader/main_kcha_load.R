@@ -57,7 +57,7 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
 
 # LOAD 2004-2015 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2004_2015.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2004_2015.R")
 
 # Set up etl_batch_id
 etl_batch_id_2015 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -71,7 +71,7 @@ etl_batch_id_2015 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2004_2015(conn = db_hhsaw,
+load_raw_kcha_2004_2015(conn = db_hhsaw,
                         to_schema = "pha",
                         to_table = "raw_kcha_2004_2015",
                         qa_schema = qa_schema,
@@ -81,12 +81,12 @@ load_raw.kcha_2004_2015(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2004_2015, etl_batch_id_2015)
+rm(load_raw_kcha_2004_2015, etl_batch_id_2015)
 
 
 # LOAD 2016 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2016.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2016.R")
 
 # Set up etl_batch_id
 etl_batch_id_2016 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -100,7 +100,7 @@ etl_batch_id_2016 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2016(conn = db_hhsaw,
+load_raw_kcha_2016(conn = db_hhsaw,
                    to_schema = "pha",
                    to_table = "raw_kcha_2016",
                    qa_schema = qa_schema,
@@ -110,12 +110,12 @@ load_raw.kcha_2016(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2016, etl_batch_id_2016)
+rm(load_raw_kcha_2016, etl_batch_id_2016)
 
 
 # LOAD 2017 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2017.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2017.R")
 
 # Set up etl_batch_id
 etl_batch_id_2017 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -129,7 +129,7 @@ etl_batch_id_2017 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2017(conn = db_hhsaw,
+load_raw_kcha_2017(conn = db_hhsaw,
                    to_schema = "pha",
                    to_table = "raw_kcha_2017",
                    qa_schema = qa_schema,
@@ -139,12 +139,12 @@ load_raw.kcha_2017(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2017, etl_batch_id_2017)
+rm(load_raw_kcha_2017, etl_batch_id_2017)
 
 
 # LOAD 2018 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2018.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2018.R")
 
 # Set up etl_batch_id
 etl_batch_id_2018 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -158,7 +158,7 @@ etl_batch_id_2018 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2018(conn = db_hhsaw,
+load_raw_kcha_2018(conn = db_hhsaw,
                    to_schema = "pha",
                    to_table = "raw_kcha_2018",
                    qa_schema = qa_schema,
@@ -168,12 +168,12 @@ load_raw.kcha_2018(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2018, etl_batch_id_2018)
+rm(load_raw_kcha_2018, etl_batch_id_2018)
 
 
 # LOAD 2019 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2019.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2019.R")
 
 # Set up etl_batch_id
 etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -187,7 +187,7 @@ etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2019(conn = db_hhsaw,
+load_raw_kcha_2019(conn = db_hhsaw,
                    to_schema = "pha",
                    to_table = "raw_kcha_2019",
                    qa_schema = qa_schema,
@@ -197,12 +197,12 @@ load_raw.kcha_2019(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2019, etl_batch_id_2019)
+rm(load_raw_kcha_2019, etl_batch_id_2019)
 
 
 # LOAD 2020 DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw.kcha_2020.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_2020.R")
 
 # Set up etl_batch_id
 etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -216,7 +216,7 @@ etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,
                                            note = "Initial delivery of data")
 
 # Run function
-load_raw.kcha_2020(conn = db_hhsaw,
+load_raw_kcha_2020(conn = db_hhsaw,
                    to_schema = "pha",
                    to_table = "raw_kcha_2020",
                    qa_schema = qa_schema,
@@ -228,12 +228,12 @@ load_raw.kcha_2020(conn = db_hhsaw,
 
 
 # Clean up
-rm(load_raw.kcha_2020, etl_batch_id_2020)
+rm(load_raw_kcha_2020, etl_batch_id_2020)
 
 
 # MAKE STAGE KCHA TABLE ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.kcha.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_kcha.R")
 
 # Run function
 load_stage_kcha(conn = db_hhsaw,
