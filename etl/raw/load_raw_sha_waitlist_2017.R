@@ -15,7 +15,7 @@ load_raw_sha_waitlist_2017 <- function(conn = NULL,
                                        to_table = "raw_sha_waitlist_2017") {
   # BRING IN DATA ----
   # File paths are hard coded for now
-  sha_waitlist <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/2017 HCV Waitlist with Flag for TBV Lease Up.csv")
+  sha_waitlist <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Waitlist data/SHA_HCV_2017_Lottery_data_received 2021-05-26.csv")
   
   
   ## Load to SQL ----

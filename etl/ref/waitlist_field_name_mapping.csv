@@ -5,11 +5,33 @@ HouseholdMemberID,memberrecid,app_mbr_num,Individual ID associated with applican
 ,,hh_mbr_num,Head of household ID1
 HeadOfHouseholdID2,,hh_mbr_num2,Head of household ID2 (seems to be a straight duplicate of HeadOfHouseholdID)
 HOH_SSN,,hh_ssn,Head of household Social Security Number
+HOH_LastName,,hh_lname,Head of household last name
+HOH_FirstName,,hh_fname,Head of household first name
+HOH_MiddleInitial,,hh_mname,Head of household middle initial
+HOH_DateOfBirth,,hh_dob,Head of household date of birth
+HOH_Gender,,hh_gender,Head of household gender
+HOH_IsDisabled,,hh_disability,Head of household disability flag
+HOH_IsWhite,,hh_r_white,Head of household race - White
+HOH_IsAfricanAmerican,,hh_r_black,Head of household race - Black
+HOH_IsNativeAmerican,,hh_r_aian,Head of household race - American Indian/Alaskan Native
+HOH_IsAsian,,hh_r_asian,Head of household race - Asian
+HOH_IsHawaiianPacificIslander,,hh_r_nhpi,Head of household race - Native Hawaiian/Pacific Islander
+HOH_Ethnicity,,hh_r_hisp,Head of household race - Latinx
+HOH_EducationLevel,,hh_education,Head of household education level
+EducationLevel,,hh_education,"Head of household education level (even though it it is not flagged as head of household, each HH member has the same value)"
+HOH_IsHouseholdMemberVeteran,,hh_veteran,Head of household veteran flag
+HOH_IsEnglishPrimaryLanguage,,lang_eng,Flag to indicate English is primary household language
+IsEnglishPrimaryLanguage,,lang_eng,Flag to indicate English is primary household language
+HOH_PrimaryLanguage,,lang,Primary household language
+PrimaryLanguage,primarylanguage,lang,Primary household language
+HOH_IsInterpreterNeeded,,lang_interpreter,Interpreter required
+IsInterpreterNeeded,translationneeded,lang_interpreter,Interpreter required
 LastName,lname,lname,Last name
 FirstName,fname,fname,First name
 MiddleInitial,mi,mname,Middile initial
 ,fullname,name,Collated first and last name
 DOB,dob,dob,Date of birth
+DateOfBirth,,dob,Date of birth
 ,age,age,Age (assume calculated at time of application)
 ,cmto_under15,cmto_under15,Candidate for Moving to Opportunity - aged under 15?
 ,cmto_under13,cmto_under13,Candidate for Moving to Opportunity - aged under 13?
@@ -28,26 +50,24 @@ IsHawaiianPacificIslander,pacislnd,r_nhpi,Race - Native Hawaiian/Pacific Islande
 Ethnicity,hispanic,r_hisp,Race - Latinx
 ,multi_racial,r_multi,Race - multiple
 ,race_ethnicity,r_eth,Race - collapsed race/ethnicity (not sure of algorithm used to generate this)
-IsEnglishPrimaryLanguage,,lang_eng,Flag to indicate English is primary language
-PrimaryLanguage,primarylanguage,lang,Primary language
-IsInterpreterNeeded,translationneeded,lang_interpreter,Interpret required
-EducationLevel,,education,Education level
 IsHouseholdMemberVeteran,usveteran,veteran,Veteran flag
 RN,,rn,Unclear what this refers to
-,addr,unit_add,Current address - street address
-,aptnum,unit_apt,Current address - apartment number
-,city,unit_city,Current address - city
-,state,unit_state,Current address - state
-,zip,unit_zip,Current address - ZIP
-,COUNTY_ZIP,unit_zip_county,Current address - county based on ZIP
-,PO_BOX,unit_po_box,Flag to indicate address is a PO box?
-,NO_ADDR,unit_missing,Flag to indicate address is missing?
-MailingAddress1,mailaddr,mail_add,Mailing address - street address
-MailingApartment,mailaptnum,mail_apt,Mailing address - apartment number
-MailingAddress2,,mail_apt2,Mailing address - street address 2
-MailingCity,mailcity,mail_city,Mailing address - city
-MailingState,mailstate,mail_state,Mailing address - state
-MailingZip,mailzip,mail_zip,Mailing address - ZIP
+ResidenceAddress1,addr,geo_add1_raw,Current address - street address
+ResidenceApartment,aptnum,geo_add2_raw,Current address - apartment number
+ResidenceAddress2,,geo_add3_raw,
+ResidenceCity,city,geo_city_raw,Current address - city
+ResidenceState,state,geo_state_raw,Current address - state
+ResidenceZip,zip,geo_zip_raw,Current address - ZIP
+,COUNTY_ZIP,geo_county_raw,Current address - county based on ZIP
+,PO_BOX,geo_po_box_raw,Flag to indicate address is a PO box?
+,NO_ADDR,geo_missing_raw,Flag to indicate address is missing?
+IsResidentialAddressDifferentThanMailing,,geo_res_mail_diff,Flag to indicate residential and mailing addresses are different
+MailingAddress1,mailaddr,geo_mail_add1_raw,Mailing address - street address
+MailingApartment,mailaptnum,geo_mail_add2_raw,Mailing address - apartment number
+MailingAddress2,,geo_mail_add3_raw,Mailing address - street address 2
+MailingCity,mailcity,geo_mail_city_raw,Mailing address - city
+MailingState,mailstate,geo_mail_state_raw,Mailing address - state
+MailingZip,mailzip,geo_mail_zip_raw,Mailing address - ZIP
 SleptLastNightLocation,,current_housing,Current housing situation
 ,liveown,live_own,In past 12 months stayed in residence owned by household
 ,liverent,live_rent,In past 12 months stayed in unsubsidized private rental
