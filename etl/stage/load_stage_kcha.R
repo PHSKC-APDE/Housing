@@ -528,7 +528,9 @@ load_stage_kcha <- function(conn = NULL,
                                        TRUE ~ hh_mname),
                  hh_fname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & str_sub(hh_fname, -1) == hh_mname ~ 
                                          str_sub(hh_fname, 1, -3),
-                                       TRUE ~ hh_fname)) %>%
+                                       TRUE ~ hh_fname),
+                 # Remove any first name unknown values
+                 across(c("fname", "hh_fname"), ~ ifelse(. == "FNU", NA_character_, .))) %>%
           select(-f_init, -f_init_hh))
   
   

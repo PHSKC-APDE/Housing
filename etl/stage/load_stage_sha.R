@@ -196,7 +196,9 @@ load_stage_sha <- function(conn = NULL,
                                        TRUE ~ mname),
                  fname = case_when(str_detect(f_init, "[:space:][A-Z]") & str_sub(fname, -1) == mname ~ 
                                          str_sub(fname, 1, -3),
-                                       TRUE ~ fname)) %>%
+                                       TRUE ~ fname),
+                 # Remove any first name unknown values
+                 across(c("fname", "hh_fname"), ~ ifelse(. == "FNU", NA_character_, .))) %>%
           select(-f_init)
         ) %>%
     map(~ if ("hh_fname" %in% names(.x)) {
