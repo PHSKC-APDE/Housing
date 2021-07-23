@@ -35,8 +35,7 @@ library(RecordLinkage) # Manage identities across data sources
 
 
 # SET UP VARIABLES AND CONNECTIONS ----
-options(max.print = 350, tibble.print_max = 50, warning.length = 8170,
-        scipen = 999)
+options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 999)
 
 # Assuming we are working in HHSAW so can pre-load these values
 qa_schema <- "pha"
@@ -132,7 +131,7 @@ devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/maste
 load_stage_demo(conn = db_hhsaw)
 
 # QA stage table
-qa_stage_pha_demo(conn = db_hhsaw, load_only = T)
+qa_stage_pha_demo(conn = db_hhsaw, load_only = F)
 
 
 ## Final ----
@@ -154,7 +153,7 @@ devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/maste
 load_stage_timevar(conn = db_hhsaw)
 
 # QA stage table
-qa_stage_pha_timevar(conn = db_hhsaw, load_only = T)
+qa_stage_pha_timevar(conn = db_hhsaw, load_only = F)
 
 
 ## Final ----

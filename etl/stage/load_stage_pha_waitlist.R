@@ -12,7 +12,7 @@
 
 load_stage_pha_waitlist <- function(conn = NULL,
                                     to_schema = "pha",
-                                    to_table = "syage_pha_waitlist") {
+                                    to_table = "stage_pha_waitlist") {
   
   # Hard coding it all for now, could make more dynamic later
   
