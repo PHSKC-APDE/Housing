@@ -22,7 +22,7 @@
 
   
   # BRING IN DATA ----
-  # Set these up manually for now but possible use a function later
+  # Set these up manually for now but possibly use a function later
   qa_schema <- "pha"
   qa_table <- "metadata_qa"
   from_schema <- "pha"
@@ -255,12 +255,6 @@
            dob_d = as.numeric(lubridate::day(dob)),
            rowid = row_number())
   
-  # Make a bare bones version with no excluded variables
-  names_min <- names_use %>% 
-    select(ssn_id, lname, fname, mname, female, dob_y, dob_m, dob_d) %>%
-    distinct()
-  
-  
   
   # FIRST PASS: BLOCK ON SSN OR PHA ID ----
   ## Run deduplication ----
@@ -286,9 +280,16 @@
   
   ## Review output and select cutoff point(s) ----
   pairs_01 %>% 
-    filter(Weight >= 0.71 & 
-             ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1"))
-           ) %>%
+    # filter(Weight >= 0.7 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+    #          dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
+    # filter(Weight >= 0.65 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+    #          dob_y.1 == dob_y.2 & (dob_m.1 != dob_m.2 | dob_d.1 != dob_d.2)) %>%
+    # filter(Weight >= 0.6 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+    #          dob_y.1 == dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
+    # filter(Weight >= 0.74 & ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+    #          dob_y.1 == dob_y.2) %>%
+    filter(Weight >= 0.76 & ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+             dob_y.1 != dob_y.2) %>%
     select(id1, ssn_id.1, lname.1, fname.1, mname.1, dob.1, female.1,
                       id2, ssn_id.2, lname.2, fname.2, mname.2, dob.2, female.2,
                       Weight) %>%
@@ -296,10 +297,26 @@
   
   
   pairs_01_trunc <- pairs_01 %>%
-    filter((
-      (Weight >= 0.6 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1"))) | 
-        (Weight >= 0.71 & ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")))
-      ))
+    filter(
+      # Non-Jan 1 birth dates
+      (!((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
+         (
+           # Full DOB match
+           (Weight >= 0.6 & dob_y.1 == dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) |
+             # Year mismatch but month and day match
+             (Weight >= 0.71 & dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) |
+             # Year match but month or day mismatch
+             (Weight >= 0.65 & dob_y.1 == dob_y.2 & (dob_m.1 != dob_m.2 | dob_d.1 != dob_d.2))
+         )) |
+      # Jan 1 birth dates
+      (((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) & 
+         (
+           # Year match
+           (Weight >= 0.74 & dob_y.1 == dob_y.2) |
+             # Year non-match (actually works out with same Weight)
+             (Weight >= 0.74 & dob_y.1 != dob_y.2)
+         ))
+      )
   
   
   ## Collapse IDs ----
@@ -315,6 +332,7 @@
     stop("Some id_hash values are associated with multiple clusterid_1 values. ",
          "Check what went wrong.")
   }
+  
   
   
   # SECOND PASS: BLOCK ON PHONETIC LNAME, FNAME AND DOB ----
@@ -443,6 +461,17 @@
                           VALUES (NULL, {min(names_final$last_run)}, 
                                   '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'row_count', {nrow(names_final)},
+                                  {Sys.time()}, NULL)",
+                          .con = conn))
+  
+  # Number of IDs
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, 
+                            qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES (NULL, {min(names_final$last_run)}, 
+                                  '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
+                                  'value', 'id_count', {n_distinct(names_final$id_kc_pha)},
                                   {Sys.time()}, NULL)",
                           .con = conn))
   

@@ -80,6 +80,7 @@ load_stage_pha_waitlist <- function(conn = NULL,
     map(~ .x %>%
           mutate(across(where(is.character), ~ str_squish(.)),
                  across(where(is.character), ~ ifelse(. == "NULL", NA_character_, .)),
+                 across(where(is.character), ~ ifelse(. == "", NA_character_, .)),
                  app_mbr_num = as.numeric(app_mbr_num))
     )
   
@@ -88,11 +89,11 @@ load_stage_pha_waitlist <- function(conn = NULL,
   pha <- pha %>%
     map(~ .x %>%
           mutate(ssn = str_replace_all(ssn, "-", ""),
-                 across(where(is.character), ~ ifelse(. == "NULL", NA_character_, .)),
                  # Remove accents etc on names and set to caps
                  across(contains("name"), ~ toupper(iconv(., from = '', to = 'ASCII//TRANSLIT'))),
                  across(contains("name"), ~ str_remove_all(., "\\.")),
                  across(contains("name"), ~ str_squish(.)),
+                 across(contains("name"), ~ ifelse(. == "", NA_character_, .)),
                  # Remove first name unknown acronyms
                  fname = ifelse (fname == "FNU", NA_character_, fname))
     )
@@ -174,10 +175,12 @@ load_stage_pha_waitlist <- function(conn = NULL,
                        group_by(app_num) %>%
                        mutate(ssn_cnt = n_distinct(ssn, na.rm = T)) %>%
                        ungroup() %>%
-                       mutate(ssn_chk = case_when(ssn_cnt > 1 | hh_size == 1 ~ ssn,
+                       mutate(ssn = case_when(ssn_cnt > 1 | hh_size == 1 ~ ssn,
                                               ssn_cnt == 1 & relcode %in% c("H", "Head of Household") ~ ssn,
                                               TRUE ~ NA_character_)) %>%
-                       select(-ssn_cnt))
+                       select(-ssn_cnt) %>%
+                       mutate(across(any_of(c("ssn", "hh_ssn")),
+                                     ~ str_pad(round(as.numeric(.), digits = 0), width = 9, side = "left", pad = "0"))))
   
   
   ## Living situation ----

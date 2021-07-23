@@ -179,13 +179,13 @@ load_stage_sha <- function(conn = NULL,
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ toupper(.))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ ifelse(. == "", NA_character_, .))) %>%
-          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ str_replace(., "`", "'"))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ str_replace(., "_", "-"))) %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ str_replace(., "NULL|\\.|\"|\\\\", ""))) %>%
+          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ ifelse(. == "", NA_character_, .))) %>%
           # Clean up where middle initial seems to be in first name field
           # NOTE: There are many rows with a middle initial in the fname field AND 
           # the mname field (and the initials are not always the same).
@@ -198,7 +198,7 @@ load_stage_sha <- function(conn = NULL,
                                          str_sub(fname, 1, -3),
                                        TRUE ~ fname),
                  # Remove any first name unknown values
-                 across(c("fname", "hh_fname"), ~ ifelse(. == "FNU", NA_character_, .))) %>%
+                 across(any_of(c("fname", "hh_fname")), ~ ifelse(. == "FNU", NA_character_, .))) %>%
           select(-f_init)
         ) %>%
     map(~ if ("hh_fname" %in% names(.x)) {

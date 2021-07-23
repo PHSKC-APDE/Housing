@@ -59,21 +59,77 @@ load_raw_kcha_waitlist_2017(conn = db_hhsaw, to_schema = "pha", to_table = "raw_
 load_raw_sha_waitlist_2017(conn = db_hhsaw, to_schema = "pha", to_table = "raw_sha_waitlist_2017")
 
 
-# STAGE ----
+# COMBINED STAGE TABLE ----
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_waitlist.R")
+
+load_stage_pha_waitlist(conn = db_hhsaw, to_schema = "pha", to_table = "stage_pha_waitlist")
 
 
 # RUN IDENTITY MATCHING PROCESS ----
 ## Stage ----
 
 
-## Final ----
+## Final identities ----
 # Manually for now, fix later
 if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities"))) {
-  stop("Sort out the archiving process")
-} else {
-  dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities FROM pha.stage_identities")
+  # First back up existing archive table
+  if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities"))) {
+    dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities', 'archive_identities_bak'")
+  }
+  # Then move final table to archive
+  dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities FROM pha.final_identities")
+  
+  # Check final table is backed up proper
+  rows_archive <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.archive_identities"))
+  rows_final <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.final_identities"))
+  
+  if (rows_archive != rows_final | rows_final == 0) {
+    stop("Something went wrong backing up pha.final_identities")
+  } else {
+    message("pha.final_identities backed up, deleting archive backup (if it exists)")
+    if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_bak"))) {
+      dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_bak")
+    }
+    rm(rows_archive, rows_final)
+  }
+  
+  # Then truncate final in preparation for loading stage
+  dbExecute(db_hhsaw, "DROP TABLE pha.final_identities")
 }
+# Load from stage to final
+dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities FROM pha.stage_identities")
+
+
+## Final identity history ----
+# Manually for now, fix later
+if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities_history"))) {
+  # First back up existing archive table
+  if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history"))) {
+    dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities_history', 'archive_identities_history_bak'")
+  }
+  # Then move final table to archive
+  dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities_history FROM pha.final_identities_history")
+  
+  # Check final table is backed up proper
+  rows_archive <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.archive_identities_history"))
+  rows_final <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.final_identities_history"))
+  
+  if (rows_archive != rows_final | rows_final == 0) {
+    stop("Something went wrong backing up pha.final_identities_history")
+  } else {
+    message("pha.final_identities_history backed up, deleting archive backup (if it exists)")
+    if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history_bak"))) {
+      dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_history_bak")
+    }
+    rm(rows_archive, rows_final)
+  }
+  
+  # Then truncate final in preparation for loading stage
+  dbExecute(db_hhsaw, "DROP TABLE pha.final_identities_history")
+}
+# Load from stage to final
+dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_identities_history")
+
 
 
 
