@@ -500,17 +500,20 @@ load_stage_kcha <- function(conn = NULL,
   
   
   ## Names ----
+  # Set up suffixes to remove
+  suffix <- c(" SR", " JR", "-JR", "JR", "JR I", "JR II", "JR III", " II", " III", " IV")
+  
   kcha_long <- kcha_long %>%
     map(~ .x %>%
           mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ toupper(.))) %>%
-          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ str_replace(., "`", "'"))) %>%
-          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ str_replace(., "_", "-"))) %>%
-          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
-                        ~ str_replace(., "NULL|\\.|\"|\\\\", ""))) %>%
-          mutate(across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ toupper(.)),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "_|-", " ")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "NULL|\\.|\"|\\\\|'|`|[0-9]", "")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace_all(., paste(suffix, "$", collapse="|", sep = ""), "")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ ifelse(. == "", NA_character_, .))) %>%
           # Clean up where middle initial seems to be in first name field
           # NOTE: There are many rows with a middle initial in the fname field AND 
@@ -529,9 +532,35 @@ load_stage_kcha <- function(conn = NULL,
                  hh_fname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & str_sub(hh_fname, -1) == hh_mname ~ 
                                          str_sub(hh_fname, 1, -3),
                                        TRUE ~ hh_fname),
+                 # when middle initial is not a letter, replace it with NA
+                 across(any_of(c("hh_mname", "mname")), ~ ifelse(str_detect(., "[A-Z]", negate = T), NA, .)),
                  # Remove any first name unknown values
-                 across(c("fname", "hh_fname"), ~ ifelse(. == "FNU", NA_character_, .))) %>%
-          select(-f_init, -f_init_hh))
+                 across(c("fname", "hh_fname"), ~ ifelse(. == "FNU", NA_character_, .)),
+                 # Flag baby and institutional names for cleaning
+                 drop_name = case_when(fname %in% c("UNBORN", "BABY", "MIRACLE", "CHILD") & 
+                                         lname %in% c("UNBORN", "BABY", "CHILD") ~ 1L,
+                                       lname == "YWCA" ~ 1L,
+                                       lname == "ELDER" & fname == "PLACE" ~ 1L,
+                                       lname == "ELDER PLACE" ~ 1L,
+                                       str_detect(lname, "LIVE IN") ~ 1L,
+                                       str_detect(fname, "LIVE IN") ~ 1L,
+                                       TRUE ~ 0L),
+                 drop_name_hh = case_when(hh_fname %in% c("UNBORN", "BABY", "MIRACLE", "CHILD") & 
+                                            hh_lname %in% c("UNBORN", "BABY", "CHILD") ~ 1L,
+                                          hh_lname == "YWCA" ~ 1L,
+                                          hh_lname == "ELDER" & hh_fname == "PLACE" ~ 1L,
+                                          hh_lname == "ELDER PLACE" ~ 1L,
+                                       str_detect(hh_lname, "LIVE IN") ~ 1L,
+                                       str_detect(hh_fname, "LIVE IN") ~ 1L,
+                                       TRUE ~ 0L),
+                 # Clean baby and other names
+                 across(any_of(c("lname", "fname", "mname")), ~ ifelse(drop_name == 1, NA, .)),
+                 fname = ifelse(fname %in% c("UNBORN", "BABY"), NA, fname),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname")), ~ ifelse(drop_name_hh == 1, NA, .))
+                 ) %>%
+          select(-f_init, -f_init_hh, -drop_name, -drop_name_hh) %>% 
+          filter(!(lname == "DUFUS" & fname == "IAM"))
+        )
   
   
   ## SSNs ----
@@ -543,8 +572,8 @@ load_stage_kcha <- function(conn = NULL,
     map(~ .x %>%
           mutate(across(any_of(c("ssn", "hh_ssn")), ~ str_replace_all(., "-", "")),
                  across(any_of(c("ssn", "hh_ssn")), 
-                        ~ case_when(. %in% c("010010101", "011223333", "111111111", "112234455", 
-                                             "111119999", "123121234", "123123123", "123456789", 
+                        ~ case_when(. %in% c("010010101", "011111111", "011223333", 
+                                             "111111111", "112234455", "111119999", "123121234", "123123123", "123456789", 
                                              "222111212", "222332222",
                                              "333333333", "444444444", 
                                              "555112222", "555115555", "555555555", "555555566",

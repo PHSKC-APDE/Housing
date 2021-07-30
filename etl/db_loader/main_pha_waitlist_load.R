@@ -155,7 +155,7 @@ if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
 dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 
 
-# MAKE TIMEVARE TABLE ----
+# MAKE TIMEVAR TABLE ----
 # Consolidate time varying data
 ## Stage ----
 # Bring in functions

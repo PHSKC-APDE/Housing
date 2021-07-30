@@ -84,7 +84,7 @@ load_stage_pha_waitlist <- function(conn = NULL,
                  app_mbr_num = as.numeric(app_mbr_num))
     )
   
-  ## Set up fields for identity matching ----
+  ## Names ----
   # Clean up fields
   pha <- pha %>%
     map(~ .x %>%
@@ -95,8 +95,62 @@ load_stage_pha_waitlist <- function(conn = NULL,
                  across(contains("name"), ~ str_squish(.)),
                  across(contains("name"), ~ ifelse(. == "", NA_character_, .)),
                  # Remove first name unknown acronyms
-                 fname = ifelse (fname == "FNU", NA_character_, fname))
-    )
+                 fname = ifelse (fname == "FNU", NA_character_, fname),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ toupper(.)),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "_|-", " ")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace(., "NULL|\\.|\"|\\\\|'|`|[0-9]", "")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_replace_all(., paste(suffix, "$", collapse="|", sep = ""), "")),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ ifelse(. == "", NA_character_, .))) %>%
+          # Clean up where middle initial seems to be in first name field
+          # NOTE: There are many rows with a middle initial in the fname field AND 
+          # the mname field (and the initials are not always the same).
+          # In those situations, keep existing middle initial and drop from fname if
+          # the initial is the same
+          mutate(f_init = str_sub(fname, -2, -1),
+                 mname = case_when(str_detect(f_init, "[:space:][A-Z]") & is.na(mname) ~ str_sub(fname, -1),
+                                   TRUE ~ mname),
+                 fname = case_when(str_detect(f_init, "[:space:][A-Z]") & str_sub(fname, -1) == mname ~ 
+                                     str_sub(fname, 1, -3),
+                                   TRUE ~ fname),
+                 # Remove any first name unknown values
+                 across(any_of(c("fname", "hh_fname")), ~ ifelse(. == "FNU", NA_character_, .)),
+                 # Flag baby and institutional names for cleaning
+                 drop_name = case_when(fname %in% c("UNBORN", "BABY", "MIRACLE", "CHILD") & 
+                                         lname %in% c("UNBORN", "BABY", "CHILD") ~ 1L,
+                                       lname == "YWCA" ~ 1L,
+                                       lname == "ELDER" & fname == "PLACE" ~ 1L,
+                                       lname == "ELDER PLACE" ~ 1L,
+                                       str_detect(lname, "LIVE IN") ~ 1L,
+                                       str_detect(fname, "LIVE IN") ~ 1L,
+                                       TRUE ~ 0L),
+                 # Clean baby and other names
+                 across(any_of(c("lname", "fname", "mname")), ~ ifelse(drop_name == 1, NA, .)),
+                 fname = ifelse(fname %in% c("UNBORN", "BABY"), NA, fname)) %>%
+          select(-f_init, -drop_name)
+    ) %>%
+    map(~ if ("hh_fname" %in% names(.x)) {
+      .x %>% mutate(f_init_hh = str_sub(hh_fname, -2, -1),
+                    hh_mname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & is.na(hh_mname) ~ str_sub(hh_fname, -1),
+                                         TRUE ~ hh_mname),
+                    hh_fname = case_when(str_detect(f_init_hh, "[:space:][A-Z]") & str_sub(hh_fname, -1) == hh_mname ~ 
+                                           str_sub(hh_fname, 1, -3),
+                                         TRUE ~ hh_fname),
+                    drop_name_hh = case_when(hh_fname %in% c("UNBORN", "BABY", "MIRACLE", "CHILD") & 
+                                               hh_lname %in% c("UNBORN", "BABY", "CHILD") ~ 1L,
+                                             hh_lname == "YWCA" ~ 1L,
+                                             hh_lname == "ELDER" & hh_fname == "PLACE" ~ 1L,
+                                             hh_lname == "ELDER PLACE" ~ 1L,
+                                             str_detect(hh_lname, "LIVE IN") ~ 1L,
+                                             str_detect(hh_fname, "LIVE IN") ~ 1L,
+                                             TRUE ~ 0L),
+                    across(any_of(c("hh_lname", "hh_fname", "hh_mname")), ~ ifelse(drop_name_hh == 1, NA, .))) %>%
+        select(-f_init_hh, -drop_name_hh)} 
+      else {.x})
   
   
   # Run function to flag junk SSNs (more comprehensive than the existing ssn_missing flag)
@@ -133,7 +187,9 @@ load_stage_pha_waitlist <- function(conn = NULL,
                  across(any_of(c("dob", "hh_dob")), ~ as.Date(., format = "%m/%d/%Y")),
                  gender = case_when(gender %in% c("F", "Female") ~ 1L,
                                     gender %in% c("M", "Male") ~ 2L,
-                                    TRUE ~ NA_integer_))) %>%
+                                    TRUE ~ NA_integer_),
+                 female = case_when(gender == 2 ~ 0L,
+                                    TRUE ~ gender))) %>%
     map(~ if ("lang_eng" %in% names(.x) == F) {
       .x %>% mutate(lang_eng = case_when(lang == "ENG" ~ 1L, 
                                          lang != "ENG" ~ 0L,
@@ -453,7 +509,19 @@ load_stage_pha_waitlist <- function(conn = NULL,
   
   # COMBINE LOAD TO SQL ----
   waitlist <- pha %>% bind_rows() %>%
-    mutate(year = 2017L) # hard code year for now, change if  we get future waitlist data
+    # hard code year for now, change if  we get future waitlist data
+    mutate(year = 2017L,
+           # Make a hash of variables that are used for identity matching
+           id_hash = as.character(toupper(openssl::sha256(paste(str_replace_na(ssn, ''),
+                                                                       '', # This is the pha_id found in 50058 data
+                                                                       str_replace_na(lname, ''),
+                                                                       str_replace_na(fname, ''),
+                                                                       str_replace_na(mname, ''),
+                                                                       str_replace_na(dob, ''),
+                                                                       str_replace_na(female, ''),
+                                                                       sep = "|")))),
+           last_run = Sys.time()
+    )
   
   
   ## Select final columns and add data source ----

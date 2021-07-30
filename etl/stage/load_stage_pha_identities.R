@@ -8,7 +8,7 @@
 # Assumes relevant libraries are already loaded
 
 
-# conn = ODBC connection to use
+# db_hhsaw = ODBC db_hhsawection to use (change to conn if this becomes a function)
 # to_schema = name of the schema to load data to
 # to_table = name of the table to load data to
 # from_schema = name of the schema the input data are in
@@ -34,13 +34,13 @@
   
   
   # If an identity table already exists, bring this in too
-  if (dbExistsTable(conn, name = DBI::Id(schema = final_schema, table = final_table))) {
-    names_existing <- dbGetQuery(conn, 
+  if (dbExistsTable(db_hhsaw, name = DBI::Id(schema = final_schema, table = final_table))) {
+    names_existing <- dbGetQuery(db_hhsaw, 
                                  glue_sql("SELECT * FROM {`final_schema`}.{`final_table`}",
-                                          .con = conn))
+                                          .con = db_hhsaw))
     # PLACEHOLDER FOR WHEN AN ANTI-JOIN CAN BE SET UP
     names <- dbGetQuery(
-      conn,
+      db_hhsaw,
       glue_sql("SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
                           dob, female, id_hash, pha_source 
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
@@ -50,11 +50,11 @@
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b
                         DO ANTI-JOIN
                         ",
-               .con = conn))
+               .con = db_hhsaw))
     # Then set up final names table
   } else {
     names <- dbGetQuery(
-      conn,
+      db_hhsaw,
       glue_sql("SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
                           dob, female, id_hash 
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
@@ -62,7 +62,7 @@
                         SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
                           dob, female, id_hash 
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b",
-               .con = conn))
+               .con = db_hhsaw))
   }
   
   
@@ -231,20 +231,11 @@
   
   # SET UP DATA ----
   ## Clean up names ----
-  names_use <- names %>%
-    mutate(remove = case_when(lname == "DUFUS" & fname == "IAM" ~ 1L,
-                              lname == "ELDER" & fname == "PLACE" ~ 1L,
-                              lname == "ELDER PLACE" ~ 1L,
-                              str_detect(lname, "LIVE IN") ~ 1L,
-                              str_detect(fname, "LIVE IN") ~ 1L,
-                              TRUE ~ 0L)) %>%
-    filter(remove == 0) %>%
-    select(-remove) %>%
-    distinct()
+  # This has been moved to the stage_kcha/sha step so the id_hash remains consistent
   
   
   ## Add in variables for matching ----
-  names_use <- names_use %>%
+  names_use <- names %>%
     mutate(ssn_id = case_when(!is.na(ssn) ~ ssn,
                               !is.na(pha_id) ~ pha_id,
                               TRUE ~ NA_character_),
@@ -276,46 +267,67 @@
   classify_01 <- epiClassify(match_01, threshold.upper = 0.6)
   summary(classify_01)
   pairs_01 <- getPairs(classify_01, single.rows = TRUE) %>%
-    mutate(across(contains("dob_"), ~ str_squish(.)))
+    mutate(across(contains("dob_"), ~ str_squish(.)),
+           across(contains("dob_"), ~ as.numeric(.)))
   
   ## Review output and select cutoff point(s) ----
   pairs_01 %>% 
-    # filter(Weight >= 0.7 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
-    #          dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
-    # filter(Weight >= 0.65 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
-    #          dob_y.1 == dob_y.2 & (dob_m.1 != dob_m.2 | dob_d.1 != dob_d.2)) %>%
-    # filter(Weight >= 0.6 & !((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
-    #          dob_y.1 == dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
-    # filter(Weight >= 0.74 & ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
-    #          dob_y.1 == dob_y.2) %>%
-    filter(Weight >= 0.76 & ((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
-             dob_y.1 != dob_y.2) %>%
+    # NON-JAN 1 SECTION
+    filter(!((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1"))) %>%
+    # filter(Weight >= 0.7 & dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
+    # filter((Weight >= 0.4 & (dob_y.1 == dob_y.2 | abs(dob_y.1 - dob_y.2) == 100) & 
+    #           lname.1 == fname.2 & fname.1 == lname.2)) %>%
+    # filter(Weight >= 0.65 & dob_y.1 != dob_y.2 & lname.1 == fname.2 & fname.1 == lname.2) %>%
+    # filter(Weight >= 0.65 & dob_y.1 == dob_y.2 & (dob_m.1 != dob_m.2 | dob_d.1 != dob_d.2)) %>%
+    # filter(Weight >= 0.6 & dob_y.1 == dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
+    filter(Weight >= 0.74 & female.1 == female.2) %>%
+    # JAN 1 SECTION
+    # filter((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) %>%
+    # filter(Weight >= 0.74 & dob_y.1 == dob_y.2) %>%
+    # filter(Weight >= 0.76 & dob_y.1 != dob_y.2) %>%
     select(id1, ssn_id.1, lname.1, fname.1, mname.1, dob.1, female.1,
                       id2, ssn_id.2, lname.2, fname.2, mname.2, dob.2, female.2,
                       Weight) %>%
     tail()
   
   
+  
+  
   pairs_01_trunc <- pairs_01 %>%
     filter(
-      # Non-Jan 1 birth dates
+      # SECTION FOR NON-JAN 1 BIRTH DATES
       (!((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
          (
-           # Full DOB match
-           (Weight >= 0.6 & dob_y.1 == dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) |
-             # Year mismatch but month and day match
-             (Weight >= 0.71 & dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) |
-             # Year match but month or day mismatch
-             (Weight >= 0.65 & dob_y.1 == dob_y.2 & (dob_m.1 != dob_m.2 | dob_d.1 != dob_d.2))
-         )) |
-      # Jan 1 birth dates
-      (((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) & 
-         (
-           # Year match
-           (Weight >= 0.74 & dob_y.1 == dob_y.2) |
-             # Year non-match (actually works out with same Weight)
-             (Weight >= 0.74 & dob_y.1 != dob_y.2)
-         ))
+           # Can take quite a low score when SSN matches, names are transposed, and YOB is the same or off by 100
+           (Weight >= 0.4 & (dob_y.1 == dob_y.2 | abs(dob_y.1 - dob_y.2) == 100) & 
+              lname.1 == fname.2 & fname.1 == lname.2) |
+             # Higher score when SSN matches, names are transposed, and YOB is different
+             (Weight >= 0.65 & dob_y.1 != dob_y.2 & lname.1 == fname.2 & fname.1 == lname.2) |
+             # Same month and day of birth but different year, no name checks
+             (Weight >= 0.72 & dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) |
+             # Transposed month and day of birth but no name checks
+             (Weight >= 0.63 & dob_y.1 == dob_y.2 & dob_m.1 == dob_d.2 & dob_d.1 == dob_m.2) |
+             # Mismatched gender but same YOB
+             (Weight >= 0.73 & dob_y.1 == dob_y.2 & female.1 != female.2) |
+             # Higher threshold if mismatched gender and YOB
+             (Weight >= 0.844 & dob_y.1 != dob_y.2 & female.1 != female.2) | 
+             # Catch everything else
+             (Weight >= 0.74 & female.1 == female.2)
+         )
+       ) |
+        # SECTION FOR WHEN THERE IS A JAN 1 BIRTH DATE INVOLVED
+        (Weight >= 0.75 & dob_m.1 == "1" & dob_d.1 == "1" & dob_m.2 == "1" & dob_d.2 == "1") |
+        (Weight >= 0.77 & (dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) |
+        # SECTION FOR MISSING GENDER AND/OR DOB
+        (
+          (is.na(female.1) | is.na(female.2) | is.na(dob_y.1) | is.na(dob_y.2)) &
+            (
+              # First names match
+              (Weight > 0.55 & fname.1 == fname.2) |
+                # Higher threshold first names don't match
+                (Weight > 0.64 & fname.1 != fname.2)
+            )
+        )
       )
   
   
@@ -354,7 +366,8 @@
   classify_02 <- epiClassify(match_02, threshold.upper = 0.6)
   summary(classify_02)
   pairs_02 <- getPairs(classify_02, single.rows = TRUE) %>%
-    mutate(across(contains("dob_"), ~ str_squish(.)))
+    mutate(across(contains("dob_"), ~ str_squish(.)),
+           across(contains("dob_"), ~ as.numeric(.)))
   
   ## Review output and select cutoff point(s) ----
   pairs_02 %>% filter(Weight <= 0.8 & ssn_id.1 != ssn_id.2) %>% select(-contains("id_hash")) %>% head()
@@ -371,12 +384,20 @@
   
   
   pairs_02_trunc <- pairs_02 %>%
-    filter((
-      (ssn_id.1 == ssn_id.2) |
-        (Weight >= 0.87 & ssn_id.1 != ssn_id.2 & !(dob_m.1 == "1" & dob_d.1 == "1")) |
-        (Weight >= 0.881 & ssn_id.1 != ssn_id.2 & dob_m.1 == "1" & dob_d.1 == "1") |
-        (Weight >= 0.764 & ssn_id.1 != ssn_id.2 & (is.na(ssn.1) | is.na(ssn.2)))
-    ))
+    filter(
+      # Matching SSN all have high weights and look good
+      ssn.1 == ssn.2 |
+        # SECTION WHERE SSNs DO NOT MATCH
+        (Weight >= 0.88 & ssn.1 != ssn.2 & !(dob_m.1 == "1" & dob_d.1 == "1")) |
+        (Weight >= 0.90 & ssn.1 != ssn.2 & dob_m.1 == "1" & dob_d.1 == "1") |
+        # SECTION WHERE AN SSN IS MISSING
+        ((is.na(ssn.1) | is.na(ssn.2)) &
+           (
+             (Weight >= 0.69 & !(dob_m.1 == "1" & dob_d.1 == "1")) |
+               (Weight >= 0.85 & dob_m.1 == "1" & dob_d.1 == "1")
+           )
+        )
+    )
   
   
   ## Collapse IDs ----
@@ -397,19 +418,77 @@
   # BRING MATCHING ROUNDS TOGETHER ----
   # Use clusterid_1 as the starting point, find where one clusterid_2 value
   # is associated with multiple clusterid_1 values, then take the min of the latter.
-  # This would need to made iterative if there is more than two matching processes.
+  # Repeat using clusterid_2 until there is a 1:1 match between clusterid_1 and _2
   
+  final_dedup <- function(iterate_dt, iteration) {
+    id_1_old <- paste0("id_1_recur", iteration-1)
+    id_1_min <- paste0("id_1_recur", iteration, "_min")
+    id_1_new <- paste0("id_1_recur", iteration)
+    id_1_cnt <- paste0("id_1_recur", iteration, "_cnt")
+    
+    id_2_old <- paste0("id_2_recur", iteration-1)
+    id_2_min <- paste0("id_2_recur", iteration, "_min")
+    id_2_new <- paste0("id_2_recur", iteration)
+    id_2_cnt <- paste0("id_2_recur", iteration, "_cnt")
+    
+    # First find the existing min value for IDs 1 and 2
+    iterate_dt[, (id_1_min) := min(get(id_1_old)), by = id_2_old]
+    iterate_dt[, (id_2_min) := min(get(id_2_old)), by = id_1_old]
+    # Then set the new ID 1 and 2 based on the min
+    iterate_dt[, (id_1_new) := min(get(id_1_min)), by = id_2_min]
+    iterate_dt[, (id_2_new) := min(get(id_2_min)), by = id_1_min]
+    
+    # Set up a count of remaining duplicates
+    iterate_dt[, clusterid_1_cnt := uniqueN(get(id_1_new)), by = id_2_new]
+    iterate_dt[, clusterid_2_cnt := uniqueN(get(id_2_new)), by = id_1_new]
+  }
+  
+  # Make joint data
   ids_dedup <- setDT(full_join(select(match_01_dedup, id_hash, clusterid_1), 
                                select(match_02_dedup, id_hash, clusterid_2),
                                by = "id_hash"))
   
-  ids_dedup[, clusterid := min(clusterid_1), by = "clusterid_2"]
+  # Count how much consolidation is required
+  ids_dedup[, clusterid_1_cnt := uniqueN(clusterid_1), by = "clusterid_2"]
+  ids_dedup[, clusterid_2_cnt := uniqueN(clusterid_2), by = "clusterid_1"]
+  remaining_dupes <- ids_dedup %>% count(clusterid_1_cnt, clusterid_2_cnt) %>%
+                           filter(clusterid_1_cnt != clusterid_2_cnt) %>%
+                           summarise(dups = sum(n))
+  remaining_dupes <- remaining_dupes$dups[1]
+  
+  if (remaining_dupes > 0) {
+    # Keep deduplicating until there are no more open triangles
+    recursion_level <- 0
+    recursion_dt <- copy(ids_dedup)
+    setnames(recursion_dt, old = c("clusterid_1", "clusterid_2"), new = c("id_1_recur0", "id_2_recur0"))
+    
+    while (remaining_dupes > 0) {
+      recursion_level <- recursion_level + 1
+      message(remaining_dupes, " remaining duplicated rows. Starting recursion iteration ", recursion_level)
+      
+      recursion_dt <- final_dedup(iterate_dt = recursion_dt, iteration = recursion_level)
+      
+      # Check how many duplicates remain
+      remaining_dupes <- recursion_dt %>% count(clusterid_1_cnt, clusterid_2_cnt) %>%
+        filter(clusterid_1_cnt != clusterid_2_cnt) %>%
+        summarise(dups = sum(n))
+      remaining_dupes <- remaining_dupes$dups[1]
+    }
+    
+    # Get final ID to use
+    ids_dedup <- recursion_dt[, cluster_final := get(paste0("id_1_recur", recursion_level))]
+  } else {
+    ids_dedup[, cluster_final := clusterid_1]
+  }
+  
+  # Keep only relevant columns
+  ids_dedup <- ids_dedup[, .(id_hash, cluster_final)]
   
   
   ## Error check ----
-  ids_dedup_chk <- unique(ids_dedup[, c("id_hash", "clusterid")])
+  ids_dedup_chk <- unique(ids_dedup[, c("id_hash", "cluster_final")])
   ids_dedup_chk[, cnt_id := .N, by = "id_hash"]
-  ids_dedup_chk[, cnt_hash := .N, by = "clusterid"]
+  ids_dedup_chk[, cnt_hash := .N, by = "cluster_final"]
   # cnt_id should = 1 and cnt_hash should be >= 1
   ids_dedup_chk %>% count(cnt_id, cnt_hash)
   if (max(ids_dedup_chk$cnt_id) > 1) {
@@ -423,18 +502,18 @@
   #  Likely make twice as many id_kc_phas as needed then weed out the ones already in
   #    the master list, before trimming to the actual number needed.
   
-  ids_final <- id_nodups(id_n = n_distinct(ids_dedup$clusterid),
+  ids_final <- id_nodups(id_n = n_distinct(ids_dedup$cluster_final),
                          id_length = 10)
   ids_final <- ids_dedup %>%
-    distinct(clusterid) %>%
-    arrange(clusterid) %>%
+    distinct(cluster_final) %>%
+    arrange(cluster_final) %>%
     bind_cols(., id_kc_pha = ids_final)
   
   names_final <- names_use %>%
     select(ssn, pha_id, lname, fname, mname, dob, female, id_hash) %>%
-    left_join(., select(ids_dedup, id_hash, clusterid), by = "id_hash") %>%
-    left_join(., ids_final, by = "clusterid") %>%
-    select(-clusterid) %>%
+    left_join(., select(ids_dedup, id_hash, cluster_final), by = "id_hash") %>%
+    left_join(., ids_final, by = "cluster_final") %>%
+    select(-cluster_final) %>%
     distinct() %>%
     mutate(last_run = Sys.time())
   
@@ -454,7 +533,7 @@
   
   # ADD VALUES TO METADATA ----
   # Row counts
-  DBI::dbExecute(conn,
+  DBI::dbExecute(db_hhsaw,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
@@ -462,10 +541,10 @@
                                   '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'row_count', {nrow(names_final)},
                                   {Sys.time()}, NULL)",
-                          .con = conn))
+                          .con = db_hhsaw))
   
   # Number of IDs
-  DBI::dbExecute(conn,
+  DBI::dbExecute(db_hhsaw,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
@@ -473,7 +552,7 @@
                                   '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
                                   'value', 'id_count', {n_distinct(names_final$id_kc_pha)},
                                   {Sys.time()}, NULL)",
-                          .con = conn))
+                          .con = db_hhsaw))
   
   
   # CHECK QA PASSED ----
@@ -487,7 +566,7 @@
   
   
   # LOAD DATA TO SQL ----
-  # Split into smaller tables to avoid SQL connection issues
+  # Split into smaller tables to avoid SQL db_hhsawection issues
   start <- 1L
   max_rows <- 50000L
   cycles <- ceiling(nrow(names_final)/max_rows)
@@ -498,12 +577,12 @@
     
     message("Loading cycle ", i, " of ", cycles)
     if (i == 1) {
-      dbWriteTable(conn,
+      dbWriteTable(db_hhsaw,
                    name = DBI::Id(schema = to_schema, table = to_table),
                    value = as.data.frame(names_final[start_row:end_row, ]),
                    overwrite = T, append = F)
     } else {
-      dbWriteTable(conn,
+      dbWriteTable(db_hhsaw,
                    name = DBI::Id(schema = to_schema, table = to_table),
                    value = as.data.frame(names_final[start_row:end_row ,]),
                    overwrite = F, append = T)
