@@ -21,7 +21,14 @@ load_stage_pha_calyear <- function(conn = NULL,
   # BRING IN DATA ----
   pha_demo <- dbGetQuery(conn, glue_sql("SELECT * FROM {`demo_schema`}.{`demo_table`}",
                                         .con = conn))
-  pha_timevar <- dbGetQuery(conn, glue_sql("SELECT * FROM {`timevar_schema`}.{`timevar_table`}",
+  pha_timevar <- dbGetQuery(conn, glue_sql("SELECT a.*, c.geo_tractce10 FROM
+                                           (SELECT * FROM {`timevar_schema`}.{`timevar_table`}) a
+                                           LEFT JOIN
+                                           (SELECT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
+                                           ON a.geo_hash_clean = b.geo_hash_clean
+                                           LEFT JOIN
+                                           (SELECT geo_hash_geocode, geo_tractce10 FROM ref.address_geocode) c
+                                           ON b.geo_hash_geocode = c.geo_hash_geocode",
                                            .con = conn))
   
   
@@ -81,7 +88,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   # Set up each grouping variable
   categories <- c("disability", "major_prog", "subsidy_type", "prog_type",
                   "operator_type", "vouch_type_final", "portfolio_final",
-                  "geo_zip_clean")
+                  "geo_zip_clean", "geo_tractce_10")
   
   
   allocated <- bind_rows(lapply(years, function(x) {
@@ -175,6 +182,7 @@ load_stage_pha_calyear <- function(conn = NULL,
     "vouch_type_final", "vouch_type_final_pt", 
     # Address and portfolio info
     "geo_zip_clean", "geo_zip_clean_pt", "portfolio_final", "portfolio_final_pt", 
+    "geo_tractce10", "geo_tractce10_pt",
     # Other info
     "last_run")
   
