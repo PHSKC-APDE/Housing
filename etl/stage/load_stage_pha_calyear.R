@@ -24,10 +24,10 @@ load_stage_pha_calyear <- function(conn = NULL,
   pha_timevar <- dbGetQuery(conn, glue_sql("SELECT a.*, c.geo_tractce10 FROM
                                            (SELECT * FROM {`timevar_schema`}.{`timevar_table`}) a
                                            LEFT JOIN
-                                           (SELECT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
+                                           (SELECT DISTINCT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
                                            ON a.geo_hash_clean = b.geo_hash_clean
                                            LEFT JOIN
-                                           (SELECT geo_hash_geocode, geo_tractce10 FROM ref.address_geocode) c
+                                           (SELECT DISTINCT geo_hash_geocode, geo_tractce10 FROM ref.address_geocode) c
                                            ON b.geo_hash_geocode = c.geo_hash_geocode",
                                            .con = conn))
   
@@ -88,7 +88,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   # Set up each grouping variable
   categories <- c("disability", "major_prog", "subsidy_type", "prog_type",
                   "operator_type", "vouch_type_final", "portfolio_final",
-                  "geo_zip_clean", "geo_tractce_10")
+                  "geo_zip_clean", "geo_tractce10")
   
   
   allocated <- bind_rows(lapply(years, function(x) {
