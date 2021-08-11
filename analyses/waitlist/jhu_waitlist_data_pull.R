@@ -138,7 +138,7 @@ waitlist_use <- waitlist %>%
          # Income info
          hh_inc_tot, starts_with("inc_"),
          # Housing situation and location
-         starts_with("live_"), current_housing, homeless, geo_tractce10, 
+         starts_with("live_"), current_housing, homeless, geo_tractce10, geo_add_mailing,
          # Individual info
          id_apde, id_mcaid, age_2017_wl, age_65_wl, gender, starts_with("r_"), disability, relcode,
          # Waitlist info
@@ -541,7 +541,8 @@ mcaid_icdcm_header <- dbGetQuery(db_hhsaw,
 # Remove any claims that were dropped from the header table
 mcaid_icdcm_header <- inner_join(distinct(mcaid_header, claim_header_id),
                                  mcaid_icdcm_header,
-                                 by = "claim_header_id")
+                                 by = "claim_header_id") %>%
+  select(-id_mcaid)
 
 
 ## Medicaid claim line ----
@@ -557,7 +558,8 @@ mcaid_line <- dbGetQuery(db_hhsaw,
 # Remove any claims that were dropped from the header table
 mcaid_line <- inner_join(distinct(mcaid_header, claim_header_id),
                          mcaid_line,
-                         by = "claim_header_id")
+                         by = "claim_header_id") %>%
+  select(-id_mcaid)
 
 
 ## Medicaid pharmacy claims ----
@@ -572,7 +574,8 @@ mcaid_pharm <- dbGetQuery(db_hhsaw,
 # Remove any claims that were dropped from the header table
 mcaid_pharm <- inner_join(distinct(mcaid_header, claim_header_id),
                           mcaid_pharm,
-                         by = "claim_header_id")
+                         by = "claim_header_id") %>%
+  select(-id_mcaid)
 
 
 ## Medicaid claim procedure codes ----
@@ -588,7 +591,9 @@ mcaid_procedure <- dbGetQuery(db_hhsaw,
 # Remove any claims that were dropped from the header table
 mcaid_procedure <- inner_join(distinct(mcaid_header, claim_header_id),
                               mcaid_procedure,
-                              by = "claim_header_id")
+                              by = "claim_header_id") %>%
+  select(-id_mcaid)
+
 
 ## Medicaid Chronic Condition Warehouse table ----
 mcaid_ccw <- dbGetQuery(db_hhsaw,
@@ -633,7 +638,9 @@ pha_timevar_output <- inner_join(distinct(received_voucher_mcaid, id_apde),
                                  pha_timevar_use,
                                  by = "id_apde") %>%
   select(-operator_type, -id_hash) %>%
-  distinct()
+  distinct() %>%
+  left_join(., distinct(received_voucher, id_apde, prior_housing_kcha, prior_housing_sha), 
+            by = "id_apde")
 
 
 ## Medicaid tables ----
@@ -660,7 +667,8 @@ tables_for_export <- list("waitlist_output" = waitlist_output,
                           "mcaid_icdcm_header" = mcaid_icdcm_header,
                           "mcaid_line" = mcaid_line,
                           "mcaid_pharm" = mcaid_pharm,
-                          "mcaid_procedure" = mcaid_procedure)
+                          "mcaid_procedure" = mcaid_procedure,
+                          "mcaid_ccw" = mcaid_ccw)
 
 
 lapply(names(tables_for_export), function(x) {
