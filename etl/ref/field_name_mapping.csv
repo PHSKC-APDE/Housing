@@ -3,8 +3,8 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 02a,actiontype2a,actiontype2a,actiontype2a,certtype,,,h2a,HUD-50058 2a Type of Action,Certification.Type,act_type
 02a,,,actiontype2a,,,,,,,act_type
 02a,,,,,,,certificationtype,,,act_type_text
-02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,effectivedate,,,h2b,Effective Date,Effective.Date,act_date
-02b,,,effectivedateofaction2b,,,,,,,act_date
+02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,effectivedate,,MOVE_OUT_DATE,h2b,Effective Date,Effective.Date,act_date
+02b,,,effectivedateofaction2b,,,Move.Out.Date,,,,act_date
 02c,,,,,,,h2c,,,correction
 02d,,,,,,,h2d,,,correction_date
 02f,,repaymentagreement2f,,,,,,,,repayment
@@ -18,11 +18,14 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 02m,,mtwselfsufficiencyparticipationnoworinlastyear2m,,,,,,,,mtw_self_suff
 03a,membernumber3a,membernumber3a,,,,,mbr_num,,,mbr_num
 03a,,,,,,,h3a,,,mbr_num_old
-03b,lastname3b,lastname3b,memberlastname3b,lastname,,,h3b,,,lname
+03b,lastname3b,lastname3b,memberlastname3b,lastname,,LAST_NAME,h3b,,,lname
+03b,,,,,,Last.Name,,,,lname
 03b1,suffix,suffix,,,,,,,,lnamesuf
-03c,firstname3c,firstname3c,memberfirstname3c,firstname,,,h3c,,,fname
-03d,middleinitial3d,middleinitial3d,membermiddleinitial3d,mi,,,h3d,,,mname
-03e,dateofbirth3e,dateofbirth3e,dateofbirth3e,dob,,,h3e,,,dob
+03c,firstname3c,firstname3c,memberfirstname3c,firstname,,FIRST_NAME,h3c,,,fname
+03c,,,,,,First.Name,,,,fname
+03d,middleinitial3d,middleinitial3d,membermiddleinitial3d,mi,,MI,h3d,,,mname
+03d,,,,,,Middle.Name,,,,mname
+03e,dateofbirth3e,dateofbirth3e,dateofbirth3e,dob,,DOB,h3e,,,dob
 03g,sex3g,sex3g,sex3g,gender,,,h3g,,,gender
 03h,memberrelationcode3h,memberrelationcode3h,memberrelationcode3h,relation,,,h3h,,,relcode
 ,,,,relationdescription,,,,,,rel_text
@@ -36,24 +39,24 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 03k5,racenativehawaiinotherpacificislanderindicator3k5,racenativehawaiinotherpacificislanderindicator3k5,,racepacificislander,,,h3k5,,,r_nhpi
 03k5,,racenativehawaiianotherpacificislanderindicator3k5,,,,,,,,r_nhpi
 03m,ethnicity3m,ethnicity3m,ethnicity3m,ethnicity,,,h3m,,,r_hisp
-03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,ssn,,,h3n,,,ssn
+03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,ssn,,SSN,h3n,,,ssn
 03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,,,Household.Size,hh_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,,,,list_date
 04b,,zipcodebeforeadmission4b,,,,,box04b,,,list_zip
 04c,,homelessatadmission4c,,homeless,,,box04c,,,list_homeless
 04e,,assistedunderthe1937housingact4e,,,,,,,,housing_act
-05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,,h5a1a,,,geo_add1_raw
-05a1a,,,,primarystreet,,,,,,geo_add1_raw
-05a1b,,,,unitnumber,,,h5a1b,,,geo_add2_raw
+05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,PrimaryStreet,h5a1a,,,geo_add1_raw
+05a1a,,,,primarystreet,,Street.Address,,,,geo_add1_raw
+05a1b,,,,unitnumber,,Suite,h5a1b,,,geo_add2_raw
 05a1b,,,,suite,,,,,,geo_add2_raw
-05a2,,,,unitaddressline2,,,h5a2,,,geo_add3_raw
+05a2,,,,unitaddressline2,,SecondaryStreet,h5a2,,,geo_add3_raw
 05a2,,,,secondarystreet,,,,,,geo_add3_raw
-05a3,unitcity5a,unitcity5a,unitcity5a,unitcity,,,h5a3,,,geo_city_raw
+05a3,unitcity5a,unitcity5a,unitcity5a,unitcity,,City,h5a3,,,geo_city_raw
 05a3,,,,city,,,,,,geo_city_raw
-05a4,unitstate5a,unitstate5a,unitstate5a,unitstate,,,h5a4,,,geo_state_raw
+05a4,unitstate5a,unitstate5a,unitstate5a,unitstate,,State,h5a4,,,geo_state_raw
 05a4,,,,state,,,,,,geo_state_raw
-05a5,unitzipcode5a,unitzipcode5a,unitzipcode5a,unitzip,,,h5a5,,,geo_zip_raw
+05a5,unitzipcode5a,unitzipcode5a,unitzipcode5a,unitzip,,Zip,h5a5,,,geo_zip_raw
 05a5,,,,zip,,,,,,geo_zip_raw
 05d,numberofbedrooms5d,numberofbedrooms5d,numberofbedroomsinunit5d,noofbedrooms,,,h5d,,,bed_cnt
 05d,,,,bedrooms,,,,,,bed_cnt
@@ -121,7 +124,7 @@ h03b,lastname3bhead,hohlastname3b,hohlastname3b,,,,hh_lname,,HOH.Last.Name,hh_ln
 h03b1,suffixhead,suffixhead,,,,,,,,hh_lnamesuf
 h03c,firstname3chead,hohfirstname3c,hohfirstname3c,,,,hh_fname,,HOH.First.Name,hh_fname
 h03d,middleinitial3dhead,hohmiddleinitial3d,hohmiddleinitial3d,,,,hh_mname,,,hh_mname
-h03n,headofhousessn,hohssn,headofhousessn,hohssn,,,hh_ssn,HOH SSN,,hh_ssn
+h03n,headofhousessn,hohssn,headofhousessn,hohssn,,HOH.SSN,hh_ssn,HOH SSN,,hh_ssn
 ,,,,,,,,HOH Birthdate,HOH.Birthdate,hh_dob
 ,,,,,,,,HOH Full Name,HOH.Full.Name,hh_name
 ,,,,,,,,,HOH.Gender,hh_gender
@@ -137,10 +140,10 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,fkmtw5800,fkmtw5800,,,,,,,,incasset_id
 ,fkinf5800,fkinf5800,,,,,,,,incasset_id
 ,pkhsum,pkhsum,pk_hsum,,,,,,,incasset_id
-,propertyid,propertyid,propertyid,,,,Project.Code,,,property_id
+,propertyid,propertyid,propertyid,,,Prop.ID,Project.Code,,,property_id
 ,,projectid,project_id,,Project_ID,,,,,property_id
 ,,,projectid,,projectid,,,,,property_id
-,,,,buildingid,,,,,,building_id
+,,,,buildingid,,Unit.#,,,,building_id
 ,,,,buildingname,,,,,,building_name
 ,,,certificationuniqueidshafield,hhcertid,,,certificationid,,,cert_id
 ,,,certificationuniqueidshafield,,,,,,,cert_id
@@ -149,12 +152,12 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,memberuniqueidentifier,,,,,,,mbr_id
 ,,,,,,,householdid,,,hhold_id
 ,,,,,,,subsidy_id,,,subsidy_id
-,,,,,,,vouchernumber,Voucher Number,,vouch_num
+,,,,,,Voucher.#,vouchernumber,Voucher Number,,vouch_num
 ,,majorprogram,majorprogram,,,,,,,major_prog
 ,,,programtype,programtype,Program.Type,,program_type,Program Type,Program.Type,prog_type
 ,,,,,programtype,,,,,prog_type
 ,,,programsubtype,,,,,,,prog_subtype
-,,,specialpurposetenantbasedtype,,Voucher.Type,,spec_vouch,,,vouch_type
+,,,specialpurposetenantbasedtype,,Voucher.Type,Voucher.Type,spec_vouch,,,vouch_type
 ,,,,,vouchertype,,,,,vouch_type
 ,,,,,vouchtype,,,,,vouch_type
 ,incrementthetotheleftofthedash,,incrementnumber,,Increment,,,,,increment
@@ -162,13 +165,13 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,increment,,,,,,,increment
 ,,,incrementdescription,,,,,,,inc_desc
 ,,,incrementinformation,,,,,,,inc_info
-,,,,,,,developmentname,,Project,property_name
+,,,,,,Property,developmentname,,Project,property_name
 ,,,,,,,Development.Name,,,property_name
 ,,,,,,,Development Name,,,property_name
 ,,,,,,,DevelopmentName,,,property_name
 ,,projectname,projectname,,ProjectName,,Property.Name,,,property_name
 ,,,,,projectname,,,,,property_name
-,,projecttype,projecttype,,,,Property.Type,,,portfolio_type
+,,projecttype,projecttype,,,Unit.Program.Type,Property.Type,,,portfolio_type
 ,,,,,,,Property Type,,,portfolio_type
 ,,,,,,,projecttype,,,portfolio_type
 ,,,,,,,PropertyType,,,portfolio_type
@@ -221,7 +224,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,,,,,UnitProgramType,,,dev_unit_type
 ,,,,,,,Bedrooms,,,bed_cnt
 ,,,,,,,,MTW Rent Calculation Profile,MTW.Rent.Calculation.Profile,add_yr_eop
-,,originalmoveindate,,unitmovein,,,,,,move_in_date
+,,originalmoveindate,,unitmovein,,Move.In.Date,,,,move_in_date
 ,,,,moveindate,,,,,,move_in_date
 ,,totalannualunremimbursedmedicalexpense,,,,,,,,reimbursed_med
 ,,medicaldisabilitythreshold,,,,,,,,med_dis_thresh
@@ -254,8 +257,9 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,,annualgrossincomefromgeneralassistance,,,,,,inc_g
 ,,,,vps,,,,,,vps
 ,,,,,,,,,Status,status
-,,,,,,,,,Termination.Reason,exit_reason
-,,,,,,,,,Termination.Category,exit_category
+,,,,,,EOP_Reason,,,Termination.Reason,exit_reason
+,,,,,,Move.Out.Reason,,,,exit_reason
+,,,,,,EOP_Reason.(groups),,,Termination.Category,exit_category
 ,,,,,,,,,Admission.Date,pha_admit_date
 ,,,,,,,,,Voucher.Issued.Date,voucher_issue_date
 ,,,,,,,,,Voucher.Expiration.Date,voucher_exp_date
