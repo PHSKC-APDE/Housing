@@ -1,15 +1,15 @@
 mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_port_codes,sha_exit,kcha_modified,kcha_eop,kcha_exit,common_name
 01a,agencyname1a,agencyname1a,,,,,h1a,,,agency
-02a,actiontype2a,actiontype2a,actiontype2a,certtype,,,h2a,HUD-50058 2a Type of Action,Certification.Type,act_type
+02a,actiontype2a,actiontype2a,actiontype2a,certtype,,,h2a,HUD-50058 2a Type of Action,Certification Type,act_type
 02a,,,actiontype2a,,,,,,,act_type
 02a,,,,,,,certificationtype,,,act_type_text
-02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,effectivedate,,MOVE_OUT_DATE,h2b,Effective Date,Effective.Date,act_date
-02b,,,effectivedateofaction2b,,,Move.Out.Date,,,,act_date
+02b,effectivedateofaction2b,effectivedateofaction2b,effectivedateofaction2b,effectivedate,,MOVE_OUT_DATE,h2b,Effective Date,Effective Date,act_date
+02b,,,effectivedateofaction2b,,,Move Out Date,,,,act_date
 02c,,,,,,,h2c,,,correction
 02d,,,,,,,h2d,,,correction_date
 02f,,repaymentagreement2f,,,,,,,,repayment
 02g,,monthlyamountofrepaymentagreement2g,,,,,,,,repay_amount
-02h,dateofadmission2h,dateofadmission2h,dateofadmission2h,,,,h2h,,HUD-50058.2h.Date.of.Admission.to.Program,admit_date
+02h,dateofadmission2h,dateofadmission2h,dateofadmission2h,,,,h2h,,HUD-50058 2h Date of Admission to Program,admit_date
 02h,,,,earliestmovein,,,,,,admit_date
 02i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreexam2i,projectedeffectivedateofnextreex,nextreexamdate,,,,,,reexam_date
 02i,,,projectedeffectivedateofnextreexam2i,,,,,,,reexam_date
@@ -19,12 +19,12 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 03a,membernumber3a,membernumber3a,,,,,mbr_num,,,mbr_num
 03a,,,,,,,h3a,,,mbr_num_old
 03b,lastname3b,lastname3b,memberlastname3b,lastname,,LAST_NAME,h3b,,,lname
-03b,,,,,,Last.Name,,,,lname
+03b,,,,,,Last Name,,,,lname
 03b1,suffix,suffix,,,,,,,,lnamesuf
 03c,firstname3c,firstname3c,memberfirstname3c,firstname,,FIRST_NAME,h3c,,,fname
-03c,,,,,,First.Name,,,,fname
+03c,,,,,,First Name,,,,fname
 03d,middleinitial3d,middleinitial3d,membermiddleinitial3d,mi,,MI,h3d,,,mname
-03d,,,,,,Middle.Name,,,,mname
+03d,,,,,,Middle Name,,,,mname
 03e,dateofbirth3e,dateofbirth3e,dateofbirth3e,dob,,DOB,h3e,,,dob
 03g,sex3g,sex3g,sex3g,gender,,,h3g,,,gender
 03h,memberrelationcode3h,memberrelationcode3h,memberrelationcode3h,relation,,,h3h,,,relcode
@@ -40,14 +40,14 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 03k5,,racenativehawaiianotherpacificislanderindicator3k5,,,,,,,,r_nhpi
 03m,ethnicity3m,ethnicity3m,ethnicity3m,ethnicity,,,h3m,,,r_hisp
 03n,familymemberssn3n,familymemberssn3n,familymemberssn3n,ssn,,SSN,h3n,,,ssn
-03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,,,Household.Size,hh_size
+03t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,numberofhouseholdmembers3t,,,,,,Household Size,hh_size
 03u,,familysubsidystatusundernoncitizenrule3u,,,,,,,,noncit_subsidy
 04a,,dateenteredwaitinglist4a,,,,,,,,list_date
 04b,,zipcodebeforeadmission4b,,,,,box04b,,,list_zip
 04c,,homelessatadmission4c,,homeless,,,box04c,,,list_homeless
 04e,,assistedunderthe1937housingact4e,,,,,,,,housing_act
 05a1a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressnumberandstreet5a,unitaddressline1,,PrimaryStreet,h5a1a,,,geo_add1_raw
-05a1a,,,,primarystreet,,Street.Address,,,,geo_add1_raw
+05a1a,,,,primarystreet,,Street Address,,,,geo_add1_raw
 05a1b,,,,unitnumber,,Suite,h5a1b,,,geo_add2_raw
 05a1b,,,,suite,,,,,,geo_add2_raw
 05a2,,,,unitaddressline2,,SecondaryStreet,h5a2,,,geo_add3_raw
@@ -80,7 +80,7 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 19d,dollarsperyear19d,dollarsperyear19d,dollarsperyear19d,,,,,,,inc
 19e,incomeexclusions19e,incomeexclusions19e,incomeexclusions19e,,,,,,,inc_excl
 19f,incomeafterexclusions19f,incomeafterexclusions19f,incomeafterexclusions19f,,,,,,,inc_adj
-19g,totalsumof19d19g,totalsumof19d19g,,,,,,,Annual.Income,hh_inc
+19g,totalsumof19d19g,totalsumof19d19g,,,,,,,Annual Income,hh_inc
 19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,totalincomeafterexclusions19h,,,,h19h,,,hh_inc_adj
 19i,totalannualincome19i,totalannualincome19i,totalannualincome19i,,,,h19i,,,hh_inc_tot
 19j,,deductions19j,deductions19j,,,,,,,hh_inc_deduct
@@ -120,18 +120,18 @@ mtw50058_num,sha_2004_2012,sha_ph_2012_2018,sha_hcv_2006_2018,sha_2019,sha_prog_
 23hj1,,initialstartdateofcontract23j1,,,,,,,,fss_start_date
 23hj2,,initialenddateofcontract23j2,,,,,,,,fss_end_date
 23hj3,,contractdateextended23j3,,,,,,,,fss_extend_date
-h03b,lastname3bhead,hohlastname3b,hohlastname3b,,,,hh_lname,,HOH.Last.Name,hh_lname
+h03b,lastname3bhead,hohlastname3b,hohlastname3b,,,,hh_lname,,HOH Last Name,hh_lname
 h03b1,suffixhead,suffixhead,,,,,,,,hh_lnamesuf
-h03c,firstname3chead,hohfirstname3c,hohfirstname3c,,,,hh_fname,,HOH.First.Name,hh_fname
+h03c,firstname3chead,hohfirstname3c,hohfirstname3c,,,,hh_fname,,HOH First Name,hh_fname
 h03d,middleinitial3dhead,hohmiddleinitial3d,hohmiddleinitial3d,,,,hh_mname,,,hh_mname
-h03n,headofhousessn,hohssn,headofhousessn,hohssn,,HOH.SSN,hh_ssn,HOH SSN,,hh_ssn
-,,,,,,,,HOH Birthdate,HOH.Birthdate,hh_dob
-,,,,,,,,HOH Full Name,HOH.Full.Name,hh_name
-,,,,,,,,,HOH.Gender,hh_gender
-,,,,,,,,,HOH.Race,hh_race
-,,,,,,,,,HOH.Ethnicity,hh_r_hisp
-,,,,,,,,,HOH.Disabled,hh_disabled
-,,,,,,,,,HOH.Veteran.Status,hh_veteran
+h03n,headofhousessn,hohssn,headofhousessn,hohssn,,HOH SSN,hh_ssn,HOH SSN,,hh_ssn
+,,,,,,,,HOH Birthdate,HOH Birthdate,hh_dob
+,,,,,,,,HOH Full Name,HOH Full Name,hh_name
+,,,,,,,,,HOH Gender,hh_gender
+,,,,,,,,,HOH Race,hh_race
+,,,,,,,,,HOH Ethnicity,hh_r_hisp
+,,,,,,,,,HOH Disabled,hh_disabled
+,,,,,,,,,HOH Veteran Status,hh_veteran
 h03t,numberofhouseholdmembers3thead,numberofhouseholdmembers3thead,,,,,,,,hh_hhold_num
 h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,fhh_ssn
 ,unitid,unitid,unitid,,,,,,,unit_id
@@ -140,24 +140,24 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,fkmtw5800,fkmtw5800,,,,,,,,incasset_id
 ,fkinf5800,fkinf5800,,,,,,,,incasset_id
 ,pkhsum,pkhsum,pk_hsum,,,,,,,incasset_id
-,propertyid,propertyid,propertyid,,,Prop.ID,Project.Code,,,property_id
+,propertyid,propertyid,propertyid,,,Prop ID,Project.Code,,,property_id
 ,,projectid,project_id,,Project_ID,,,,,property_id
 ,,,projectid,,projectid,,,,,property_id
-,,,,buildingid,,Unit.#,,,,building_id
+,,,,buildingid,,Unit #,,,,building_id
 ,,,,buildingname,,,,,,building_name
 ,,,certificationuniqueidshafield,hhcertid,,,certificationid,,,cert_id
 ,,,certificationuniqueidshafield,,,,,,,cert_id
-,,,hohuniqueidentifier,,,,householdid,Household ID,Household.ID,hh_id
+,,,hohuniqueidentifier,,,,householdid,Household ID,Household ID,hh_id
 ,,,hohuniqueidentifier,,,,,,,hh_id
 ,,,memberuniqueidentifier,,,,,,,mbr_id
 ,,,,,,,householdid,,,hhold_id
 ,,,,,,,subsidy_id,,,subsidy_id
-,,,,,,Voucher.#,vouchernumber,Voucher Number,,vouch_num
+,,,,,,Voucher #,vouchernumber,Voucher Number,,vouch_num
 ,,majorprogram,majorprogram,,,,,,,major_prog
-,,,programtype,programtype,Program.Type,,program_type,Program Type,Program.Type,prog_type
+,,,programtype,programtype,Program.Type,,program_type,Program Type,Program Type,prog_type
 ,,,,,programtype,,,,,prog_type
 ,,,programsubtype,,,,,,,prog_subtype
-,,,specialpurposetenantbasedtype,,Voucher.Type,Voucher.Type,spec_vouch,,,vouch_type
+,,,specialpurposetenantbasedtype,,Voucher.Type,Voucher Type,spec_vouch,,,vouch_type
 ,,,,,vouchertype,,,,,vouch_type
 ,,,,,vouchtype,,,,,vouch_type
 ,incrementthetotheleftofthedash,,incrementnumber,,Increment,,,,,increment
@@ -171,12 +171,12 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,,,,,DevelopmentName,,,property_name
 ,,projectname,projectname,,ProjectName,,Property.Name,,,property_name
 ,,,,,projectname,,,,,property_name
-,,projecttype,projecttype,,,Unit.Program.Type,Property.Type,,,portfolio_type
+,,projecttype,projecttype,,,Unit Program Type,Property.Type,,,portfolio_type
 ,,,,,,,Property Type,,,portfolio_type
 ,,,,,,,projecttype,,,portfolio_type
 ,,,,,,,PropertyType,,,portfolio_type
 ,,,,,,,propertytype,,,portfolio_type
-,,portfolio,portfolio,,Portfolio.Type,,Portfolio.Name,,Development.Name,portfolio
+,,portfolio,portfolio,,Portfolio.Type,,Portfolio.Name,,Development Name,portfolio
 ,,,,,portfoliotype,,portfolioname,,,portfolio
 ,,,,,,,Portfolio Name,,,portfolio
 ,,,,,,,PortfolioName,,,portfolio
@@ -188,7 +188,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,notes,,,,,,,notes
 ,,,mtwrptcategory,,,,,,,mtw_cat
 ,,,replacementproject,,,,,,,proj_replace
-,,,firsteffectiverentdate,,,,,,Lease.Begin.Date,rent_date
+,,,firsteffectiverentdate,,,,,,Lease Begin Date,rent_date
 ,,,contractrenewaldate,,,,,,,renew_date
 ,,,partner,,,,,,,partner
 ,,,taxcredit,,,,,,,tax_credit
@@ -223,8 +223,8 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,,,,,Unit Program Type,,,dev_unit_type
 ,,,,,,,UnitProgramType,,,dev_unit_type
 ,,,,,,,Bedrooms,,,bed_cnt
-,,,,,,,,MTW Rent Calculation Profile,MTW.Rent.Calculation.Profile,add_yr_eop
-,,originalmoveindate,,unitmovein,,Move.In.Date,,,,move_in_date
+,,,,,,,,MTW Rent Calculation Profile,MTW Rent Calculation Profile,add_yr_eop
+,,originalmoveindate,,unitmovein,,Move In Date,,,,move_in_date
 ,,,,moveindate,,,,,,move_in_date
 ,,totalannualunremimbursedmedicalexpense,,,,,,,,reimbursed_med
 ,,medicaldisabilitythreshold,,,,,,,,med_dis_thresh
@@ -257,10 +257,10 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,,annualgrossincomefromgeneralassistance,,,,,,inc_g
 ,,,,vps,,,,,,vps
 ,,,,,,,,,Status,status
-,,,,,,EOP_Reason,,,Termination.Reason,exit_reason
-,,,,,,Move.Out.Reason,,,,exit_reason
-,,,,,,EOP_Reason.(groups),,,Termination.Category,exit_category
-,,,,,,,,,Admission.Date,pha_admit_date
-,,,,,,,,,Voucher.Issued.Date,voucher_issue_date
-,,,,,,,,,Voucher.Expiration.Date,voucher_exp_date
-,,,,,,,,,Voucher.End.Date,voucher_end_date
+,,,,,,EOP_Reason,,,Termination Reason,exit_reason
+,,,,,,Move Out Reason,,,,exit_reason
+,,,,,,EOP_Reason (groups),,,Termination Category,exit_category
+,,,,,,,,,Admission Date,pha_admit_date
+,,,,,,,,,Voucher Issued Date,voucher_issue_date
+,,,,,,,,,Voucher Expiration Date,voucher_exp_date
+,,,,,,,,,Voucher End Date,voucher_end_date
