@@ -156,7 +156,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,majorprogram,majorprogram,,,,,,,major_prog
 ,,,programtype,programtype,Program.Type,,program_type,Program Type,Program Type,prog_type
 ,,,,,programtype,,,,,prog_type
-,,,programsubtype,,,,,,,prog_subtype
+,,,programsubtype,,,,,,Project,prog_subtype
 ,,,specialpurposetenantbasedtype,,Voucher.Type,Voucher Type,spec_vouch,,,vouch_type
 ,,,,,vouchertype,,,,,vouch_type
 ,,,,,vouchtype,,,,,vouch_type
@@ -165,7 +165,7 @@ h03w,formerheadofhousessn3w,formerheadofhousessn3w,formerheadofhousessn3w,,,,,,,
 ,,,increment,,,,,,,increment
 ,,,incrementdescription,,,,,,,inc_desc
 ,,,incrementinformation,,,,,,,inc_info
-,,,,,,Property,developmentname,,Project,property_name
+,,,,,,Property,developmentname,,Unit Project Name,property_name
 ,,,,,,,Development.Name,,,property_name
 ,,,,,,,Development Name,,,property_name
 ,,,,,,,DevelopmentName,,,property_name
