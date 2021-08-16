@@ -325,17 +325,21 @@ if (nrow(adds_to_clean) > 0) {
 
 ## Join back to original data ----
 pha_exit <- pha_exit %>%
-  map(~ .x %>% left_join(., 
-                         select(adds_final, geo_hash_raw:geo_hash_geocode),
-                         by = "geo_hash_raw") %>%
-        select(-matches("geo_(.)*_raw")))
+  map(~ if ("geo_hash_raw" %in% names(.x)) {
+    .x %>% left_join(., 
+                     select(adds_final, geo_hash_raw:geo_hash_geocode),
+                     by = "geo_hash_raw") %>%
+      select(-matches("geo_(.)*_raw"))
+  } else {.x})
 
 # Add in geo_blank
 pha_exit <- pha_exit %>%
-  map(~ .x %>% mutate(geo_blank = ifelse(
-    geo_hash_clean %in% c("45CA31C3315A5978F40438AAB46040D75E99C9B125C2FD01DB6E10AC80BEF906",
-                          "8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104"),
-    1L, 0L)))
+  map(~ if ("geo_hash_clean" %in% names(.x)) {
+    .x %>% mutate(geo_blank = ifelse(
+      geo_hash_clean %in% c("45CA31C3315A5978F40438AAB46040D75E99C9B125C2FD01DB6E10AC80BEF906",
+                            "8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104"),
+      1L, 0L))
+  } else {.x}) 
 
 
 # MAKE FINAL DATA FRAME AND ADD USEFUL VARIABLES ----
