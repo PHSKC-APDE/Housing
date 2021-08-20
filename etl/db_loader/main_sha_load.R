@@ -239,8 +239,8 @@ etl_batch_id_ph_2018 <- load_metadata_etl_log(conn = db_hhsaw,
                                               to_table = etl_table,
                                               data_source = "sha",
                                               data_type = "ph",
-                                              date_min = "2018-10-01",
-                                              date_max = "2018-12-30",
+                                              date_min = "2018-01-01",
+                                              date_max = "2018-12-31",
                                               date_delivery = "2019-03-19",
                                               note = "Initial delivery of data")
 
@@ -299,8 +299,8 @@ etl_batch_id_ph_2020 <- load_metadata_etl_log(conn = db_hhsaw,
                                               to_table = etl_table,
                                               data_source = "sha",
                                               data_type = "ph",
-                                              date_min = "2020-10-01",
-                                              date_max = "2020-12-30",
+                                              date_min = "2020-01-01",
+                                              date_max = "2020-12-31",
                                               date_delivery = "2021-06-15",
                                               note = "Initial delivery of data")
 
