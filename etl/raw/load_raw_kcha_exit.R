@@ -16,7 +16,7 @@ load_raw_kcha_exit <- function(conn = NULL,
                                to_table = NULL,
                                qa_schema = NULL,
                                qa_table = NULL,
-                               file_path = "//phdata01/DROF_DATA/DOH DATA/Housing",
+                               file_path = "//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/Exit data",
                                etl_batch_id = NULL) {
   
   # BRING IN DATA ----
@@ -25,7 +25,7 @@ load_raw_kcha_exit <- function(conn = NULL,
   
   ## KCHA ----
   # Create a list of exit files
-  kcha_exit_files <- list.files(path = file.path(pha_path, "KCHA/Original_data/Exit data"), 
+  kcha_exit_files <- list.files(path = file_path, 
                                 pattern = "Exit Data(.*)Cleaned.xlsx",
                                 full.names = T)
   

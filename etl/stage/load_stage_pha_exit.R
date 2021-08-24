@@ -138,6 +138,7 @@ load_stage_pha_exit <- function(conn = NULL,
   # ADDRESS CLEANING ----
   ## Make a geo_hash_raw field for easier joining
   # NB. Adding WA to geo_state_raw manually since it is missing
+  message("Cleaning addresses")
   pha_exit <- pha_exit %>%
     map(~ if ("geo_add1_raw" %in% names(.x)) {
       .x %>% 
@@ -191,6 +192,7 @@ load_stage_pha_exit <- function(conn = NULL,
   
   ## Load to Informatica for cleaning ----
   if (nrow(adds_to_clean) > 0) {
+    message("Loading addresses for cleaning in Informatica")
     # Add new addresses that need cleaning into the Informatica table
     timestamp <- Sys.time()
     

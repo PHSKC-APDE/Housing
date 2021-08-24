@@ -16,7 +16,7 @@ load_raw_sha_exit <- function(conn = NULL,
                                to_table = NULL,
                                qa_schema = NULL,
                                qa_table = NULL,
-                               file_path = "//phdata01/DROF_DATA/DOH DATA/Housing",
+                               file_path = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Exit data",
                                etl_batch_id = NULL) {
   
   # BRING IN DATA ----
@@ -25,7 +25,7 @@ load_raw_sha_exit <- function(conn = NULL,
   
   ## SHA ----
   # Create a list of exit files
-  sha_exit_files <- list.files(path = file.path(pha_path, "SHA/Original_data/Exit data"), 
+  sha_exit_files <- list.files(path = file_path, 
                                pattern = "Exit Data.xlsx",
                                full.names = T)
   
@@ -40,7 +40,7 @@ load_raw_sha_exit <- function(conn = NULL,
   # Have to set DOB format here to join files
   sha_exit <- sha_exit %>%
     map(~ if (is.character(.x$dob) == T) {
-      .x %>% mutate(dob = as.Date(as.numeric(dob), origin = "1970-01-01"),
+      .x %>% mutate(dob = as.Date(as.numeric(dob), origin = "1899-12-30"),
                     across(c("move_in_date", "act_date"), ~ as.Date(.)))
     } else {.x}) %>%
     map(~ .x %>%

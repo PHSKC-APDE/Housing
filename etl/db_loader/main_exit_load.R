@@ -14,6 +14,7 @@ library(data.table) # Manipulate data
 library(tidyverse) # Manipulate data
 library(odbc) # Read to and write from SQL
 library(configr) # Read in YAML files
+library(readxl) # Read Excel files
 library(glue) # Safely combine SQL code
 library(keyring) # Access stored credentials
 library(apde) # Handy functions for working with data in APDE
@@ -29,7 +30,6 @@ options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 
 qa_schema <- "pha"
 qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
-file_path_sha <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data"
 
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
@@ -100,7 +100,7 @@ rm(etl_batch_id_sha_exit, load_raw_sha_exit)
 
 
 
-# MAKE STAGE SHA TABLE ----
+# MAKE STAGE COMBINED TABLE ----
 # Bring in function
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_exit.R")
 
