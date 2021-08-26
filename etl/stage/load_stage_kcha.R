@@ -514,6 +514,8 @@ load_stage_kcha <- function(conn = NULL,
                  across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ str_replace_all(., paste(suffix, "$", collapse="|", sep = ""), "")),
                  across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
+                        ~ str_squish(.)),
+                 across(any_of(c("hh_lname", "hh_fname", "hh_mname", "lname", "fname", "mname")), 
                         ~ ifelse(. == "", NA_character_, .))) %>%
           # Clean up where middle initial seems to be in first name field
           # NOTE: There are many rows with a middle initial in the fname field AND 
