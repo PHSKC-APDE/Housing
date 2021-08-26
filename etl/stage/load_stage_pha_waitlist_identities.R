@@ -8,7 +8,7 @@
 # Assumes relevant libraries are already loaded
 #
 #
-# db_hhsaw = ODBC db_hhsawection to use (change to conn if this becomes a function)
+# db_hhsaw = ODBC db_hhsaw connection to use (change to conn if this becomes a function)
 # to_schema = name of the schema to load data to
 # to_table = name of the table to load data to
 # from_schema = name of the schema the input data are in
@@ -713,7 +713,7 @@ if (min(qa_clusters_result, qa_row_diff_result) == "FAIL") {
 
 # LOAD DATA TO SQL ----
 ## Identities ----
-# Split into smaller tables to avoid SQL db_hhsawection issues
+# Split into smaller tables to avoid SQL db_hhsaw connection issues
 start <- 1L
 max_rows <- 50000L
 cycles <- ceiling(nrow(names_final)/max_rows)
@@ -737,7 +737,7 @@ lapply(seq(start, cycles), function(i) {
 })
 
 ## Identity history ----
-# Split into smaller tables to avoid SQL db_hhsawection issues
+# Split into smaller tables to avoid SQL db_hhsaw connection issues
 start <- 1L
 max_rows <- 50000L
 cycles <- ceiling(nrow(id_history_updated)/max_rows)

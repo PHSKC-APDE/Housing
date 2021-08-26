@@ -8,17 +8,13 @@
 # Assumes relevant libraries are already loaded
 
 
-# db_hhsaw = ODBC db_hhsawection to use (change to conn if this becomes a function)
+# db_hhsaw = ODBC db_hhsaw connection to use (change to conn if this becomes a function)
 # to_schema = name of the schema to load data to
 # to_table = name of the table to load data to
 # from_schema = name of the schema the input data are in
 # from_table = common prefix of the table the input data are in
 # qa_schema = name of the schema the QA lives in (likely the same as the to_schema if working in HHSAW)
 # qa_table = name of the table that holds QA outcomes
-# file_path = where the KCHA data files live (note that the file names themselves are hard coded for now)
-# years = which years to load to the stage table
-# truncate = whether to remove existing stage data from selected years first (default is TRUE).
-#    NB. any existing data from other years will remain intact regardless
 
   
   # BRING IN DATA ----
@@ -38,20 +34,23 @@
     names_existing <- dbGetQuery(db_hhsaw, 
                                  glue_sql("SELECT * FROM {`final_schema`}.{`final_table`}",
                                           .con = db_hhsaw))
-    # PLACEHOLDER FOR WHEN AN ANTI-JOIN CAN BE SET UP
+    
     names <- dbGetQuery(
       db_hhsaw,
-      glue_sql("SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash, pha_source 
+      glue_sql("SELECT c.*, d.present FROM
+               (SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
+                          dob, female, id_hash
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
                         UNION
                         SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash, pha_source 
+                          dob, female, id_hash
                         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b
-                        DO ANTI-JOIN
-                        ",
+               ) c
+               LEFT JOIN
+               (SELECT id_hash, 1 AS present FROM {`final_schema`}.{`final_table`}) d
+               ON c.id_hash = d.id_hash
+               WHERE present IS NULL",
                .con = db_hhsaw))
-    # Then set up final names table
   } else {
     names <- dbGetQuery(
       db_hhsaw,
@@ -235,7 +234,15 @@
   
   
   ## Add in variables for matching ----
-  names_use <- names %>%
+  if (exists("names_existing")) {
+    names_use <- bind_rows(mutate(names_existing, source = "final"), 
+                            mutate(names, source = "new")) %>%
+      select(-present)
+  } else {
+    names_use <- names %>% mutate(source = "new")
+  }
+  
+  names_use <- names_use %>%
     mutate(ssn_id = case_when(!is.na(ssn) ~ ssn,
                               !is.na(pha_id) ~ pha_id,
                               TRUE ~ NA_character_),
@@ -255,7 +262,7 @@
     names_use, 
     blockfld = "ssn_id", 
     strcmp = c("lname", "fname", "mname", "dob_y", "dob_m", "dob_d", "female"), 
-    exclude = c("ssn", "pha_id", "lname_phon", "fname_phon", "dob", "rowid", "id_hash"))
+    exclude = c("ssn", "pha_id", "lname_phon", "fname_phon", "dob", "rowid", "id_hash", "id_kc_pha", "source"))
   message("Pairwise comparisons complete. Total run time: ", round(Sys.time() - st, 2), " ", units(Sys.time()-st))
   
   summary(match_01)
@@ -272,6 +279,8 @@
   
   ## Review output and select cutoff point(s) ----
   pairs_01 %>% 
+    # Only keep matches with waitlist data in it
+    filter(!(source.1 == "final" & source.2 == "final")) %>%
     # NON-JAN 1 SECTION
     filter(!((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1"))) %>%
     # filter(Weight >= 0.7 & dob_y.1 != dob_y.2 & dob_m.1 == dob_m.2 & dob_d.1 == dob_d.2) %>%
@@ -294,6 +303,8 @@
   
   
   pairs_01_trunc <- pairs_01 %>%
+    # Only keep matches with waitlist data in it
+    filter(!(source.1 == "final" & source.2 == "final")) %>%
     filter(
       # SECTION FOR NON-JAN 1 BIRTH DATES
       (!((dob_m.1 == "1" & dob_d.1 == "1") | (dob_m.2 == "1" & dob_d.2 == "1")) &
@@ -373,6 +384,8 @@
   pairs_02 %>% filter(Weight <= 0.8 & ssn_id.1 != ssn_id.2) %>% select(-contains("id_hash")) %>% head()
   
   pairs_02 %>% 
+    # Only keep matches with waitlist data in it
+    filter(!(source.1 == "final" & source.2 == "final")) %>%
     # select(-contains("id_hash")) %>% 
     filter(Weight >= 0.77) %>% 
     filter(ssn_id.1 != ssn_id.2) %>%
@@ -384,6 +397,8 @@
   
   
   pairs_02_trunc <- pairs_02 %>%
+    # Only keep matches with waitlist data in it
+    filter(!(source.1 == "final" & source.2 == "final")) %>%
     filter(
       # Matching SSN all have high weights and look good
       ssn.1 == ssn.2 |
@@ -452,8 +467,8 @@
   ids_dedup[, clusterid_1_cnt := uniqueN(clusterid_1), by = "clusterid_2"]
   ids_dedup[, clusterid_2_cnt := uniqueN(clusterid_2), by = "clusterid_1"]
   remaining_dupes <- ids_dedup %>% count(clusterid_1_cnt, clusterid_2_cnt) %>%
-                           filter(clusterid_1_cnt != clusterid_2_cnt) %>%
-                           summarise(dups = sum(n))
+    filter(clusterid_1_cnt != clusterid_2_cnt) %>%
+    summarise(dups = sum(n))
   remaining_dupes <- remaining_dupes$dups[1]
   
   if (remaining_dupes > 0) {
@@ -496,19 +511,46 @@
   }
   
   
-  ## Now make an alpha-numeric ID that will be stored in a table ----
+  ## Make an alpha-numeric ID that will be stored in a table ----
+  new_ids_needed <- n_distinct(ids_dedup$cluster_final)
+  if (exists("names_existing")) {
+    # Pull in existing IDs to make sure they are not repeated
+    ids_existing <- unique(names_existing$id_kc_pha)
+    
+    # If using the same seed as was used to create other IDs, can just tack on
+    # the number of new IDs needed
+    ids_final <- id_nodups(id_n = length(ids_existing) + new_ids_needed,
+                           id_length = 10)
+    
+    ids_final_dedup <- ids_final[!ids_final %in% ids_existing]
+    
+    # Make sure there are enough new IDs
+    if (length(ids_final_dedup) < new_ids_needed) {
+      # Run again but make it longer
+      ids_final <- id_nodups(id_n = length(ids_existing) + new_ids_needed * 3,
+                             id_length = 10)
+      
+      ids_final_dedup <- ids_final[!ids_final %in% ids_existing]
+      rm(ids_final_dedup)
+    }
+    # Check again
+    if (length(ids_final_dedup) < new_ids_needed) {
+      stop("Could not generate enough new IDs")
+    }
+    
+    # Trim to correct size
+    ids_final <- ids_final_dedup[1:new_ids_needed]
+  } else {
+    ids_final <- id_nodups(id_n = new_ids_needed, id_length = 10)
+  }
   
-  # NB. This will need to be reworked when there is an existing table with id_kc_phas
-  #  Likely make twice as many id_kc_phas as needed then weed out the ones already in
-  #    the master list, before trimming to the actual number needed.
-  
-  ids_final <- id_nodups(id_n = n_distinct(ids_dedup$cluster_final),
-                         id_length = 10)
+  # Join to cluster IDs
   ids_final <- ids_dedup %>%
     distinct(cluster_final) %>%
     arrange(cluster_final) %>%
     bind_cols(., id_kc_pha = ids_final)
   
+  # Join to make final list of names and IDs
   names_final <- names_use %>%
     select(ssn, pha_id, lname, fname, mname, dob, female, id_hash) %>%
     left_join(., select(ids_dedup, id_hash, cluster_final), by = "id_hash") %>%
@@ -516,6 +558,118 @@
     select(-cluster_final) %>%
     distinct() %>%
     mutate(last_run = Sys.time())
+  
+  
+  ## Consolidate IDs ----
+  if (exists("names_existing")) {
+    # Easiest to assign a number to each ID so taking the min works to consolidate groups
+    # Quicker to use data table to set these up
+    names_existing <- setDT(names_existing)
+    setnames(names_existing, "id_kc_pha", "id_kc_pha_old")
+    names_existing[, `:=` (hash_cnt_old = .N, id_num_old = .GRP), by = "id_kc_pha_old"]
+    
+    names_final <- setDT(rename(names_final, id_kc_pha_new = id_kc_pha))
+    names_final[, `:=` (hash_cnt_new = .N, id_num_new = .GRP), by = "id_kc_pha_new"]
+    names_final[, id_num_new := id_num_new + length(ids_existing)]
+    
+    # Bring old and new together
+    names_dedup <- merge(names_existing[, .(id_hash, id_kc_pha_old, hash_cnt_old, id_num_old)],
+                         names_final[, .(id_hash, id_kc_pha_new, hash_cnt_new, id_num_new)],
+                         by = "id_hash", all = T)
+    
+    # Check for unclosed groups in either direction
+    names_dedup[!is.na(id_kc_pha_old), id_min_new := min(id_num_new, na.rm = T), by = "id_kc_pha_old"]
+    names_dedup[!is.na(id_kc_pha_new), id_min_old := min(id_num_old, na.rm = T), by = "id_kc_pha_new"]
+    
+    # Replace infinite values created above
+    names_dedup[is.infinite(id_min_old), id_min_old := NA]
+    names_dedup[is.infinite(id_min_new), id_min_new := NA]
+    
+    # Any rows with blank id_min_new and id_min_old are those that didn't match at all. Just bring over id_num_new
+    names_dedup[is.na(id_min_new) & is.na(id_min_old), id_min_new := id_num_new]
+    
+    # Consolidate so old number is preferentially kept
+    names_dedup[, id_num_final := coalesce(id_min_old, id_min_new)]
+    
+    # Make a reshaped list of IDs and ID numbers to get final ID
+    id_num_list <- bind_rows(distinct(names_dedup, id_kc_pha_old, id_num_old) %>% 
+                               filter(!is.na(id_kc_pha_old)) %>%
+                               rename(id_kc_pha_final = id_kc_pha_old,
+                                      id_num_final = id_num_old),
+                             distinct(names_dedup, id_kc_pha_new, id_num_new) %>% 
+                               rename(id_kc_pha_final = id_kc_pha_new, 
+                                      id_num_final = id_num_new))
+    
+    # Check the number of IDs matches what is expected
+    if (nrow(id_num_list) != length(ids_existing) + new_ids_needed) {
+      stop("Mismatched number of rows in id_num_list (too many or too few)")
+    }
+    
+    # Join to get the final ID
+    names_dedup <- left_join(select(names_dedup, id_hash, id_kc_pha_old, id_kc_pha_new, id_num_final),
+                             id_num_list,
+                             by = "id_num_final") %>%
+      select(-id_num_final)
+    
+    
+    names_dedup <- names_dedup %>%
+      mutate(id_kc_pha_final = case_when(
+        id_hash == "ABDAC017BBFC77BA7598771AB49FA04E54DD2CC1DE0F3A4C14570F740D26F174" ~ "0p5x0nezqz",
+        id_hash == "BB3D7E2989BDFA189E60E4F4CC4B2B2F95DC2A5699976D09E1F20AA06ADF8041" ~ "7ay43yf6r1",
+        id_hash == "D551668F0E8AB2FC54B7D65D7864FF60F3E3D7317CCC94CF2F75A1197E8AC3A3" ~ "j08g1ji8cu",
+        TRUE ~ id_kc_pha_final
+      ))
+    
+    
+    ## Make final names table ----
+    # Set up last_run time
+    run_time <- Sys.time()
+    names_final <- left_join(names_final, 
+                             select(names_dedup, id_hash, id_kc_pha_final),
+                             by = "id_hash") %>%
+      select(ssn, pha_id, lname, fname, mname, dob, female, id_hash, id_kc_pha_final) %>%
+      rename(id_kc_pha = id_kc_pha_final) %>%
+      mutate(last_run = run_time)
+    
+    
+    # UPDATE ID TABLE ----
+    # Want to keep a record of a person's ID over time
+    # Assumes a table called [final_schema].[final_table]_history exists
+    # Could make a dynamic part of a function later
+    
+    # Bring in history table
+    id_history <- dbGetQuery(
+      db_hhsaw, glue_sql("SELECT * FROM {`final_schema`}.{DBI::SQL(paste0(final_table, '_history'))}",
+                         .con = db_hhsaw))
+    # Fix any format issues
+    id_history <- id_history %>%
+      mutate(across(c("from_date", "to_date", "last_run"), ~ as.POSIXct(.)))
+    
+    
+    # Find IDs that changed and update their to_date
+    id_changed <- names_dedup %>% 
+      filter(!is.na(id_kc_pha_old) & id_kc_pha_old != id_kc_pha_final) %>%
+      select(id_hash) %>%
+      mutate(changed = 1L)
+    
+    id_history_updated <- left_join(id_history, id_changed, by = "id_hash") %>%
+      mutate(to_date = as.POSIXct(ifelse(changed == 1, run_time, to_date), origin = "1970-01-01", tz = "utc")) %>%
+      select(-changed)
+    
+    # Add in new or changed IDs and set from date
+    id_new <- names_dedup %>% 
+      filter(is.na(id_kc_pha_old) | id_kc_pha_old != id_kc_pha_final) %>%
+      select(id_hash, id_kc_pha_final) %>%
+      rename(id_kc_pha = id_kc_pha_final) %>%
+      mutate(from_date = run_time, to_date = as.POSIXct(NA))
+    
+    id_history_updated <- bind_rows(id_history_updated, id_new)
+    
+    # Replace last_run date
+    id_history_updated <- id_history_updated %>%
+      mutate(last_run = lubridate::with_tz(run_time, tzone = "utc"))
+    
+  }
   
   
   # QA FINAL DATA ----
@@ -527,7 +681,11 @@
   ## New clusters compared to last time ----
   
   
+  
   ## Check combined table is longer than the original ----
+  
+  
+  ## ID history table rows compared to last time ----
   
   
   
@@ -566,7 +724,8 @@
   
   
   # LOAD DATA TO SQL ----
-  # Split into smaller tables to avoid SQL db_hhsawection issues
+  ## Identities ----
+  # Split into smaller tables to avoid SQL db_hhsaw connection issues
   start <- 1L
   max_rows <- 50000L
   cycles <- ceiling(nrow(names_final)/max_rows)
@@ -585,6 +744,30 @@
       dbWriteTable(db_hhsaw,
                    name = DBI::Id(schema = to_schema, table = to_table),
                    value = as.data.frame(names_final[start_row:end_row ,]),
+                   overwrite = F, append = T)
+    }
+  })
+  
+  ## Identity history ----
+  # Split into smaller tables to avoid SQL db_hhsaw connection issues
+  start <- 1L
+  max_rows <- 50000L
+  cycles <- ceiling(nrow(id_history_updated)/max_rows)
+  
+  lapply(seq(start, cycles), function(i) {
+    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+    end_row <- min(nrow(id_history_updated), max_rows * i)
+    
+    message("Loading cycle ", i, " of ", cycles)
+    if (i == 1) {
+      dbWriteTable(db_hhsaw,
+                   name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
+                   value = as.data.frame(id_history_updated[start_row:end_row, ]),
+                   overwrite = T, append = F)
+    } else {
+      dbWriteTable(db_hhsaw,
+                   name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
+                   value = as.data.frame(id_history_updated[start_row:end_row ,]),
                    overwrite = F, append = T)
     }
   })
