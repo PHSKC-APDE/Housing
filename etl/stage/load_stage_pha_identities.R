@@ -612,15 +612,6 @@
       select(-id_num_final)
     
     
-    names_dedup <- names_dedup %>%
-      mutate(id_kc_pha_final = case_when(
-        id_hash == "ABDAC017BBFC77BA7598771AB49FA04E54DD2CC1DE0F3A4C14570F740D26F174" ~ "0p5x0nezqz",
-        id_hash == "BB3D7E2989BDFA189E60E4F4CC4B2B2F95DC2A5699976D09E1F20AA06ADF8041" ~ "7ay43yf6r1",
-        id_hash == "D551668F0E8AB2FC54B7D65D7864FF60F3E3D7317CCC94CF2F75A1197E8AC3A3" ~ "j08g1ji8cu",
-        TRUE ~ id_kc_pha_final
-      ))
-    
-    
     ## Make final names table ----
     # Set up last_run time
     run_time <- Sys.time()
