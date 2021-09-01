@@ -97,10 +97,7 @@ load_stage_timevar <- function(conn = NULL,
   # Also flag when there is >1 row per ID/HH_ID combo
   pha[, hh_id_cnt := .N, by = c("id_kc_pha", "hh_id_tmp")]
   
-  # Also make a head of household ID to track households across time
-  pha[, hh_id_long := .GRP, by = c("hh_ssn", "hh_lname", "hh_fname")]
-  
-  
+
   ## Subsidy type ----
   # Make program type upper case (in case it isn't)
   pha[, prog_type := toupper(prog_type)]
@@ -468,16 +465,6 @@ load_stage_timevar <- function(conn = NULL,
   hh_final[, `:=` (hh_id_kc_pha = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
   hh_final <- unique(hh_final)
   
-  ## Member numbers ----
-  # People appear twice with different member numbers
-  # Collapse to lowest observed member number to reduce row duplication
-  # Best to do here before regenerating the hh_flag
-  hh_final[, mbr_num_min := min(mbr_num, na.rm = T), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
-  
-  # Select final columns for joining back to main data
-  hh_final <- hh_final[, mbr_num := NULL]
-  hh_final <- unique(hh_final)
-  
   
   ## Join HH decider back to main DF ----
   # Pull out all the head of households that didn't need to be decided
@@ -531,7 +518,7 @@ load_stage_timevar <- function(conn = NULL,
   
   # Select final columns for merging
   hh_final <- hh_final[, .(agency, act_date, hh_id_tmp, 
-                           id_kc_pha, ssn, lname, fname, dob, mbr_num_min, 
+                           id_kc_pha, ssn, lname, fname, dob, 
                            hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
   hh_final <- unique(hh_final)
   
@@ -545,23 +532,18 @@ load_stage_timevar <- function(conn = NULL,
     hh_final[, has_hh4 := NULL]
   }
   
-  # There are now some duplicate rows where everything is the same except hh_id_tmp
-  # Since we will join hh_final later to the consolidated data, we no longer need
-  # most columns.
-  # However, keep hh_final for now in case this process is revised.
-  hh_final2 <- copy(hh_final)
-  hh_final2 <- unique(hh_final2[, .(agency, id_kc_pha, act_date, hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)])
-  
   
   # BRING HEAD OF HOUSEHOLD AND MEMBER NUMBER INFO BACK TO MAIN DATA ----
-  # Remove the columns that will be re-added later
+  # Remove the columns that will be re-added or are no longer relevant
   pha[, `:=` (mbr_num = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
   pha <- unique(pha)
   
-  # Currently not adding this info until after consolidation
-  # pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha", 
-  #                                    "ssn", "lname", "fname", "dob"),
-  #               all.x = T)
+  pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha",
+                                     "ssn", "lname", "fname", "dob"),
+                all.x = T)
+  
+  ## Make a head of household ID to track households across time ----
+  pha[, hh_id_long := .GRP, by = c("hh_ssn", "hh_lname", "hh_fname")]
   
   
   # BEGIN CONSOLIDATION ----
@@ -1548,78 +1530,8 @@ load_stage_timevar <- function(conn = NULL,
   sum(pha_sort$truncated, na.rm = T)
   
   
-  
-  # REGENERATE HEAD OF HOUSEHOLD ----
-  # Use the HH most recently associated with that time period
-  
-  
-  test <- copy(pha_sort)
-  test[, `:=` (
-    mbr_num_min = NULL, hh_id_kc_pha = NULL, hh_ssn = NULL, hh_lname = NULL,
-    hh_fname = NULL, hh_flag = NULL, act_date = NULL
-  )]
-  
-  test_hh <- copy(hh_final2)
-  test_hh[, hh_cnt := uniqueN(hh_id_kc_pha), by = .(id_kc_pha)]
-  
-  
-  test2 <- test[test_hh[!is.na(act_date), .(agency, id_kc_pha, act_date, mbr_num_min, hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)],
-                on = .(id_kc_pha = id_kc_pha, from_date <= act_date, to_date >= act_date),
-                mult = "last", nomatch = 0]
-  
-  
-  test2 <- hh_final2[test, 
-                   .(agency, id_kc_pha, x.act_date, from_date, to_date, 
-                     hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag),
-                   on = .(agency, id_kc_pha, 
-                          act_date >= from_date, act_date <= to_date),
-                   mult = "all"]
-  setnames(test2, "x.act_date", "act_date")
-  test2[, max_act_date := max(act_date), by = .(id_kc_pha, from_date)]
-  test2 <- test2[act_date == max_act_date]
-  
-  test2[, from_date_cnt := .N, by = .(id_kc_pha, from_date)]
-  test2 %>% count(from_date_cnt)
-  test2 %>% filter(from_date_cnt > 1) %>% head()
-  
-  
-  
-  
-  test[, c("hh_id_kc_pha", "hh_ssn", "hh_lname", "hh_fname", "hh_flag") := # Assign the below result to new columns in dtgrouped2
-         test[test_hh, # join
-                   .(hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag), # get the column you need
-                   on = .(id_kc_pha = id_kc_pha, # join conditions
-                          from_date <= act_date, 
-                          to_date >= act_date), 
-                   mult = "last"]] # get always the latest EndDate
-  
-  
-  test2 <- test_hh[!is.na(act_date), c("from_date", "to_date") := # Assign the below result to new columns in dtgrouped2
-            test[test_hh, # join
-                      .(from_date, to_date), # get the column you need
-              on = .(id_kc_pha = id_kc_pha, # join conditions
-                     from_date <= act_date, 
-                     to_date >= act_date), 
-              mult = "last"]] # get always the latest EndDate
-  
-  
-  test3 <- test[test_hh, # join
-                # .(from_date, to_date), # get the column you need
-                on = .(id_kc_pha, # join conditions
-                       from_date <= act_date, 
-                       to_date >= act_date), 
-                # mult = "last", 
-                nomatch = 0]
-  
-  test2 %>% filter(id_kc_pha == "6ms5k28qis") %>% select(id_kc_pha, act_date, hh_id_kc_pha, from_date, to_date)
-  test2 %>% filter(id_kc_pha == "mlgjp9urj7") %>% select(id_kc_pha, act_date, hh_id_kc_pha, from_date, to_date)
-  
-  
-  test2[, max_act_date := max(act_date, na.rm = T), by = c("id_kc_pha", "from_date", "to_date")]
-  
-  
   # FINALIZE TABLE ----
-  pha_timevar <- pha_sort
+  pha_timevar <- copy(pha_sort)
   
   ## Coverage time ----
   setorder(pha_timevar, id_kc_pha, from_date, to_date)
@@ -1630,7 +1542,9 @@ load_stage_timevar <- function(conn = NULL,
                     from_date - lag(to_date, 1) > 62 ~ 1L,
                     TRUE ~ NA_integer_))]
   # Find the number of unique periods a person was in housing
-  pha_timevar[, period := rowid(id_kc_pha, gap) * gap + 1]
+  # Inner cumsum finds when gap == 1 (basically the cumulative difference with previous row is 0 rather than -1), 
+  # outer cumsum starts a new group when this happens and adds 1 because the starting group is 0
+  pha_timevar[, period := cumsum(cumsum(c(-1, diff(gap))) == 0) + 1]
   
   
   
@@ -1658,7 +1572,7 @@ load_stage_timevar <- function(conn = NULL,
   ## Select and arrange columns
   cols_select <- c(
     # ID variables
-    "id_kc_pha", "id_hash", "hh_id_long", 
+    "id_kc_pha", "id_hash", "hh_id_long", "hh_id_kc_pha",
     # Time-varying demog variables
     "disability",
     # Program info

@@ -86,7 +86,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   years <- seq(2012, 2020)
   
   # Set up each grouping variable
-  categories <- c("disability", "major_prog", "subsidy_type", "prog_type",
+  categories <- c("hh_id_kc_pha", "disability", "major_prog", "subsidy_type", "prog_type",
                   "operator_type", "vouch_type_final", "portfolio_final",
                   "geo_zip_clean", "geo_tractce10")
   
@@ -169,6 +169,8 @@ load_stage_pha_calyear <- function(conn = NULL,
     # Core variables
     "year", "id_kc_pha", "agency", "pt_total", 
     "admit_date", "time_housing_yr", "time_housing", 
+    # Head of household variables
+    "hh_id_kc_pha", "hh_id_kc_pha_pt",
     # Demog variables
     "dob", "age_yr", "agegrp", "agegrp_expanded", "adult", "senior",
     "gender_me", "gender_recent", "gender_female", "gender_male",
