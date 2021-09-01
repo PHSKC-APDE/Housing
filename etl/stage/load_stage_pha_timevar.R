@@ -218,22 +218,350 @@ load_stage_timevar <- function(conn = NULL,
   
   
   # HEAD OF HOUSEHOLD ----
-  hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname",
+  ## Make a new HH ID to track households over time ----
+  hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname", "dob",
                 "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "hh_id_tmp")]
   hh <- unique(hh)
   
+  # Attach id_kc_pha to each HH to make tracking easier
+  hh_id <- hh[, c("id_kc_pha", "act_date", "ssn", "lname", "fname", "dob", "hh_ssn", "hh_lname", "hh_fname")]
+  hh_id <- unique(hh_id)
+  
+  hh_id[, hh_id_kc_pha := case_when(
+    hh_ssn == ssn & !is.na(ssn) & (hh_lname == lname | hh_fname == fname) ~ id_kc_pha,
+    hh_lname == lname & hh_fname == fname & (is.na(hh_ssn) | is.na(ssn)) ~ id_kc_pha,
+    hh_ssn != ssn & !is.na(ssn) ~ NA_character_
+  )]
+  hh_id <- hh_id[!is.na(hh_id_kc_pha), c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname", "hh_id_kc_pha")]
+  hh_id <- unique(hh_id)
+  
+  # Join back to HH data
+  hh <- merge(hh, hh_id, by = c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
   
   hh[, hh_flag := case_when(
-    agency == "KCHA" & mbr_num == 1 ~ 1L,
-    agency == "KCHA" & mbr_num > 1 ~ 0L,
+    mbr_num == 1 ~ 1L,
+    mbr_num > 1 ~ 0L,
     hh_ssn == ssn & !is.na(ssn) ~ 1L,
-    (is.na(hh_ssn) | is.na(ssn)) & hh_lname == lname & hh_fname == fname ~ 1L,
+    hh_lname == lname & hh_fname == fname ~ 1L,
     TRUE ~ 0L)]
-  # Check how many households don't have a HH
-  hh[, has_hh := sum(hh_flag), by = "hh_id_tmp"]
+  
+  # Check how many households don't have a HH or have multiple HHs
+  # Also count how many rows have any ID on it (used for tiebreakers later)
+  hh[, has_hh := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+  hh[, hh_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = "hh_id_tmp"]
+  hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
+  hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
   
   hh %>% count(agency, has_hh)
+  hh %>% count(agency, has_hh, hh_id_cnt)
+  hh %>% count(agency, hh_id_cnt)
   
+  # For households with no hh_id_kc_pha, add some possibilities
+  hh[hh_id_cnt == 0 & has_hh != 1, hh_id_poss := case_when(
+    RecordLinkage::jarowinkler(hh_ssn, ssn) > 0.9 ~ 1L,
+    (ssn == hh_ssn | (is.na(hh_ssn) | is.na(ssn))) & fname == hh_fname ~ 1L,
+    hh_lname == lname & hh_fname == fname & (!is.na(hh_ssn) | !is.na(ssn)) ~ 1L,
+    TRUE ~ 0L
+  )]
+  hh[, hh_id_poss_cnt := sum(hh_id_poss, na.rm = T), by = "hh_id_tmp"]
+  hh %>% count(hh_id_poss_cnt)
+  
+  
+  ## Assign head of household as needed ----
+  ## Use the following to allocate HH for a given act_date/hh combo when 2+ candidates
+  # 1) If 2+ hh_flags but only one row with a hh_id_value, take the one with a hh_id_pha_value 
+  # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1
+  # 3) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+  # 4) If no DOB for #3, take the row with a hh_ssn value (regardless of mbr_num)
+  # 5) If still undecided, randomly assign one of the people with a hh_id_kc_pha value
+  # 6) If 2+ hh_id_kc_pha values, take mbr_num = 1
+  # 7) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+  # 8) If no DOB for #7, randomly assign one of the people with a hh_id_kc_pha value
+  # 9) If no hh_id_kc_pha values and 2+ with mbr_num = 1, take the oldest person with mbr_num = 1
+  # 10) If no DOB for #9, randomly take one of the mbr_num = 1 people
+  # 11) If no hh_id_kc_pha and no mbr_num, take the possible hh_id person
+  # 12) If multiple possible hh_id people, take the eldest
+  # 13) If no DOBs for #12, take a random hh_id contender
+  # 14) If no possible hh_id contenders, take the oldest person in the house
+  # 15) If no DOB for #14 or oldest is a tie, randomly take one person in the house
+  hh_decider <- hh[has_hh != 1]
+  hh_decider[mbr_num == 1, mbr1_cnt := .N, by = c("hh_id_tmp")]
+  hh_decider[mbr_num == 1, mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[mbr_num == 1 & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
+  hh_decider[!is.na(hh_id_kc_pha), has_ssn_id := !is.na(hh_ssn)]
+  hh_decider[!is.na(hh_id_kc_pha), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[mbr_num == 1 & !is.na(hh_id_kc_pha), oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[mbr_num == 1, oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[hh_id_poss == 1, oldest_hh_poss := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[, oldest_any := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  # Apply key numbers to whole household
+  hh_decider[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, mbr1_cnt := max(mbr1_cnt, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, mbr1_id_cnt := max(mbr1_id_cnt, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, mbr1_id_row_cnt := max(mbr1_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, has_ssn_id_cnt := sum(has_ssn_id, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, oldest_hh_id_cnt := sum(oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, oldest_hh_id_mbr1_cnt := sum(oldest_hh_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, oldest_mbr1_cnt := sum(oldest_mbr1, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, oldest_hh_poss_cnt := sum(oldest_hh_poss, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, oldest_any_cnt := sum(oldest_any, na.rm = T), by = c("hh_id_tmp")]
+  # Set up random numbers for each scenario
+  set.seed(98104)
+  hh_decider[!is.na(hh_id_kc_pha), decider_id := runif(.N, 0, 1)]
+  hh_decider[!is.na(hh_id_kc_pha) & mbr_num == 1, decider_id_mbr1 := runif(.N, 0, 1)]
+  hh_decider[mbr_num == 1, decider_mbr1 := runif(.N, 0, 1)]
+  hh_decider[hh_id_poss == 1, decider_hh_poss := runif(.N, 0, 1)]
+  hh_decider[oldest_hh_id == T, decider_oldest_hh_id := runif(.N, 0, 1)]
+  hh_decider[oldest_any == T, decider_oldest := runif(.N, 0, 1)]
+  hh_decider[, decider_any := runif(.N, 0, 1)]
+  # Apply max random numbers to whole household
+  hh_decider[, decider_id_max := max(decider_id, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_id_mbr1_max := max(decider_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_mbr1_max := max(decider_mbr1, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_hh_poss_max := max(decider_hh_poss, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_oldest_hh_id_max := max(decider_oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_oldest_max := max(decider_oldest, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[, decider_any_max := max(decider_any, na.rm = T), by = c("hh_id_tmp")]
+  
+  
+  ### Reset hh_flag ----
+  hh_decider[, hh_flag := NA_integer_]
+  
+  ### One hh_id_kc_pha value with multiple rows ----
+  hh_decider[, hh_flag := case_when(
+    # One row with an ID
+    hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_id_kc_pha) ~ 1L,
+    hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_id_kc_pha) ~ 0L,
+    # One row with mbr_num = 1
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num == 1 & !is.na(hh_id_kc_pha) ~ 1L,
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num == 1 & is.na(hh_id_kc_pha) ~ 0L,
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num != 1 ~ 0L,
+    # 2+ rows with mbr_num = 1 (take oldest person, most likely actually non-missing DOB)
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num == 1 & 
+      oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num == 1 & 
+      (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num != 1 ~ 0L,
+    # 2+ rows with mbr_num = 1 and no DOB or tied DOB, take SSN (regardless of mbr_num)
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == T & has_ssn_id_cnt == 1 ~ 1L,
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == F & has_ssn_id_cnt == 1 ~ 0L,
+    # 2+ rows with mbr_num = 1 and no DOB or tied DOB, and no SSN
+    hh_id_cnt == 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & 
+      has_ssn_id_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
+    hh_id_cnt == 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & 
+      has_ssn_id_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
+    # No member numbers, but DOBs
+    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
+    hh_id_cnt == 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
+    # No member numbers, and tied DOB
+    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
+      decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
+    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
+      decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
+    # No member numbers and no DOBs
+    hh_id_cnt == 1 & decider_id == decider_id_max ~ 1L,
+    hh_id_cnt == 1 & decider_id != decider_id_max ~ 0L,
+    hh_id_cnt == 1 & is.na(decider_id) ~ 0L,
+    TRUE ~ hh_flag)]
+  
+  
+  ### Multiple hh_id_kc_pha values ----
+  hh_decider[, hh_flag := case_when(
+    # One hh_id_kc_pha with mbr_num = 1
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num == 1 & !is.na(hh_id_kc_pha) ~ 1L,
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num == 1 & is.na(hh_id_kc_pha) ~ 0L,
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num != 1 ~ 0L,
+    # 2+ hh_id_kc_pha with mbr_num = 1 (take oldest person)
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & 
+      oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & 
+      (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num != 1 ~ 0L,
+    # 2+ hh_id_kc_pha with mbr_num = 1 and no DOB or tied DOB
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
+    # No member numbers, but DOBs
+    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
+    hh_id_cnt > 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
+    # No member numbers, and tied DOB
+    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
+      decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
+    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
+      decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
+    # No member numbers and no DOBs
+    hh_id_cnt > 1 & decider_id == decider_id_max ~ 1L,
+    hh_id_cnt > 1 & decider_id != decider_id_max ~ 0L,
+    hh_id_cnt > 1 & is.na(decider_id) ~ 0L,
+    TRUE ~ hh_flag)]
+  
+  
+  ### No hh_id_kc_pha values ----
+  hh_decider[, hh_flag := case_when(
+    # 1+ mbr_num = 1 and DOBs
+    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & (oldest_mbr1 == F | (is.na(oldest_mbr1) & oldest_mbr1_cnt == 1)) ~ 0L,
+    # 1+ mbr_num = 1 and no DOB or tied DOB
+    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1_cnt != 1 & decider_mbr1 == decider_mbr1_max ~ 1L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
+    hh_id_cnt == 0 & mbr1_cnt >= 1 & mbr_num != 1 ~ 0L,
+    # No member numbers, one possible hh_id_kc_pha contenders
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt == 1 ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 0 & hh_id_poss_cnt == 1 ~ 0L,
+    # No member numbers, 2+ possible hh_id_kc_pha contenders and DOBs
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & 
+      oldest_hh_poss_cnt == 1 & oldest_hh_poss == T ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt > 1 & 
+      (oldest_hh_poss == F | (is.na(oldest_hh_poss) & oldest_hh_poss_cnt == 1)) ~ 0L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt >= 1 & hh_id_poss == 0 ~ 0L,
+    # No member numbers, 2+ possible hh_id_kc_pha contenders and no DOB or tied DOB
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
+      decider_hh_poss == decider_hh_poss_max ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
+      decider_hh_poss != decider_hh_poss_max ~ 0L,
+    # No member numbers or possible hh_id_kc_pha contenders, but DOBs
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any == T & oldest_any_cnt == 1 ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & 
+      (oldest_any == F | (is.na(oldest_any) & oldest_any_cnt == 1)) ~ 0L,
+    # No member numbers or possible hh_id_kc_pha contenders, and tied DOB
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
+      decider_oldest == decider_oldest_max ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
+      decider_oldest != decider_oldest_max ~ 0L,
+    # No member numbers or possible hh_id_kc_pha contenders, and no DOBs
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 & 
+      decider_any == decider_any_max ~ 1L,
+    hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 &  
+      decider_any != decider_any_max ~ 0L,
+    TRUE ~ hh_flag)]
+  
+  hh_decider %>% count(hh_flag)
+  
+  # Make sure each hh_id_tmp has at least 1 hh_flag
+  if (nrow(hh_decider[is.na(hh_flag)]) > 0) {
+    stop("Check head of household decider code to see why some people were not classified")
+  }
+  
+  # Transfer name and SSN details over to HH fields
+  hh_decider[hh_flag == 1, `:=` (hh_id_kc_pha = id_kc_pha,
+                                 hh_ssn = ssn,
+                                 hh_lname = lname,
+                                 hh_fname = fname)]
+  
+  unique_hh_ids <- length(unique(hh_decider$hh_id_tmp))
+  
+  hh_decider <- hh_decider[hh_flag == 1, .(agency, act_date, hh_id_tmp,
+                                           hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+  hh_decider <- unique(hh_decider)
+  
+  # Check all households are still present
+  if (length(unique(hh_decider$hh_id_tmp)) != unique_hh_ids) {
+    stop("Some hh_id_tmp values disappeared from hh_decider. Check why.")
+  }
+  if (nrow(hh_decider) != unique_hh_ids) {
+    stop ("The number of rows in hh_decider doesn't match the number of hh_id_values. Check why.")
+  }
+  rm(unique_hh_ids)
+  
+  
+  ## Set up data without head of household details ----
+  hh_final <- copy(hh)
+  hh_final[, `:=` (hh_id_kc_pha = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
+  hh_final <- unique(hh_final)
+  
+  ## Member numbers ----
+  # People appear twice with different member numbers
+  # Collapse to lowest observed member number to reduce row duplication
+  # Best to do here before regenerating the hh_flag
+  hh_final[, mbr_num_min := min(mbr_num, na.rm = T), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
+  
+  # Select final columns for joining back to main data
+  hh_final <- hh_final[, mbr_num := NULL]
+  hh_final <- unique(hh_final)
+  
+  
+  ## Join HH decider back to main DF ----
+  # Pull out all the head of households that didn't need to be decided
+  hh_no_decider <- hh[hh_flag == 1 & has_hh == 1, 
+                      .(agency, act_date, hh_id_tmp, id_kc_pha, ssn, lname, fname, hh_flag)]
+  setnames(hh_no_decider, c("id_kc_pha", "ssn", "lname", "fname"), c("hh_id_kc_pha", "hh_ssn", "hh_lname", "hh_fname"))
+  
+  
+  hh_final <- merge(hh_final, 
+                    bind_rows(hh_decider, hh_no_decider), 
+                    by = c("agency", "act_date", "hh_id_tmp"),
+                    all.x = T)
+  
+  
+  hh_final[, `:=` (
+    hh_flag = case_when(has_hh == 1 ~ hh_flag.x,
+                        hh_id_kc_pha == id_kc_pha & 
+                          (hh_ssn == ssn | (is.na(hh_ssn) & is.na(ssn))) & 
+                          (hh_lname == lname | (is.na(hh_lname) & is.na(lname))) & 
+                          (hh_fname == fname | (is.na(hh_fname) & is.na(fname))) ~ 1L,
+                        TRUE ~ 0L)
+  )]
+  
+  
+  ## Check how many households don't have a HH or have multiple HHs ----
+  hh_final[, has_hh2 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+  hh_final %>% count(agency, has_hh2)
+  
+  
+  # Some households still have multiple HHs because of duplicate HH data
+  # Use initial HH flag and details to weed these out
+  hh_final[has_hh2 > 1 & hh_flag == 1, hh_flag := 
+             case_when(hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 1L,
+                       hh_flag.x == 0 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 0L,
+                       hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha != id_kc_pha ~ 0L,
+                       TRUE ~ hh_flag)]
+  
+  
+
+  
+  # Check how many households don't have a HH or have multiple HHs
+  hh_final[, has_hh3 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+  hh_final %>% count(agency, has_hh2, has_hh3)
+  
+  if (max(hh_final$has_hh3) > 1) {
+    stop(" There are still some hh_id_tmp values with multiple HHs")
+  }
+  
+  # Apply hh_flag to any remaining duplicate rows and collapse
+  hh_final[, hh_flag := max(hh_flag), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
+  
+  # Select final columns for merging
+  hh_final <- hh_final[, .(agency, act_date, hh_id_tmp, 
+                           id_kc_pha, ssn, lname, fname, dob, mbr_num_min, 
+                           hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+  hh_final <- unique(hh_final)
+  
+  # One last check for duplicate HHs
+  hh_final[, has_hh4 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+  hh_final %>% count(agency, has_hh4)
+  
+  if (max(hh_final$has_hh4) > 1) {
+    stop(" There are still some hh_id_tmp values with multiple HHs")
+  } else {
+    hh_final[, has_hh4 := NULL]
+  }
+  
+  # There are now some duplicate rows where everything is the same except hh_id_tmp
+  # Since we will join hh_final later to the consolidated data, we no longer need
+  # most columns.
+  # However, keep hh_final for now in case this process is revised.
+  hh_final2 <- copy(hh_final)
+  hh_final2 <- unique(hh_final2[, .(agency, id_kc_pha, act_date, hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)])
+  
+  
+  # BRING HEAD OF HOUSEHOLD AND MEMBER NUMBER INFO BACK TO MAIN DATA ----
+  # Remove the columns that will be re-added later
+  pha[, `:=` (mbr_num = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
+  pha <- unique(pha)
+  
+  # Currently not adding this info until after consolidation
+  # pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha", 
+  #                                    "ssn", "lname", "fname", "dob"),
+  #               all.x = T)
   
   
   # BEGIN CONSOLIDATION ----
@@ -1218,6 +1546,76 @@ load_stage_timevar <- function(conn = NULL,
   
   # See how many rows were affected
   sum(pha_sort$truncated, na.rm = T)
+  
+  
+  
+  # REGENERATE HEAD OF HOUSEHOLD ----
+  # Use the HH most recently associated with that time period
+  
+  
+  test <- copy(pha_sort)
+  test[, `:=` (
+    mbr_num_min = NULL, hh_id_kc_pha = NULL, hh_ssn = NULL, hh_lname = NULL,
+    hh_fname = NULL, hh_flag = NULL, act_date = NULL
+  )]
+  
+  test_hh <- copy(hh_final2)
+  test_hh[, hh_cnt := uniqueN(hh_id_kc_pha), by = .(id_kc_pha)]
+  
+  
+  test2 <- test[test_hh[!is.na(act_date), .(agency, id_kc_pha, act_date, mbr_num_min, hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)],
+                on = .(id_kc_pha = id_kc_pha, from_date <= act_date, to_date >= act_date),
+                mult = "last", nomatch = 0]
+  
+  
+  test2 <- hh_final2[test, 
+                   .(agency, id_kc_pha, x.act_date, from_date, to_date, 
+                     hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag),
+                   on = .(agency, id_kc_pha, 
+                          act_date >= from_date, act_date <= to_date),
+                   mult = "all"]
+  setnames(test2, "x.act_date", "act_date")
+  test2[, max_act_date := max(act_date), by = .(id_kc_pha, from_date)]
+  test2 <- test2[act_date == max_act_date]
+  
+  test2[, from_date_cnt := .N, by = .(id_kc_pha, from_date)]
+  test2 %>% count(from_date_cnt)
+  test2 %>% filter(from_date_cnt > 1) %>% head()
+  
+  
+  
+  
+  test[, c("hh_id_kc_pha", "hh_ssn", "hh_lname", "hh_fname", "hh_flag") := # Assign the below result to new columns in dtgrouped2
+         test[test_hh, # join
+                   .(hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag), # get the column you need
+                   on = .(id_kc_pha = id_kc_pha, # join conditions
+                          from_date <= act_date, 
+                          to_date >= act_date), 
+                   mult = "last"]] # get always the latest EndDate
+  
+  
+  test2 <- test_hh[!is.na(act_date), c("from_date", "to_date") := # Assign the below result to new columns in dtgrouped2
+            test[test_hh, # join
+                      .(from_date, to_date), # get the column you need
+              on = .(id_kc_pha = id_kc_pha, # join conditions
+                     from_date <= act_date, 
+                     to_date >= act_date), 
+              mult = "last"]] # get always the latest EndDate
+  
+  
+  test3 <- test[test_hh, # join
+                # .(from_date, to_date), # get the column you need
+                on = .(id_kc_pha, # join conditions
+                       from_date <= act_date, 
+                       to_date >= act_date), 
+                # mult = "last", 
+                nomatch = 0]
+  
+  test2 %>% filter(id_kc_pha == "6ms5k28qis") %>% select(id_kc_pha, act_date, hh_id_kc_pha, from_date, to_date)
+  test2 %>% filter(id_kc_pha == "mlgjp9urj7") %>% select(id_kc_pha, act_date, hh_id_kc_pha, from_date, to_date)
+  
+  
+  test2[, max_act_date := max(act_date, na.rm = T), by = c("id_kc_pha", "from_date", "to_date")]
   
   
   # FINALIZE TABLE ----
