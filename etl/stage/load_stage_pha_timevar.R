@@ -217,7 +217,7 @@ load_stage_timevar <- function(conn = NULL,
   # HEAD OF HOUSEHOLD ----
   ## Make a new HH ID to track households over time ----
   hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname", "dob",
-                "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "hh_id_tmp")]
+                "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "relcode", "hh_id_tmp")]
   hh <- unique(hh)
   
   # Attach id_kc_pha to each HH to make tracking easier
@@ -236,8 +236,8 @@ load_stage_timevar <- function(conn = NULL,
   hh <- merge(hh, hh_id, by = c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
   
   hh[, hh_flag := case_when(
-    mbr_num == 1 ~ 1L,
-    mbr_num > 1 ~ 0L,
+    mbr_num == 1 | relcode == "H" ~ 1L,
+    mbr_num > 1 | relcode != "H" ~ 0L,
     hh_ssn == ssn & !is.na(ssn) ~ 1L,
     hh_lname == lname & hh_fname == fname ~ 1L,
     TRUE ~ 0L)]
@@ -267,8 +267,8 @@ load_stage_timevar <- function(conn = NULL,
   ## Assign head of household as needed ----
   ## Use the following to allocate HH for a given act_date/hh combo when 2+ candidates
   # 1) If 2+ hh_flags but only one row with a hh_id_value, take the one with a hh_id_pha_value 
-  # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1
-  # 3) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+  # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1/relcode == "H"
+  # 3) If no mbr_num/relcode or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
   # 4) If no DOB for #3, take the row with a hh_ssn value (regardless of mbr_num)
   # 5) If still undecided, randomly assign one of the people with a hh_id_kc_pha value
   # 6) If 2+ hh_id_kc_pha values, take mbr_num = 1
@@ -282,13 +282,14 @@ load_stage_timevar <- function(conn = NULL,
   # 14) If no possible hh_id contenders, take the oldest person in the house
   # 15) If no DOB for #14 or oldest is a tie, randomly take one person in the house
   hh_decider <- hh[has_hh != 1]
-  hh_decider[mbr_num == 1, mbr1_cnt := .N, by = c("hh_id_tmp")]
-  hh_decider[mbr_num == 1, mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[mbr_num == 1 & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
+  hh_decider[mbr_num == 1 | relcode == "H", mbr1_cnt := .N, by = c("hh_id_tmp")]
+  hh_decider[mbr_num == 1 | relcode == "H", mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
+  hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
   hh_decider[!is.na(hh_id_kc_pha), has_ssn_id := !is.na(hh_ssn)]
   hh_decider[!is.na(hh_id_kc_pha), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[mbr_num == 1 & !is.na(hh_id_kc_pha), oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[mbr_num == 1, oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), 
+             oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+  hh_decider[(mbr_num == 1 | relcode == "H"), oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
   hh_decider[hh_id_poss == 1, oldest_hh_poss := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
   hh_decider[, oldest_any := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
   # Apply key numbers to whole household
@@ -305,8 +306,8 @@ load_stage_timevar <- function(conn = NULL,
   # Set up random numbers for each scenario
   set.seed(98104)
   hh_decider[!is.na(hh_id_kc_pha), decider_id := runif(.N, 0, 1)]
-  hh_decider[!is.na(hh_id_kc_pha) & mbr_num == 1, decider_id_mbr1 := runif(.N, 0, 1)]
-  hh_decider[mbr_num == 1, decider_mbr1 := runif(.N, 0, 1)]
+  hh_decider[!is.na(hh_id_kc_pha) & (mbr_num == 1 | relcode == "H"), decider_id_mbr1 := runif(.N, 0, 1)]
+  hh_decider[mbr_num == 1 | relcode == "H", decider_mbr1 := runif(.N, 0, 1)]
   hh_decider[hh_id_poss == 1, decider_hh_poss := runif(.N, 0, 1)]
   hh_decider[oldest_hh_id == T, decider_oldest_hh_id := runif(.N, 0, 1)]
   hh_decider[oldest_any == T, decider_oldest := runif(.N, 0, 1)]
@@ -329,33 +330,35 @@ load_stage_timevar <- function(conn = NULL,
     # One row with an ID
     hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_id_kc_pha) ~ 1L,
     hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_id_kc_pha) ~ 0L,
-    # One row with mbr_num = 1
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num == 1 & !is.na(hh_id_kc_pha) ~ 1L,
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num == 1 & is.na(hh_id_kc_pha) ~ 0L,
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & mbr_num != 1 ~ 0L,
-    # 2+ rows with mbr_num = 1 (take oldest person, most likely actually non-missing DOB)
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num == 1 & 
+    # One row with mbr_num/relcode = 1
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+      (relcode != "H" | is.na(relcode)) ~ 0L,
+    # 2+ rows with mbr_num/relcode = 1 (take oldest person, most likely actually non-missing DOB)
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
       oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num == 1 & 
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
       (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & mbr_num != 1 ~ 0L,
-    # 2+ rows with mbr_num = 1 and no DOB or tied DOB, take SSN (regardless of mbr_num)
+    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+      (relcode != "H" | is.na(relcode)) ~ 0L,
+    # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, take SSN (regardless of mbr_num)
     hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == T & has_ssn_id_cnt == 1 ~ 1L,
     hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == F & has_ssn_id_cnt == 1 ~ 0L,
-    # 2+ rows with mbr_num = 1 and no DOB or tied DOB, and no SSN
-    hh_id_cnt == 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & 
+    # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, and no SSN
+    hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
       has_ssn_id_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
-    hh_id_cnt == 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & 
+    hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
       has_ssn_id_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
-    # No member numbers, but DOBs
+    # No member numbers/relcodes, but DOBs
     hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
     hh_id_cnt == 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
-    # No member numbers, and tied DOB
+    # No member numbers/relcodes, and tied DOB
     hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
       decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
     hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
       decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
-    # No member numbers and no DOBs
+    # No member numbers/relcodes and no DOBs
     hh_id_cnt == 1 & decider_id == decider_id_max ~ 1L,
     hh_id_cnt == 1 & decider_id != decider_id_max ~ 0L,
     hh_id_cnt == 1 & is.na(decider_id) ~ 0L,
@@ -365,18 +368,22 @@ load_stage_timevar <- function(conn = NULL,
   ### Multiple hh_id_kc_pha values ----
   hh_decider[, hh_flag := case_when(
     # One hh_id_kc_pha with mbr_num = 1
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num == 1 & !is.na(hh_id_kc_pha) ~ 1L,
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num == 1 & is.na(hh_id_kc_pha) ~ 0L,
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & mbr_num != 1 ~ 0L,
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+      (relcode != "H" | is.na(relcode)) ~ 0L,
     # 2+ hh_id_kc_pha with mbr_num = 1 (take oldest person)
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & 
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
       oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & 
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
       (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num != 1 ~ 0L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+      (relcode != "H" | is.na(relcode)) ~ 0L,
     # 2+ hh_id_kc_pha with mbr_num = 1 and no DOB or tied DOB
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & mbr_num == 1 & oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+      oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
+    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+      oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
     # No member numbers, but DOBs
     hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
     hh_id_cnt > 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
@@ -395,12 +402,15 @@ load_stage_timevar <- function(conn = NULL,
   ### No hh_id_kc_pha values ----
   hh_decider[, hh_flag := case_when(
     # 1+ mbr_num = 1 and DOBs
-    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & (oldest_mbr1 == F | (is.na(oldest_mbr1) & oldest_mbr1_cnt == 1)) ~ 0L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+      (oldest_mbr1 == F | (is.na(oldest_mbr1) & oldest_mbr1_cnt == 1)) ~ 0L,
     # 1+ mbr_num = 1 and no DOB or tied DOB
-    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1_cnt != 1 & decider_mbr1 == decider_mbr1_max ~ 1L,
-    hh_id_cnt == 0 & mbr1_cnt > 1 & mbr_num == 1 & oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
-    hh_id_cnt == 0 & mbr1_cnt >= 1 & mbr_num != 1 ~ 0L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+      oldest_mbr1_cnt != 1 & decider_mbr1 == decider_mbr1_max ~ 1L,
+    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+      oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
+    hh_id_cnt == 0 & mbr1_cnt >= 1 & (mbr_num != 1 | is.na(mbr_num)) & (relcode != "H" | is.na(relcode)) ~ 0L,
     # No member numbers, one possible hh_id_kc_pha contenders
     hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt == 1 ~ 1L,
     hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 0 & hh_id_poss_cnt == 1 ~ 0L,
@@ -488,11 +498,9 @@ load_stage_timevar <- function(conn = NULL,
                         TRUE ~ 0L)
   )]
   
-  
   ## Check how many households don't have a HH or have multiple HHs ----
   hh_final[, has_hh2 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
   hh_final %>% count(agency, has_hh2)
-  
   
   # Some households still have multiple HHs because of duplicate HH data
   # Use initial HH flag and details to weed these out
@@ -501,9 +509,6 @@ load_stage_timevar <- function(conn = NULL,
                        hh_flag.x == 0 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 0L,
                        hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha != id_kc_pha ~ 0L,
                        TRUE ~ hh_flag)]
-  
-  
-
   
   # Check how many households don't have a HH or have multiple HHs
   hh_final[, has_hh3 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
