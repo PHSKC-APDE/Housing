@@ -1549,7 +1549,7 @@ load_stage_timevar <- function(conn = NULL,
   # Find the number of unique periods a person was in housing
   # Inner cumsum finds when gap == 1 (basically the cumulative difference with previous row is 0 rather than -1), 
   # outer cumsum starts a new group when this happens and adds 1 because the starting group is 0
-  pha_timevar[, period := cumsum(cumsum(c(-1, diff(gap))) == 0) + 1]
+  pha_timevar[, period := cumsum(cumsum(c(-1, diff(gap))) == 0) + 1, by = "id_kc_pha"]
   
   
   
