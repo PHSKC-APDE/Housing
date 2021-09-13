@@ -718,7 +718,7 @@ waitlist_all_output <- waitlist_use %>%
   left_join(., move_in_lottery, by = "id_apde") %>%
   left_join(., distinct(no_voucher, id_apde, post_lottery_housing), by = "id_apde") %>%
   mutate(post_lottery_housing = coalesce(post_lottery_housing.x, post_lottery_housing.y)) %>%
-  select(-post_lottery_housing.x, post_lottery_housing.y)
+  select(-post_lottery_housing.x, -post_lottery_housing.y)
 
 
 ## PHA data  ----
@@ -766,7 +766,7 @@ tables_for_export <- list("waitlist_output" = waitlist_output,
 
 
 lapply(names(tables_for_export), function(x) {
-  message("Working for ", x)
+  message("Working on ", x)
   write.csv(tables_for_export[[x]], 
             file = paste0("//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analyses/Alastair/jhu_waitlist_output/",
                           x, ".csv"),
