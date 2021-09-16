@@ -1115,31 +1115,35 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## Remove annual reexaminations/intermediate visits within a given address + program (droptype = 10) ----
+  # Don't include blank addresses in this as there can be large gaps between blank addresses
   # Want to avoid capturing the first or last row for a person at a given address
   # NB: now sorting by date before agency in order to reduce chances of 
   # erroneously treating two separate periods at an address as one
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
   setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
-  pha_sort[, drop := if_else(
-    id_kc_pha == lag(id_kc_pha, 1) & id_kc_pha == lead(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) & !is.na(lead(id_kc_pha, 1)) &
-      geo_hash_clean == lag(geo_hash_clean, 1) & geo_hash_clean == lead(geo_hash_clean, 1) &
-      # Checking for prog_type and agency matches
-      agency_prog_concat == lag(agency_prog_concat, 1) & agency_prog_concat == lead(agency_prog_concat, 1) &
-      # Check that port outs are in the same place (or one is missing)
-      # Don't drop if cost_pha = row above but row below is missing 
-      # (indicates when voucher was absorbed by PHA)
-      # unless the row after that also matches current cost_pha (indicates data entry issues)
-      ((cost_pha == lag(cost_pha, 1) & cost_pha == lead(cost_pha, 1)) |
-         (lag(cost_pha, 1) == "" & cost_pha == lead(cost_pha, 1)) |
-         (cost_pha == "" & lag(cost_pha, 1) == lead(cost_pha, 1)) |
-         (cost_pha == lag(cost_pha, 1) & lead(cost_pha, 1) == "" &
-            cost_pha == lead(cost_pha, 2) &
-            id_kc_pha == lead(id_kc_pha, 2) & geo_hash_clean == lead(geo_hash_clean, 2) &
-            agency_prog_concat == lead(agency_prog_concat, 2))) &
-      # Check that a person didn't exit the program then come in again at the same address
-      !(act_type %in% c(1, 4, 5, 6)),
-    10, 0)]
+  # Set up a flag to save repeating code
+  pha_sort[, middle := id_kc_pha == lag(id_kc_pha, 1) & id_kc_pha == lead(id_kc_pha, 1) & 
+             !is.na(lag(id_kc_pha, 1)) & !is.na(lead(id_kc_pha, 1)) &
+             geo_hash_clean == lag(geo_hash_clean, 1) & geo_hash_clean == lead(geo_hash_clean, 1) &
+             geo_blank != 1 &
+             agency_prog_concat == lag(agency_prog_concat, 1) & agency_prog_concat == lead(agency_prog_concat, 1) & 
+             !(act_type %in% c(1, 4, 5, 6))]
+  pha_sort[, drop := case_when(
+    # Deal with situations where cost_pha is missing
+    middle == T & is.na(cost_pha) & is.na(lag(cost_pha, 1)) & is.na(lead(cost_pha, 1)) ~ 10,
+    # Now more complicated port situations
+    # Don't drop if cost_pha = row above but row below is missing 
+    # (indicates when voucher was absorbed by PHA)
+    # unless the row after that also matches current cost_pha (indicates data entry issues)
+    middle == T & cost_pha == lag(cost_pha, 1) & cost_pha == lead(cost_pha, 1) ~ 10,
+    middle == T & is.na(lag(cost_pha, 1)) & cost_pha == lead(cost_pha, 1) ~ 10,
+    middle == T & is.na(cost_pha) & lag(cost_pha, 1) == lead(cost_pha, 1) ~ 10,
+    middle == T & cost_pha == lag(cost_pha, 1) & is.na(lead(cost_pha, 1)) & cost_pha == lead(cost_pha, 2) & 
+      id_kc_pha == lead(id_kc_pha, 2) & geo_hash_clean == lead(geo_hash_clean, 2) &
+      agency_prog_concat == lead(agency_prog_concat, 2) ~ 10,
+    TRUE ~ 0
+  )]
   # Pull out drop tracking and merge
   drop_temp <- pha_sort %>% select(row, drop)
   drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
@@ -1147,6 +1151,7 @@ load_stage_timevar <- function(conn = NULL,
     select(-drop.x, -drop.y)
   # Finish dropping rows
   pha_sort <- pha_sort[drop == 0 | is.na(drop)]
+  pha_sort[, middle := NULL]
   dfsize_head - nrow(pha_sort)
   time_end <- Sys.time()
   print(paste0("Drop #10 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
@@ -1262,9 +1267,12 @@ load_stage_timevar <- function(conn = NULL,
   pha_sort[, ':=' (
     # First row for a person = act_date (admit_dates stretch back too far for port ins)
     # Any change in agency/program/address/PHA billed = act date
+    # If addresses are both blank, check for a gap larger than the time between reexams
     from_date = as.Date(ifelse(id_kc_pha != lag(id_kc_pha, 1) | is.na(lag(id_kc_pha, 1)) | 
                                  agency_prog_concat != lag(agency_prog_concat, 1) |
-                                 geo_hash_clean != lag(geo_hash_clean, 1) | cost_pha != lag(cost_pha, 1),
+                                 geo_hash_clean != lag(geo_hash_clean, 1) | cost_pha != lag(cost_pha, 1) |
+                                 (geo_blank == 1 & lag(geo_blank == 1) & 
+                                    lag(act_date, 1) + dyears(lag(add_yr, 1)) < act_date),
                                act_date, NA), origin = "1970-01-01"),
     # Last row for a person or change in agency/program = 
     #   exit date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
@@ -1272,12 +1280,15 @@ load_stage_timevar <- function(conn = NULL,
     #    the person has moved out (whichever is smallest of the two)
     # Other rows where that is the person's last row at that address/PHA billed but same agency/prog = act_date at next address - 1 day
     # Unless act_date is the same as from_date (e.g., because of different programs), then act_date 
+    # If address is blank and there is gap larger than the time between reexams, use act_date + 1-3 years
     to_date = as.Date(
       case_when(
         act_type == 5 | act_type == 6 ~  act_date,
         id_kc_pha != lead(id_kc_pha, 1) | is.na(lead(id_kc_pha, 1 )) |
           agency_prog_concat != lead(agency_prog_concat, 1) |
-          cost_pha != lead(cost_pha, 1) ~ pmin(today(), act_date + dyears(add_yr),
+          cost_pha != lead(cost_pha, 1) | 
+          (geo_blank == 1 & lead(geo_blank == 1) & 
+             act_date + dyears(add_yr) < lead(act_date, 1)) ~ pmin(today(), act_date + dyears(add_yr),
                                                act_date + ((next_hh_act - act_date) / 2), na.rm = TRUE),
         geo_hash_clean != lead(geo_hash_clean, 1) & act_date != lead(act_date, 1) ~ lead(act_date, 1) - 1,
         geo_hash_clean != lead(geo_hash_clean, 1) & act_date == lead(act_date, 1) ~ lead(act_date, 1))
