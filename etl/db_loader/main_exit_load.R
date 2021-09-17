@@ -72,31 +72,59 @@ rm(etl_batch_id_kcha_exit, load_raw_kcha_exit)
 
 
 # LOAD SHA EXIT DATA ----
+## 2012 to 2019 ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit_2012_2019.R")
 
 # Set up etl_batch_id
-etl_batch_id_sha_exit <- load_metadata_etl_log(conn = db_hhsaw,
-                                                to_schema = qa_schema,
-                                                to_table = etl_table,
-                                                data_source = "sha",
-                                                data_type = "exit",
-                                                date_min = "2012-01-01",
-                                                date_max = "2020-12-31",
-                                                date_delivery = "2021-05-25",
-                                                note = "Initial delivery of data")
+etl_batch_id_sha_exit_2012_2019 <- load_metadata_etl_log(conn = db_hhsaw,
+                                                         to_schema = qa_schema,
+                                                         to_table = etl_table,
+                                                         data_source = "sha",
+                                                         data_type = "exit",
+                                                         date_min = "2012-01-01",
+                                                         date_max = "2019-12-31",
+                                                         date_delivery = "2021-05-25",
+                                                         note = "Initial delivery of data")
 
 # Run function
-load_raw_sha_exit(conn = db_hhsaw,
-                   to_schema = "pha",
-                   to_table = "raw_sha_exit",
-                   qa_schema = qa_schema,
-                   qa_table = qa_table,
-                   etl_batch_id = etl_batch_id_sha_exit)
+load_raw_sha_exit_2012_2019(conn = db_hhsaw,
+                            to_schema = "pha",
+                            to_table = "raw_sha_exit_2012_2019",
+                            qa_schema = qa_schema,
+                            qa_table = qa_table,
+                            etl_batch_id = etl_batch_id_sha_exit_2012_2019)
 
 
 # Clean up
-rm(etl_batch_id_sha_exit, load_raw_sha_exit)
+rm(etl_batch_id_sha_exit_2012_2019, load_raw_sha_exit_2012_2019)
+
+## 2020 ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit_2020.R")
+
+# Set up etl_batch_id
+etl_batch_id_sha_exit_2020 <- load_metadata_etl_log(conn = db_hhsaw,
+                                                    to_schema = qa_schema,
+                                                    to_table = etl_table,
+                                                    data_source = "sha",
+                                                    data_type = "exit",
+                                                    date_min = "2020-01-01",
+                                                    date_max = "2020-12-31",
+                                                    date_delivery = "2021-09-03",
+                                                    note = "Initial delivery of data")
+
+# Run function
+load_raw_sha_exit_2020(conn = db_hhsaw,
+                       to_schema = "pha",
+                       to_table = "raw_sha_exit_2020",
+                       qa_schema = qa_schema,
+                       qa_table = qa_table,
+                       etl_batch_id = etl_batch_id_sha_exit_2020)
+
+
+# Clean up
+rm(etl_batch_id_sha_exit_2020, load_raw_sha_exit_2020)
 
 
 

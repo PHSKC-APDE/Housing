@@ -11,13 +11,13 @@
 # https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_exit_load.R
 # Assumes relevant libraries are already loaded
 
-load_raw_sha_exit <- function(conn = NULL,
-                               to_schema = NULL,
-                               to_table = NULL,
-                               qa_schema = NULL,
-                               qa_table = NULL,
-                               file_path = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Exit data",
-                               etl_batch_id = NULL) {
+load_raw_sha_exit_2012_2019 <- function(conn = NULL,
+                                        to_schema = NULL,
+                                        to_table = NULL,
+                                        qa_schema = NULL,
+                                        qa_table = NULL,
+                                        file_path = "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Exit data/2012 to 2019 exit data",
+                                        etl_batch_id = NULL) {
   
   # BRING IN DATA ----
   ## Reference data ----
@@ -26,7 +26,7 @@ load_raw_sha_exit <- function(conn = NULL,
   ## SHA ----
   # Create a list of exit files
   sha_exit_files <- list.files(path = file_path, 
-                               pattern = "Exit Data.xlsx",
+                               pattern = ".xlsx",
                                full.names = T)
   
   # Bring in data and rename
