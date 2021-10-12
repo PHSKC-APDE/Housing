@@ -99,6 +99,7 @@ load_raw_sha_exit_2012_2019(conn = db_hhsaw,
 # Clean up
 rm(etl_batch_id_sha_exit_2012_2019, load_raw_sha_exit_2012_2019)
 
+
 ## 2020 ----
 # Bring in function
 devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit_2020.R")
@@ -138,7 +139,8 @@ load_stage_pha_exit(conn = db_hhsaw,
                     to_table = "stage_pha_exit",
                     from_schema = "pha",
                     from_table_kcha = "raw_kcha_exit",
-                    from_table_sha = "raw_sha_exit",
+                    from_table_sha_2019 = "raw_sha_exit_2012_2019",
+                    from_table_sha_2020 = "raw_sha_exit_2020",
                     qa_schema = qa_schema,
                     qa_table = qa_table)
 

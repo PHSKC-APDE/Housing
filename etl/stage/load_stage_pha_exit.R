@@ -14,7 +14,8 @@
 load_stage_pha_exit <- function(conn = NULL,
                                 from_schema = NULL,
                                 from_table_kcha = NULL,
-                                from_table_sha = NULL,
+                                from_table_sha_2019 = NULL,
+                                from_table_sha_2020 = NULL,
                                 to_schema = NULL,
                                 to_table = NULL,
                                 qa_schema = NULL,
@@ -26,12 +27,17 @@ load_stage_pha_exit <- function(conn = NULL,
                           glue_sql("SELECT * FROM {`from_schema`}.{`from_table_kcha`}", .con = conn))
   
   ## SHA ----
-  sha_exit <- dbGetQuery(conn, 
-                         glue_sql("SELECT * FROM {`from_schema`}.{`from_table_sha`}", .con = conn))
+  sha_exit_2012_2019 <- dbGetQuery(conn, 
+                         glue_sql("SELECT * FROM {`from_schema`}.{`from_table_sha_2019`}", .con = conn))
+  
+  sha_exit_2020 <- dbGetQuery(conn, 
+                                   glue_sql("SELECT * FROM {`from_schema`}.{`from_table_sha_2020`}", .con = conn))
   
   
   # COMBINE AND CLEAN DATA ----
-  pha_exit = list("kcha_exit" = kcha_exit, "sha_exit" = sha_exit)
+  pha_exit = list("kcha_exit" = kcha_exit, 
+                  "sha_exit_2012_2019" = sha_exit_2012_2019,
+                  sha_exit_2020 = sha_exit_2020)
   
   ## Names ----
   # Set up suffixes to remove
@@ -136,6 +142,10 @@ load_stage_pha_exit <- function(conn = NULL,
     # Change new column names
     map(~ .x %>% rename_with(., ~ str_replace(., "ssn_new", "pha_id"), .cols = matches("ssn_new")))
   
+  
+  ## Other variables ----
+  pha_exit <- pha_exit %>%
+    map(~ .x %>% mutate(across(any_of(c("vouch_num")), ~ as.character(.))))
   
   # ADDRESS CLEANING ----
   ## Make a geo_hash_raw field for easier joining

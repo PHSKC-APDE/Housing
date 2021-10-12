@@ -249,9 +249,18 @@ load_stage_timevar <- function(conn = NULL,
   hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
   hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
   
-  hh %>% count(agency, has_hh)
-  hh %>% count(agency, has_hh, hh_id_cnt)
-  hh %>% count(agency, hh_id_cnt)
+  # Count by people
+  hh %>% count(agency, has_hh) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+  hh %>% count(agency, has_hh, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+  hh %>% count(agency, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+  
+  # Count by household
+  hh %>% distinct(agency, hh_id_tmp, has_hh) %>% count(agency, has_hh) %>% 
+    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+  hh %>% distinct(agency, hh_id_tmp, has_hh, hh_id_cnt) %>% count(agency, has_hh, hh_id_cnt) %>% 
+    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+  hh %>% distinct(agency, hh_id_tmp, hh_id_cnt) %>% count(agency, hh_id_cnt) %>% 
+    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
   
   # For households with no hh_id_kc_pha, add some possibilities
   hh[hh_id_cnt == 0 & has_hh != 1, hh_id_poss := case_when(

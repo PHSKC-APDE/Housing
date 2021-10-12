@@ -11,7 +11,7 @@
 # https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_exit_load.R
 # Assumes relevant libraries are already loaded
 
-load_raw_sha_exit_2012_2019 <- function(conn = NULL,
+load_raw_sha_exit_2020 <- function(conn = NULL,
                                         to_schema = NULL,
                                         to_table = NULL,
                                         qa_schema = NULL,
@@ -30,7 +30,7 @@ load_raw_sha_exit_2012_2019 <- function(conn = NULL,
                                full.names = T)
   
   # Bring in data and rename
-  sha_exit <- lapply(sha_exit_files, function(x) read_csv(x))
+  sha_exit <- lapply(sha_exit_files, function(x) read_csv(x, show_col_types = FALSE))
   names(sha_exit) <- c("sha_exit_hcv", "sha_exit_ph")
   
   sha_exit <- sha_exit %>%
