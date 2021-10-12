@@ -95,7 +95,7 @@ waitlist_chk[person_app_cnt == 5 & id_app_cnt == 3]
 
 
 waitlist_chk %>% 
-  count(person_app_cnt, id_app_cnt, id_mcaid_cnt) %>%
+  count(person_app_cnt, id_app_cnt, id_mcaid_cnt, mismatch_flag) %>%
   mutate(total = sum(n),
          mismatch_n = mismatch_flag * n,
          mismatch_sum = sum(mismatch_n)) %>%
@@ -122,21 +122,16 @@ waitlist_use <- waitlist %>%
   filter(id_pha_cnt == 1) %>%
   left_join(., distinct(waitlist_chk, app_num, mismatch_flag), by = "app_num") %>%
   filter(mismatch_flag == F) %>%
-  mutate(age_2017_wl = floor(interval(start = dob, end = "2017-12-31") / years(1)),
-         age_65_wl = case_when(month(dob) == 2 & day(dob) == 2 ~ dob + days(1) + years(65),
-                               TRUE ~ dob + years(65)),
-         age_65_wl_yr = year(age_65_wl),
-         hh_age_2017 = floor(interval(start = hh_dob, end = "2017-12-31") / years(1))) %>%
   select(agency, 
          # Household and head-of-household info
-         app_num, hh_size, hh_age_2017, hh_gender, starts_with("hh_r"), 
+         app_num, hh_size, hh_dob, hh_gender, starts_with("hh_r"), 
          hh_education, hh_veteran, hh_disability, lang, lang_eng,
          # Income info
          hh_inc_tot, starts_with("inc_"),
          # Housing situation and location
          starts_with("live_"), current_housing, homeless, geo_tractce10, geo_add_mailing,
          # Individual info
-         id_apde, id_mcaid, age_2017_wl, age_65_wl, age_65_wl_yr, gender, starts_with("r_"), disability, relcode,
+         id_apde, id_mcaid, dob, gender, starts_with("r_"), disability, relcode,
          # Waitlist info
          waitlist, waitlist_2015) %>%
   distinct()
@@ -265,8 +260,67 @@ mcaid_enroll <- mcaid_enroll %>%
 # - Receipt of public housing, project-based voucher, special purpose voucher holders (e.g., VSH, FUP, Mainstream)
 
 
+## Remove people 65+ as of 2019-12-31 ----
+# Track how many people are in the data
+waitlist_cnt <- length(unique(waitlist_use$id_apde))
+
+# Join with PHA data to get most accurate DOB possible
+waitlist_dobs <- waitlist_use %>%
+  distinct(id_apde, dob) %>%
+  rename(dob_wl = dob) %>%
+  left_join(., distinct(pha_demo_use, id_apde, dob) %>% rename(dob_58 = dob), by = "id_apde") %>%
+  mutate(dob_use = case_when(!is.na(dob_58) ~ dob_58,
+                             !is.na(dob_wl) ~ dob_wl,
+                             TRUE ~ NA_Date_),
+         dob_source_58 = case_when(!is.na(dob_58) ~ 1L,
+                                   !is.na(dob_wl) ~ 0L)) %>%
+  # Multiple DOBs shown for some in waitlist, take earliest date
+  group_by(id_apde) %>%
+  mutate(dob_use_min = min(dob_use, na.rm = T)) %>%
+  ungroup() %>%
+  distinct(id_apde, dob_use_min, dob_source_58)
+
+# Pull out HoH DOB details
+waitlist_dobs_hh <- waitlist_dobs %>%
+  left_join(., distinct(waitlist_use, agency, app_num, id_apde, relcode), by = "id_apde") %>%
+  filter(relcode %in% c("H", "Head of Household")) %>%
+  rename(hh_dob_use_min = dob_use_min,
+         hh_dob_source_58 = dob_source_58) %>%
+  distinct(agency, app_num, hh_dob_use_min, hh_dob_source_58) %>%
+  mutate(hh_age_2017 = floor(interval(start = hh_dob_use_min, end = "2017-12-31") / years(1)))
+
+# Bring things together and add in additional variables
+waitlist_dobs <- waitlist_dobs %>%
+  mutate(age_2017 = floor(interval(start = dob_use_min, end = "2017-12-31") / years(1)),
+         age_2019 = floor(interval(start = dob_use_min, end = "2019-12-31") / years(1)),
+         age_65 = case_when(month(dob_use_min) == 2 & day(dob_use_min) == 29 ~ dob_use_min + days(1) + years(65),
+                            TRUE ~ dob_use_min + years(65)),
+         age_65_yr = year(age_65),
+         age_drop = case_when(is.na(age_2019) ~ 9L,
+                              age_2019 >= 65 ~ 1L,
+                              TRUE ~ 0L))
+
+# Show how many are going to be dropped for each reason
+waitlist_dobs %>% count(age_drop)
+# age_drop     n
+# 0           65441
+# 1           5040
+# 9           5
+
+waitlist_use <- inner_join(waitlist_use, 
+                           filter(waitlist_dobs, age_drop == 0) %>% 
+                             select(id_apde, age_2017, age_2019, age_65, age_65_yr, dob_source_58),
+                           by = "id_apde") %>%
+  left_join(., select(waitlist_dobs_hh, -hh_dob_use_min), by = c("agency", "app_num"))
+
+waitlist_cnt_new <- length(unique(waitlist_use$id_apde))
+message("There were ", waitlist_cnt - waitlist_cnt_new, " IDs removed due to age")
+
+
+
+
 ## Find people who moved from the waitlist into housing ----
-received_voucher <- inner_join(select(waitlist_use, agency, app_num, id_apde, id_mcaid, age_65_wl), 
+received_voucher <- inner_join(select(waitlist_use, agency, app_num, id_apde, id_mcaid, age_65), 
                                pha_timevar_use, by = c("id_apde")) %>%
   rename(agency_application = agency.x, agency_housed = agency.y)
   
@@ -288,45 +342,45 @@ received_voucher %>%
   group_by(yr_move, agency_housed) %>%
   summarise(cnt = n())
 
-#      yr_move agency_housed   cnt
-# 1    2001 SHA               7
-# 2    2002 SHA               6
-# 3    2003 KCHA             44
-# 4    2003 SHA               9
-# 5    2004 KCHA           1348
-# 6    2004 SHA            1953
-# 7    2005 KCHA            676
-# 8    2005 SHA             326
-# 9    2006 KCHA            406
-# 10    2006 SHA             328
-# 11    2007 KCHA            420
-# 12    2007 SHA             444
-# 13    2008 KCHA            346
-# 14    2008 SHA             467
-# 15    2009 KCHA            263
-# 16    2009 SHA             511
-# 17    2010 KCHA            265
-# 18    2010 SHA             400
-# 19    2011 KCHA            309
-# 20    2011 SHA             559
-# 21    2012 KCHA            364
-# 22    2012 SHA             587
-# 23    2013 KCHA            361
-# 24    2013 SHA             629
-# 25    2014 KCHA            382
-# 26    2014 SHA             594
-# 27    2015 KCHA            303
-# 28    2015 SHA             574
-# 29    2016 KCHA            470
-# 30    2016 SHA             648
-# 31    2017 KCHA            958
-# 32    2017 SHA             905
-# 33    2018 KCHA           1287
-# 34    2018 SHA            1274
-# 35    2019 KCHA           1190
-# 36    2019 SHA            1476
-# 37    2020 KCHA           1140
-# 38    2020 SHA             689
+# yr_move agency_housed  cnt
+# 1     2001           SHA    7
+# 2     2002           SHA    6
+# 3     2003          KCHA   42
+# 4     2003           SHA    6
+# 5     2004          KCHA 1290
+# 6     2004           SHA 1784
+# 7     2005          KCHA  634
+# 8     2005           SHA  312
+# 9     2006          KCHA  390
+# 10    2006           SHA  297
+# 11    2007          KCHA  407
+# 12    2007           SHA  418
+# 13    2008          KCHA  322
+# 14    2008           SHA  427
+# 15    2009          KCHA  252
+# 16    2009           SHA  480
+# 17    2010          KCHA  252
+# 18    2010           SHA  375
+# 19    2011          KCHA  299
+# 20    2011           SHA  514
+# 21    2012          KCHA  348
+# 22    2012           SHA  554
+# 23    2013          KCHA  342
+# 24    2013           SHA  597
+# 25    2014          KCHA  366
+# 26    2014           SHA  562
+# 27    2015          KCHA  284
+# 28    2015           SHA  540
+# 29    2016          KCHA  458
+# 30    2016           SHA  617
+# 31    2017          KCHA  909
+# 32    2017           SHA  832
+# 33    2018          KCHA 1193
+# 34    2018           SHA 1175
+# 35    2019          KCHA 1111
+# 36    2019           SHA 1402
+# 37    2020          KCHA 1054
+# 38    2020           SHA  663
 
 ### This seems odd but it looks like a lot of people who applied for the lottery were
 #    already PHA recipients at some point in the past (e.g., some were in SHA and 
@@ -335,8 +389,10 @@ received_voucher %>%
 # Use 2017-02-01 because the SHA lottery was in Feb 2017 (KCHA was April 2017)
 
 received_voucher <- received_voucher %>%
-  mutate(prior_housing_sha = ifelse(agency_housed == "SHA" & from_date < "2017-02-01", 1L, 0L),
-         prior_housing_kcha = ifelse(agency_housed == "KCHA" & from_date < "2017-04-01", 1L, 0L),
+  mutate(prior_housing_sha = ifelse(agency_housed == "SHA" & from_date < "2017-02-01" &
+                                      to_date >= "2015-01-31", 1L, 0L),
+         prior_housing_kcha = ifelse(agency_housed == "KCHA" & from_date < "2017-04-01" &
+                                       to_date >= "2015-03-31", 1L, 0L),
          post_lottery_entry = ifelse((agency_housed == "SHA" & from_date >= "2017-02-01") |
                                        (agency_housed == "KCHA" & from_date >= "2017-04-01"), 1L, 0L),
          post_lottery_housing = ifelse((agency_housed == "SHA" & to_date >= "2017-02-01") |
@@ -351,17 +407,32 @@ received_voucher %>% distinct(id_apde, prior_housing_sha, prior_housing_kcha) %>
   count(prior_housing_sha, prior_housing_kcha)
 
 #   prior_housing_sha prior_housing_kcha     n
-# 1                 0                  0  7635
-# 2                 0                  1  4724
-# 3                 1                  0  6723
-# 4                 1                  1  1376
+# 1                 0                  0  11606
+# 2                 0                  1   2884
+# 3                 1                  0   4512
+# 4                 1                  1    145
 
 
-### Flag people with HCV at some point ----
+### Flag first point after lottery ----
+post_lottery_order <- received_voucher %>%
+  filter(post_lottery_housing == 1) %>%
+  distinct(id_apde, from_date, to_date) %>%
+  arrange(id_apde, from_date, to_date) %>%
+  group_by(id_apde) %>%
+  mutate(post_lottery_order = row_number()) %>%
+  ungroup()
+
+received_voucher <- left_join(received_voucher, post_lottery_order, 
+                              by = c("id_apde", "from_date", "to_date"))
+
+
+### Flag people with HCV at first point after lottery ----
 received_voucher <- received_voucher %>%
-  mutate(general_voucher = ifelse(prog_type %in% c("TBS8", "TENANT BASED") & 
-                                     vouch_type_final == "GENERAL TENANT-BASED VOUCHER",
-         1L, 0L))
+  mutate(post_general_voucher = case_when(
+    post_lottery_order == 1 & prog_type %in% c("TBS8", "TENANT BASED") & 
+      vouch_type_final == "GENERAL TENANT-BASED VOUCHER" ~ 1L, 
+    post_lottery_order == 1 & (!prog_type %in% c("TBS8", "TENANT BASED") | 
+      vouch_type_final != "GENERAL TENANT-BASED VOUCHER") ~ 0L))
 
 
 ### Flag people who ended up at a different PHA from the waitlist ----
@@ -381,9 +452,7 @@ received_voucher <- left_join(received_voucher, received_mismatch, by = "id_apde
 # Make it here so we retain the information about prior housing etc.
 received_housing <- received_voucher %>%
   group_by(id_apde) %>%
-  mutate(post_lottery_entry = max(post_lottery_entry, na.rm = T),
-         post_lottery_housing = max(post_lottery_housing, na.rm = T),
-         post_general_voucher = max(post_lottery_housing * general_voucher, na.rm = T)) %>%
+  mutate(across(c(post_lottery_entry, post_lottery_housing, post_general_voucher), ~ max(., na.rm = T))) %>%
   ungroup()
 
 
@@ -393,14 +462,8 @@ received_voucher <- received_voucher %>%
   mutate(from_date = pmax(from_date, "2016-02-01"))
 
 
-### Right censor people at 65 ----
-# Use the DOB from the PHA table rather than waitlist if possible
+### Right censor at age 65 ----
 received_voucher <- received_voucher %>%
-  left_join(., distinct(pha_demo_use, id_apde, dob), by = "id_apde") %>%
-  mutate(age_65 = case_when(month(dob) == 2 & day(dob) == 29 ~ dob + days(1) + years(65),
-                            !is.na(dob) ~ dob + years(65),
-                            !is.na(age_65_wl) ~ age_65_wl,
-                            TRUE ~ NA_Date_)) %>%
   filter(!from_date >= age_65) %>%
   mutate(to_date = pmin(to_date, age_65))
 
@@ -446,7 +509,7 @@ received_voucher %>%
             cnt_hh = n_distinct(app_num))
 
 #       cnt    cnt_hh
-#   1   550    490
+#   1   531    470
 
 
 ### Join to Medicaid data ----
@@ -489,7 +552,7 @@ received_voucher_mcaid <- received_voucher_mcaid %>%
 ## Find people who did not move off the waitlist ----
 # Not a simple anti-join since we want people who had housing up until 
 # the start of the lottery but not after
-no_voucher <- left_join(select(waitlist_use, agency, app_num, id_apde, id_mcaid, age_65_wl), 
+no_voucher <- left_join(select(waitlist_use, agency, app_num, id_apde, id_mcaid, age_65), 
                         distinct(pha_timevar_use, agency, id_apde, from_date, to_date), 
                         by = c("id_apde")) %>%
   rename(agency_application = agency.x, agency_housed = agency.y)
@@ -505,18 +568,6 @@ no_voucher <- no_voucher %>%
   mutate(post_lottery_housing = max(post_lottery_housing, na.rm = T)) %>%
   ungroup() %>%
   filter(post_lottery_housing == 0)
-
-
-### Remove people aged 65 ----
-# Use the DOB from the PHA table rather than waitlist if possible
-# Remove anyone who will have turned 65 within a year of the lottery
-no_voucher <- no_voucher %>%
-  left_join(., distinct(pha_demo_use, id_apde, dob), by = "id_apde") %>%
-  mutate(age_65 = case_when(month(dob) == 2 & day(dob) == 29 ~ dob + days(1) + years(65),
-                            !is.na(dob) ~ dob + years(65),
-                            !is.na(age_65_wl) ~ age_65_wl,
-                            TRUE ~ NA_Date_)) %>%
-  filter(age_65 > "2018-01-31" & !is.na(age_65))
 
 
 ### Find the last agency the person was at ----
@@ -700,15 +751,15 @@ waitlist_output <- inner_join(distinct(no_voucher_mcaid, id_apde),
                               by = "id_apde") %>%
   # Bring in any PHA demographics if they are available
   left_join(., 
-            select(pha_demo_use, id_apde, age_2017, starts_with("gender"), starts_with("race")) %>%
+            select(pha_demo_use, id_apde, starts_with("gender"), starts_with("race")) %>%
               distinct(), 
             by = "id_apde") %>%
-  select(id_apde, agency:waitlist_2015, -id_mcaid, -age_65_wl) %>%
+  select(-id_mcaid, -age_65) %>%
   distinct()
 
 # All waitlist (just to see how often people who are in housing are on the waitlist)
 waitlist_all_output <- waitlist_use %>%
-  select(id_apde, agency:waitlist_2015, -id_mcaid, -age_65_wl) %>%
+  select(-id_mcaid, -age_65) %>%
   distinct() %>%
   rename(agency_application = agency) %>%
   left_join(., distinct(received_housing, id_apde, prior_housing_sha, prior_housing_kcha, 
@@ -722,19 +773,21 @@ waitlist_all_output <- waitlist_use %>%
 
 
 ## PHA data  ----
-pha_demo_output <- inner_join(distinct(received_voucher_mcaid, id_apde),
+pha_demo_output <- inner_join(distinct(waitlist_use, id_apde),
                               pha_demo_use,
                               by = "id_apde") %>% 
   select(id_apde, admit_date, age_2017, starts_with("gender"), starts_with("race_")) %>%
   distinct()
 
-pha_timevar_output <- inner_join(distinct(received_voucher_mcaid, id_apde),
+pha_timevar_output <- inner_join(distinct(waitlist_use, id_apde),
                                  pha_timevar_use,
                                  by = "id_apde") %>%
   select(-operator_type, -id_hash) %>%
   distinct() %>%
-  left_join(., distinct(received_voucher, id_apde, prior_housing_kcha, prior_housing_sha), 
-            by = "id_apde")
+  left_join(., distinct(received_housing, id_apde, from_date, to_date, prior_housing_sha, 
+                        prior_housing_kcha, post_lottery_entry, post_lottery_housing, 
+                        post_lottery_order, post_general_voucher, agency_mismatch), 
+            by = c("id_apde", "from_date", "to_date"))
 
 
 ## Medicaid tables ----
