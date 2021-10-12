@@ -453,7 +453,9 @@ received_voucher <- left_join(received_voucher, received_mismatch, by = "id_apde
 received_housing <- received_voucher %>%
   group_by(id_apde) %>%
   mutate(across(c(post_lottery_entry, post_lottery_housing, post_general_voucher), ~ max(., na.rm = T))) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(across(c(post_lottery_entry, post_lottery_housing, post_general_voucher), 
+                ~ ifelse(is.infinite(.), NA_integer_, .)))
 
 
 ### Left censor at 2016-02-01 ----
