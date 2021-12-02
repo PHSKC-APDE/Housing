@@ -87,7 +87,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   
   # Set up each grouping variable
   categories <- c("hh_id_kc_pha", "disability", "major_prog", "subsidy_type", "prog_type",
-                  "operator_type", "vouch_type_final", "portfolio_final",
+                  "operator_type", "vouch_type_final", "property_id", "portfolio_final",
                   "geo_zip_clean", "geo_tractce10")
   
   
@@ -183,7 +183,9 @@ load_stage_pha_calyear <- function(conn = NULL,
     "prog_type", "prog_type_pt", "operator_type", "operator_type_pt", 
     "vouch_type_final", "vouch_type_final_pt", 
     # Address and portfolio info
-    "geo_zip_clean", "geo_zip_clean_pt", "portfolio_final", "portfolio_final_pt", 
+    "geo_zip_clean", "geo_zip_clean_pt", 
+    "property_id", "property_id_pt",
+    "portfolio_final", "portfolio_final_pt", 
     "geo_tractce10", "geo_tractce10_pt",
     # Other info
     "last_run")

@@ -1605,7 +1605,7 @@ load_stage_timevar <- function(conn = NULL,
     "vouch_type_final", "agency_prog_concat",
     # Address and portfolio info
     "geo_add1_clean", "geo_add2_clean", "geo_city_clean", "geo_state_clean", 
-    "geo_zip_clean", "geo_hash_clean", "geo_blank", "geo_kc_area", "portfolio_final",
+    "geo_zip_clean", "geo_hash_clean", "geo_blank", "geo_kc_area", "property_id", "portfolio_final",
     # Date info
     "from_date", "to_date", "cov_time", "gap", "period", 
     # Port info
