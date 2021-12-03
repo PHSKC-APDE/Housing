@@ -230,6 +230,28 @@ pha_timevar_use <- pha_timevar %>%
   distinct()
 
 
+
+## All actions after lottery dates ----
+# Use this to find people who were issued a voucher but didn't lease up
+actions <- dbGetQuery(db_hhsaw,
+                       "SELECT a.*, b.id_kc_pha, c.id_apde 
+                         FROM
+                       (SELECT DISTINCT agency, id_hash, act_date, act_type, major_prog, vouch_type 
+                        FROM pha.stage_kcha
+                        WHERE act_type IN (1, 10, 11) AND act_date >= '2017-04-01'
+                       UNION
+                       SELECT DISTINCT agency, id_hash, act_date, act_type, major_prog, vouch_type 
+                        FROM pha.stage_sha
+                        WHERE act_type IN (1, 10, 11) AND act_date >= '2017-02-01') a
+                       LEFT JOIN
+                       (SELECT DISTINCT id_hash, id_kc_pha FROM pha.final_identities) b
+                       ON a.id_hash = b.id_hash
+                       LEFT JOIN 
+                       (SELECT DISTINCT id_apde, id_kc_pha FROM claims.final_xwalk_apde_ids) c
+                       ON b.id_kc_pha = c.id_kc_pha")
+
+
+
 ## Medicaid enrollment data ----
 # Restrict to people on the waitlist (then restrict more later)
 mcaid_enroll <- elig_timevar_collapse(conn = db_hhsaw,
