@@ -29,6 +29,13 @@ load_stage_timevar <- function(conn = NULL,
                                id_schema = "pha",
                                id_table = "final_identities") {
   
+  # BUG CHECK ----
+  # As of 2022-02-04, a bug in data.table is making some of the hh lines not work properly
+  # Turn off optimization
+  # Next time this function is run, check if the bug is fixed
+  warning("See the load_stage_timevar function code for a data.table bug issue that needs checking")
+  options(datatable.optimize = 0L)
+  
   
   # BRING IN DATA AND COMBINE ----
   kcha <- dbGetQuery(
@@ -54,7 +61,9 @@ load_stage_timevar <- function(conn = NULL,
       .con = conn))
   
   
-  # Once upstream stage files are changes, change the following:
+  # Once upstream stage files are changed, change the following:
+  # It would be good if I'd recorded which upstream changes and how to change the following,
+  # but I did not
   sha <- dbGetQuery(
     conn,
     glue_sql(
@@ -249,6 +258,7 @@ load_stage_timevar <- function(conn = NULL,
   hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
   hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
   
+  
   # Count by people
   hh %>% count(agency, has_hh) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
   hh %>% count(agency, has_hh, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
@@ -269,6 +279,7 @@ load_stage_timevar <- function(conn = NULL,
     hh_lname == lname & hh_fname == fname & (!is.na(hh_ssn) | !is.na(ssn)) ~ 1L,
     TRUE ~ 0L
   )]
+  
   hh[, hh_id_poss_cnt := sum(hh_id_poss, na.rm = T), by = "hh_id_tmp"]
   hh %>% count(hh_id_poss_cnt)
   
@@ -1284,7 +1295,7 @@ load_stage_timevar <- function(conn = NULL,
                                     lag(act_date, 1) + dyears(lag(add_yr, 1)) < act_date),
                                act_date, NA), origin = "1970-01-01"),
     # Last row for a person or change in agency/program = 
-    #   exit date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
+    #   exit date/voucher expiry date or today's date or act_date + 1-3 years (depending on agency, age, and disability)
     # OR mid-point between last date and next household action date if it looks like
     #    the person has moved out (whichever is smallest of the two)
     # Other rows where that is the person's last row at that address/PHA billed but same agency/prog = act_date at next address - 1 day
@@ -1292,7 +1303,7 @@ load_stage_timevar <- function(conn = NULL,
     # If address is blank and there is gap larger than the time between reexams, use act_date + 1-3 years
     to_date = as.Date(
       case_when(
-        act_type == 5 | act_type == 6 ~  act_date,
+        act_type == 5 | act_type == 6 | act_type == 11 ~  act_date,
         id_kc_pha != lead(id_kc_pha, 1) | is.na(lead(id_kc_pha, 1 )) |
           agency_prog_concat != lead(agency_prog_concat, 1) |
           cost_pha != lead(cost_pha, 1) | 
@@ -1559,9 +1570,12 @@ load_stage_timevar <- function(conn = NULL,
   pha_timevar <- copy(pha_sort)
   
   ## Coverage time ----
+  # Define a gap as 2+ months between from_date and previous to_date
+  # Also record actual gap length for use in deciding which period start date to use
   setorder(pha_timevar, id_kc_pha, from_date, to_date)
   pha_timevar[, ':=' (
     cov_time = interval(start = from_date, end = to_date) / ddays(1) + 1,
+    gap_length = ifelse(id_kc_pha == lag(id_kc_pha, 1), from_date - lag(to_date, 1), NA_integer_),
     gap = case_when(is.na(lag(id_kc_pha, 1)) | id_kc_pha != lag(id_kc_pha, 1) ~ 0L,
                     id_kc_pha == lag(id_kc_pha, 1) & from_date - lag(to_date, 1) <= 62 ~ 0L,
                     from_date - lag(to_date, 1) > 62 ~ 1L,
@@ -1571,6 +1585,11 @@ load_stage_timevar <- function(conn = NULL,
   # outer cumsum starts a new group when this happens and adds 1 because the starting group is 0
   pha_timevar[, period := cumsum(cumsum(c(-1, diff(gap))) == 0) + 1, by = "id_kc_pha"]
   
+  
+  ## Period start date ----
+  # Can be used in conjunction with the admit_date variables in final.pha_demo
+  #   to determine how long someone has been in housing
+  pha_timevar[, period_start := min(from_date), by = .(id_kc_pha, period)]
   
   
   ## ZIPs ----
@@ -1598,6 +1617,8 @@ load_stage_timevar <- function(conn = NULL,
   cols_select <- c(
     # ID variables
     "id_kc_pha", "id_hash", "hh_id_long", "hh_id_kc_pha",
+    # Date info
+    "from_date", "to_date", "cov_time", "gap_length", "gap", "period", "period_start", 
     # Time-varying demog variables
     "disability",
     # Program info
@@ -1606,8 +1627,6 @@ load_stage_timevar <- function(conn = NULL,
     # Address and portfolio info
     "geo_add1_clean", "geo_add2_clean", "geo_city_clean", "geo_state_clean", 
     "geo_zip_clean", "geo_hash_clean", "geo_blank", "geo_kc_area", "property_id", "portfolio_final",
-    # Date info
-    "from_date", "to_date", "cov_time", "gap", "period", 
     # Port info
     "port_in", "port_out_kcha", "port_out_sha", "cost_pha",
     # Other info

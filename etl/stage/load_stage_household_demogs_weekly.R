@@ -66,9 +66,16 @@ hh_window_f <- function(date = NULL) {
   
   # Join to pha_demo and add relevant variables
   daily[, dob := pha_demo[.SD, on = "id_kc_pha", x.dob]]
-  daily[, admit_date := pha_demo[.SD, on = "id_kc_pha", x.admit_date]]
+  daily[, admit_date_all := pha_demo[.SD, on = "id_kc_pha", x.admit_date_all]]
+  daily[, admit_date_kcha := pha_demo[.SD, on = "id_kc_pha", x.admit_date_kcha]]
+  daily[, admit_date_sha := pha_demo[.SD, on = "id_kc_pha", x.admit_date_sha]]
   daily[, `:=` (age_yr = floor(interval(start = dob, end = date) / years(1)),
-                length = floor(interval(start = admit_date, end = date) / years(1)))]
+                length_all = round(interval(start = admit_date_all, end = date) / years(1), 1),
+                length_pha = ifelse(agency == "KCHA",
+                                    round(interval(start = admit_date_kcha, end = date) / years(1), 1),
+                                    round(interval(start = admit_date_sha, end = date) / years(1), 1)),
+                length_period = round(interval(start = period_start, end = date) / years(1), 1)
+                )]
   daily[, child := case_when(age_yr < 18 ~ 1L, age_yr >= 18 ~ 0L)]
   daily[, adult := case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L)]
   daily[, senior := case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L)]
@@ -103,7 +110,7 @@ hh_window_f <- function(date = NULL) {
   hh_final[, .(hh_id_kc_pha, date, agency, major_prog, subsidy_type, prog_type, operator_type, 
                vouch_type_final, portfolio_final, geo_hash_clean, geo_tractce10,
                hh_size, hh_senior, hh_disability, n_child, n_adult, n_senior, n_disability,
-               single_caregiver
+               single_caregiver, length_all, length_pha, length_period
                )]
 }
 

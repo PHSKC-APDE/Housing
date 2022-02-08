@@ -29,10 +29,10 @@ load_stage_demo <- function(conn = NULL,
   kcha <- dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.act_date, a.admit_date, a.dob, a.gender, 
+      "SELECT DISTINCT b.id_kc_pha, a.agency, a.act_date, a.admit_date, a.dob, a.gender, 
       a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
       FROM 
-      (SELECT id_hash, act_date, admit_date, dob, gender,  
+      (SELECT id_hash, agency, act_date, admit_date, dob, gender,  
         r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
       LEFT JOIN
@@ -43,10 +43,10 @@ load_stage_demo <- function(conn = NULL,
   sha <- dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.act_date, a.admit_date, 
+      "SELECT DISTINCT b.id_kc_pha, a.agency, a.act_date, a.admit_date, 
       a.dob, a.gender, a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
       FROM 
-      (SELECT id_hash, act_date, admit_date, dob, gender, 
+      (SELECT id_hash, agency, act_date, admit_date, dob, gender, 
         r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
       LEFT JOIN
@@ -81,17 +81,22 @@ load_stage_demo <- function(conn = NULL,
   
   
   # WORK ON ADMIT DATE ----
-  # Take the most common admit date per ID (use oldest for ties)
+  # The admit date column does not always reflect when a person first entered housing support
+  # (e.g., if a person switches programs it might reset)
+  # Also want to derive an empirical start date using the first act_date for each person
+  
   message("Processing date person entered KCHA/SHA")
-  elig_admit <- pha[, c("id_kc_pha", "act_date", "admit_date")]
+  elig_admit <- pha[, c("id_kc_pha", "agency", "act_date", "admit_date")]
   
-  # Count number of times each admit date appears for an ID
-  elig_admit[, admit_cnt := .N, by = c("id_kc_pha", "admit_date")]
-  elig_admit <- elig_admit[elig_admit[order(id_kc_pha, -admit_cnt, admit_date), .I[1], by = "id_kc_pha"]$V1]
+  # Take the earliest date per ID by overall and each PHA
+  elig_admit_all <- elig_admit[, .(admit_date_all = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+  elig_admit_kcha <- elig_admit[agency == "KCHA", .(admit_date_kcha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+  elig_admit_sha <- elig_admit[agency == "SHA", .(admit_date_sha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
   
-  # Keep relevant columns
-  elig_admit[, c("act_date", "admit_cnt") := NULL]
-  elig_admit <- unique(elig_admit)
+  # Bring back into a single place
+  elig_admit <- Reduce(function(x,y) y[x, on = "id_kc_pha"], list(elig_admit_all, elig_admit_kcha, elig_admit_sha))
+  
+  rm(elig_admit_all, elig_admit_kcha, elig_admit_sha)
   
   
   # WORK ON GENDER ----
@@ -335,7 +340,7 @@ load_stage_demo <- function(conn = NULL,
   #Drop temp table
   rm(elig_race)
   
-  
+
   # JOIN ALL TABLES ----
   message("Bringing it all together")
   elig_demo_final <- list(elig_dob, elig_admit, elig_gender_final, elig_race_final) %>%

@@ -129,6 +129,59 @@ load_stage_pha_calyear <- function(conn = NULL,
     rename_with(~ str_remove(., "_group"), .cols = contains("_group"))
   
   
+  # ID AN ADMIT DATE FOR EACH YEAR ----
+  # A person's first admit_date overall and for each PHA is captured in the pha_demo table
+  # However, we may want to use a from_date as the admit_date if there has been a lengthy
+  #   gap in their coverage. For example, if a person has coverage from 2012-2014 then 2016-2020,
+  #   we would want their admit date to be 2016 for the second period.
+  # For now, treat gaps of 1+ years as sufficient to trigger a new admit_date
+  admit_date_setup <- pha_timevar %>%
+    filter(from_date == period_start) %>%
+    # Also filter gap_length = 0 where people have duplicate rows
+    filter(gap_length != 0 | is.na(gap_length)) %>%
+    distinct(id_kc_pha, gap_length, period_start) %>%
+    mutate(use_new_date = case_when(is.na(gap_length) ~ 0L,
+                                    gap_length >= 365 ~ 1L, 
+                                    TRUE ~ 0L)) %>%
+    distinct(id_kc_pha, period_start, use_new_date)
+  
+  pha_timevar <- left_join(pha_timevar, admit_date_setup, by = c("id_kc_pha", "period_start"))
+  
+  
+  # Find a admit_date for each year
+  admit_dates <- bind_rows(map(years, function(x) {
+    message("Working on ", x)
+    output <- pha_timevar %>%
+      mutate(
+        overlap_amount = as.numeric(lubridate::intersect(
+          #time_int,
+          lubridate::interval(from_date, to_date),
+          lubridate::interval(as.Date(paste0(x, "-01-01")), as.Date(paste0(x, "-12-31")))) / ddays(1) + 1)
+      ) %>%
+      # Remove any rows that don't overlap
+      dplyr::filter(!is.na(overlap_amount)) %>%
+      left_join(., select(pha_demo, id_kc_pha, starts_with("admit_date")), by = "id_kc_pha")
+    
+    output <- output %>%
+      mutate(admit_date_yr = case_when(use_new_date == 1 ~ period_start,
+                                       year(admit_date_all) > x ~ period_start,
+                                       !is.na(admit_date_all) ~ admit_date_all,
+                                       agency == "KCHA" & !is.na(admit_date_kcha) ~ admit_date_kcha,
+                                       agency == "SHA" & !is.na(admit_date_sha) ~ admit_date_sha,
+                                       TRUE ~ period_start)) %>%
+      distinct(id_kc_pha, agency, admit_date_yr) %>%
+      group_by(id_kc_pha) %>%
+      summarise(admit_date_yr = max(admit_date_yr, na.rm = T)) %>%
+      ungroup() %>%
+      mutate(year = x)
+    
+    output
+  }))
+  
+  # Join back to other year table
+  allocated_wide <- left_join(allocated_wide, admit_dates, by = c("id_kc_pha", "year"))
+  
+  
   # JOIN TO DEMO TABLE AND ADD CALCULATED FIELDS ----
   calyear <- setDT(left_join(allocated_wide, 
                              select(pha_demo, -last_run, -contains("_t")),
@@ -154,7 +207,7 @@ load_stage_pha_calyear <- function(conn = NULL,
                       data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
                       age_yr >= 75 ~ "75+",
                       is.na(age_yr) ~ NA_character_)]
-  calyear[, time_housing_yr := round(interval(start = admit_date, end = paste0(year, "-12-31")) / years(1), 1)]
+  calyear[, time_housing_yr := round(interval(start = admit_date_yr, end = paste0(year, "-12-31")) / years(1), 1)]
   calyear[, time_housing := 
             case_when(time_housing_yr < 3 ~ "<3 years",
                       data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA) ~ "3 to <6 years",
@@ -168,7 +221,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   cols_select <- c(
     # Core variables
     "year", "id_kc_pha", "agency", "pt_total", 
-    "admit_date", "time_housing_yr", "time_housing", 
+    "admit_date_all", "admit_date_kcha", "admit_date_sha", "time_housing_yr", "time_housing", 
     # Head of household variables
     "hh_id_kc_pha", "hh_id_kc_pha_pt",
     # Demog variables
