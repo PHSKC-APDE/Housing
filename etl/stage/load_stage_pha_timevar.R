@@ -1593,7 +1593,7 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## ZIPs ----
-  #### ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports) ####
+  # ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports)
   zips <- read.csv(text = httr::content(httr::GET(
     "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_hca.csv")), 
     header = TRUE) %>% 
@@ -1607,6 +1607,28 @@ load_stage_timevar <- function(conn = NULL,
                             all.x = TRUE, sort = F)
   
   rm(zips)
+  
+  
+  ## Fill in empty addresses ----
+  # Often an exit or other event is missing an address in the original data
+  # If the from/to_date length = 1 day AND the previous from_date is the current to_date - 1 day
+  #   assume we can fill in the address details with the previous row
+  pha_timevar[id_kc_pha == lag(id_kc_pha, 1) & from_date == to_date & 
+        from_date - lag(to_date, 1) == 1 & is.na(geo_add1_clean) & 
+        is.na(geo_add2_clean), move_add := 1L]
+  
+  pha_timevar[, ':=' (geo_add1_clean = ifelse(!is.na(move_add), lag(geo_add1_clean, 1), geo_add1_clean),
+                      geo_add2_clean = ifelse(!is.na(move_add), lag(geo_add2_clean, 1), geo_add2_clean),
+                      geo_city_clean = ifelse(!is.na(move_add), lag(geo_city_clean, 1), geo_city_clean),
+                      geo_state_clean = ifelse(!is.na(move_add), lag(geo_state_clean, 1), geo_state_clean),
+                      geo_zip_clean = ifelse(!is.na(move_add), lag(geo_zip_clean, 1), geo_zip_clean),
+                      geo_hash_clean = ifelse(!is.na(move_add), lag(geo_hash_clean, 1), geo_hash_clean),
+                      geo_blank = ifelse(!is.na(move_add), lag(geo_blank, 1), geo_blank),
+                      property_id = ifelse(!is.na(move_add), lag(property_id, 1), property_id),
+                      portfolio_final = ifelse(!is.na(move_add), lag(portfolio_final, 1), portfolio_final)
+  )]
+  
+  pha_timevar[, move_add := NULL]
   
   
   ## Add in last_run date ----

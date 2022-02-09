@@ -152,5 +152,5 @@ lapply(seq(start, cycles), function(i) {
 
 
 # Add CCS
-dbExecute(db_hhsaw, "CREATE CLUSTERED COLUMNSTORE INDEX stage_hh_demogs_weekly_idx 
+DBI::dbExecute(db_hhsaw, "CREATE CLUSTERED COLUMNSTORE INDEX stage_hh_demogs_weekly_idx 
           ON pha.stage_hh_demogs_weekly")
