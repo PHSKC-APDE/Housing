@@ -173,7 +173,7 @@ pha_demo %>% filter(id_pha_cnt >1) %>%
 ### Apply filters ----
 pha_demo_use <- pha_demo %>%
   filter(id_pha_cnt == 1) %>%
-  select(id_kc_pha, id_apde, dob, admit_date:race_latino_t) %>%
+  select(id_kc_pha, id_apde, dob, admit_date_all:race_latino_t) %>%
   mutate(age_2017 = floor(interval(start = dob, end = "2017-12-31") / years(1))) %>%
   distinct()
 
