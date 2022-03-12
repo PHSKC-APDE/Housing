@@ -13,18 +13,18 @@
 
 # !!!URGENT!!! Make sure the underlying data is up to date! ----
   # Ensure the master cross-walk table linking Medicaid, Medicare, and Public housing IDs is up to date
-  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/stage/tables/load_stage.xwalk_apde_mcaid_mcare_pha.r
-  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/final/tables/load_final.xwalk_apde_mcaid_mcare_pha.sql
+  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/stage/tables/load_stage.xwalk_apde_mcaid_mcare_pha.r
+  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/final/tables/load_final.xwalk_apde_mcaid_mcare_pha.sql
   # - SQL: [PHClaims].[final].[xwalk_apde_mcaid_mcare_pha]
   
   # Ensure the joint Medicaid-Medicare elig_demo table is up to date
-  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_demo.R
-  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/final/tables/load_final.mcaid_mcare_elig_demo.sql
+  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_demo.R
+  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/final/tables/load_final.mcaid_mcare_elig_demo.sql
   # - SQL: [PHClaims].[final].[mcaid_mcare_elig_demo]
   
   # Ensure the joing Medicaid-Medicare elig_timevar table is up to date
-  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_timevar.R
-  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/phclaims/final/tables/load_final.mcaid_mcare_elig_timevar.sql
+  # - code 1: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_timevar.R
+  # - code 2: https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/phclaims/final/tables/load_final.mcaid_mcare_elig_timevar.sql
   # - SQL: [PHClaims].[final].[mcaid_mcare_elig_timevar]
 
 
@@ -37,14 +37,14 @@ library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
 
-kc.zips.url <- "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv"
+kc.zips.url <- "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/main/spatial_data/zip_admin.csv"
 
-yaml.elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/09_mcaid_mcare_pha_elig_demo.yaml"
+yaml.elig <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/09_mcaid_mcare_pha_elig_demo.yaml"
 
-yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/09_mcaid_mcare_pha_elig_timevar.yaml"
+yaml.timevar <- "https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/09_mcaid_mcare_pha_elig_timevar.yaml"
 
-source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/alter_schema.R")
-source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
+source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/main/claims_db/db_loader/scripts_general/alter_schema.R")
+source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/main/claims_db/db_loader/scripts_general/add_index.R")
 
 
 ##### Load data from SQL #####
@@ -235,7 +235,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       setnames(linked, names(linked), gsub("\\.y$", ".elig.mm", names(linked))) # clean up suffixes to eliminate confusion
       
       #-- Identify the type of overlaps & number of duplicate rows needed ----
-      # As stated in https://github.com/PHSKC-APDE/claims_data/edit/master/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_timevar.R
+      # As stated in https://github.com/PHSKC-APDE/claims_data/edit/main/claims_db/phclaims/stage/tables/load_stage.mcaid_mcare_elig_timevar.R
       # The code below was validated against a much more time intensive process where a giant table was made for every individual day within the
       # time period being analyzed. This faster / more memory efficient code was found to provide equivalent output.
       temp <- linked %>%
@@ -457,7 +457,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       
       
   ### Linked IDs Part 2: join mcaid_mcare & PHA data based on ID & overlapping time periods ----
-      # foverlaps ... https://github.com/Rdatatable/data.table/blob/master/man/foverlaps.Rd
+      # foverlaps ... https://github.com/Rdatatable/data.table/blob/main/man/foverlaps.Rd
       #-- structure data for use of foverlaps ----
       linked[, c("from_date", "to_date") := lapply(.SD, as.integer), .SDcols = c("from_date", "to_date")] 
       setkey(linked, id_apde, from_date, to_date)    
@@ -544,7 +544,7 @@ pha[, geo_kc_ever := 1] # PHA data is always 1 because everyone lived or lives i
       timevar[is.na(geo_school_code), geo_school_code := i.geo_school_code][, i.geo_school_code := NULL]
       
       #-- Add KC flag based on zip code or FIPS code as appropriate----  
-      kc.zips <- data.table::fread("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_admin.csv")
+      kc.zips <- data.table::fread("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/main/spatial_data/zip_admin.csv")
       timevar[, geo_kc := 0]
       timevar[geo_county_code=="033", geo_kc := 1]
       timevar[is.na(geo_county_code) & geo_zip %in% unique(as.character(kc.zips$zip)), geo_kc := 1]

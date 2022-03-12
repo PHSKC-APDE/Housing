@@ -33,7 +33,7 @@ library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
 
-script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 METADATA = RJSONIO::fromJSON(paste0(housing_source_dir,"metadata/metadata.json"))
 set_data_envr(METADATA,"combined")
@@ -225,7 +225,7 @@ pha_longitudinal[, ':=' (
 
 
 #### ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports) ####
-zips <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_hca.csv")), 
+zips <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/reference-data/main/spatial_data/zip_hca.csv")), 
                  header = TRUE) %>% 
   select(zip) %>% mutate(zip = as.character(zip), kc_area = 1)
 zips <- setDT(zips)

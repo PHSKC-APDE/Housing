@@ -4,7 +4,7 @@
 # 2021-06
 
 ### Run from main_pha_load script
-# https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_pha_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_pha_load.R
 # Assumes relevant libraries are already loaded
 
 # For now, sticking to the bare minimum needed to make the DASHH dashboard
@@ -1595,7 +1595,7 @@ load_stage_timevar <- function(conn = NULL,
   ## ZIPs ----
   # ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports)
   zips <- read.csv(text = httr::content(httr::GET(
-    "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/master/spatial_data/zip_hca.csv")), 
+    "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/main/spatial_data/zip_hca.csv")), 
     header = TRUE) %>% 
     select(geo_zip) %>% 
     mutate(geo_zip = as.character(geo_zip), geo_kc_area = 1)

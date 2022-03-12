@@ -40,7 +40,7 @@ db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 #### BRING IN DATA ###
 ### Code for mapping field values
-demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/housing_mcaid%20demo%20codes.csv"), 
+demo_codes <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/housing_mcaid%20demo%20codes.csv"), 
                        header = TRUE, stringsAsFactors = FALSE)
 
 ### Bring in combined PHA/Medicaid data with some demographics already run ####

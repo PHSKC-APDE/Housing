@@ -52,15 +52,15 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
 
 # RAW FILES ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_waitlist_2017.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_waitlist_2017.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_waitlist_2017.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_waitlist_2017.R")
 
 load_raw_kcha_waitlist_2017(conn = db_hhsaw, to_schema = "pha", to_table = "raw_kcha_waitlist_2017")
 load_raw_sha_waitlist_2017(conn = db_hhsaw, to_schema = "pha", to_table = "raw_sha_waitlist_2017")
 
 
 # COMBINED STAGE TABLE ----
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_waitlist.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_waitlist.R")
 
 load_stage_pha_waitlist(conn = db_hhsaw, to_schema = "pha", to_table = "stage_pha_waitlist")
 
@@ -137,8 +137,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_i
 # Consolidate non- and mostly non-time varying demographics
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_demo.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage.pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage.pha_demo.R")
 
 # Run function
 load_stage_demo(conn = db_hhsaw)
@@ -159,8 +159,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 # Consolidate time varying data
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage.pha_timevar.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage.pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage.pha_timevar.R")
 
 # Run function
 load_stage_timevar(conn = db_hhsaw)

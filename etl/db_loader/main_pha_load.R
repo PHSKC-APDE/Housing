@@ -124,8 +124,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_i
 # Consolidate non- and mostly non-time varying demographics
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_demo.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage_pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_demo.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage_pha_demo.R")
 
 # Run function
 load_stage_demo(conn = db_hhsaw)
@@ -146,8 +146,8 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
 # Consolidate time varying data
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_timevar.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/qa_stage_pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_timevar.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage_pha_timevar.R")
 
 # Run function
 load_stage_timevar(conn = db_hhsaw)
@@ -168,7 +168,7 @@ dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
 # Set up pre-analyzed calendar year tables
 ## Stage ----
 # Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_calyear.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_calyear.R")
 
 # Run function
 load_stage_pha_calyear(conn = db_hhsaw, to_schema = "pha", to_table = "stage_calyear")

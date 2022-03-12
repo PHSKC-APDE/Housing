@@ -39,7 +39,7 @@ require(openxlsx) # Used to import/export Excel files
 require(data.table) # used to read in csv files and rename fields
 require(tidyverse) # Used to manipulate data
 
-script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- file.path(here::here(), "processing")
@@ -642,7 +642,7 @@ pha_cleanadd <- pha_cleanadd %>%
 # Bring in data
 kcha_dev_adds <- data.table::fread(file = kcha_dev_adds_path_fn)
 # Bring in variable name mapping table
-fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv")), 
+fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/Field%20name%20mapping.csv")), 
                    header = TRUE)
 
 # Clean up KCHA field names

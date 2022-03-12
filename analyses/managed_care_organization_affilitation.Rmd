@@ -21,7 +21,7 @@ pha_2018 <- claims_elig(conn = db_apde, source = "mcaid_mcare_pha",
                         from_date = "2018-01-01", to_date = "2018-12-31",
                         show_query = F)
 
-mco <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/phclaims/ref/tables_data/ref.mco.csv"), 
+mco <- read.csv(text = RCurl::getURL("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/main/claims_db/phclaims/ref/tables_data/ref.mco.csv"), 
                    header = TRUE, stringsAsFactors = FALSE)
 
 
