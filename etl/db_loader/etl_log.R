@@ -2,8 +2,8 @@
 # Alastair Matheson
 
 # Note: these functions are similar to others that exist for claims and DOH data:
-# https://github.com/PHSKC-APDE/claims_data/blob/master/claims_db/db_loader/scripts_general/etl_log.R
-# https://github.com/PHSKC-APDE/DOHdata/blob/master/ETL/general/scripts_general/etl_log.R
+# https://github.com/PHSKC-APDE/claims_data/blob/main/claims_db/db_loader/scripts_general/etl_log.R
+# https://github.com/PHSKC-APDE/DOHdata/blob/main/ETL/general/scripts_general/etl_log.R
 # These should eventually be combined into a single function that lives in the apde package.
 
 # conn = ODBC connection to use

@@ -4,7 +4,7 @@
 # 2021-07
 #
 # Run from main_pha_waitlist_load script
-# https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_pha_waitlist_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_pha_waitlist_load.R
 # Assumes relevant libraries are already loaded
 #
 #
@@ -63,7 +63,7 @@ if (dbExistsTable(db_hhsaw, name = DBI::Id(schema = final_schema, table = final_
 
 # FUNCTIONS ----
 ## Adaptation of Carolina's code ----
-# From here: https://github.com/DCHS-PME/PMEtools/blob/master/R/idm_dedup.R
+# From here: https://github.com/DCHS-PME/PMEtools/blob/main/R/idm_dedup.R
 # pairs_input = Output from a RecordLinkage getPairs function
 # df = The data frame that was fed into the matching process. 
 #      Must have rowid and id_hash fields

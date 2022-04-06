@@ -46,7 +46,7 @@ library(RecordLinkage)
 library(phonics)
 library(stringr)
 
-script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/metadata/set_data_env.r"))
+script <- httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/metadata/set_data_env.r"))
 eval(parse(text = script))
 
 housing_source_dir <- file.path(here::here(), "processing")
@@ -165,7 +165,7 @@ rm(df_dedups)
 
 ### Get field names to match
 # Bring in variable name mapping table
-fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/processing/Field%20name%20mapping.csv")), 
+fields <- read.csv(text = httr::content(httr::GET("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/processing/Field%20name%20mapping.csv")), 
          header = TRUE)
 ###
 ### UW DATA field names mappings are different or new ones don't have mappings for the voucher data?

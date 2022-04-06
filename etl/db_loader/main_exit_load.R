@@ -20,7 +20,7 @@ library(keyring) # Access stored credentials
 library(apde) # Handy functions for working with data in APDE
 
 
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/db_loader/etl_log.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/db_loader/etl_log.R")
 
 
 # SET UP VARIABLES AND CONNECTIONS ----
@@ -45,7 +45,7 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
 
 # LOAD KCHA EXIT DATA ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_kcha_exit.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_exit.R")
 
 # Set up etl_batch_id
 etl_batch_id_kcha_exit <- load_metadata_etl_log(conn = db_hhsaw,
@@ -74,7 +74,7 @@ rm(etl_batch_id_kcha_exit, load_raw_kcha_exit)
 # LOAD SHA EXIT DATA ----
 ## 2012 to 2019 ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit_2012_2019.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_exit_2012_2019.R")
 
 # Set up etl_batch_id
 etl_batch_id_sha_exit_2012_2019 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -102,7 +102,7 @@ rm(etl_batch_id_sha_exit_2012_2019, load_raw_sha_exit_2012_2019)
 
 ## 2020 ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/raw/load_raw_sha_exit_2020.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_exit_2020.R")
 
 # Set up etl_batch_id
 etl_batch_id_sha_exit_2020 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -131,7 +131,7 @@ rm(etl_batch_id_sha_exit_2020, load_raw_sha_exit_2020)
 
 # MAKE STAGE COMBINED TABLE ----
 # Bring in function
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/etl/stage/load_stage_pha_exit.R")
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_exit.R")
 
 # Run function
 load_stage_pha_exit(conn = db_hhsaw,

@@ -194,8 +194,8 @@ mcaid_mcare_pha_elig_calyear[, last_run := Sys.time()]
 
 #### WRITE DATA TO SQL SERVER ####
 table_config_stage <- yaml::yaml.load(httr::content(httr::GET(
-  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/master/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml")))
-source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/master/claims_db/db_loader/scripts_general/add_index.R")
+  "https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/analyses/load.stage_mcaid_mcare_pha_elig_calyear.yaml")))
+source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/main/claims_db/db_loader/scripts_general/add_index.R")
 
 
 # Ensure columns are in the correct order

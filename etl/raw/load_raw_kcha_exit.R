@@ -8,7 +8,7 @@
 ##
 ## Notes:
 # Run from main_exit_load script
-# https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_exit_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_exit_load.R
 # Assumes relevant libraries are already loaded
 
 load_raw_kcha_exit <- function(conn = NULL,

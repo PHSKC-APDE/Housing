@@ -4,7 +4,7 @@
 # 2021-06
 
 ### Run from main_kcha_load script
-# https://github.com/PHSKC-APDE/Housing/blob/master/claims_db/etl/db_loader/main_kcha_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_kcha_load.R
 # Assumes relevant libraries are already loaded
 
 
