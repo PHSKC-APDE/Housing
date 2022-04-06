@@ -14,7 +14,7 @@
 options(scipen = 6, digits = 4, warning.length = 8170)
 
 if (!require("pacman")) {install.packages("pacman")}
-pacman::p_load(tidyverse, odbc, glue, data.table, janitor, sqldf)
+pacman::p_load(tidyverse, odbc, glue, data.table, janitor, sqldf, lubridate)
 
 # Connect to HHSAW
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
@@ -49,14 +49,19 @@ waitlist_all_output <- read.csv("//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analy
 
 ## SHA ----
 sha_waitlist_lease <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Waitlist data/2017 HCV Waitlist with Flag for TBV Lease Up.csv") %>%
-  mutate(DOB = as.Date(DOB, format = "%m/%d/%Y")) %>%
-  mutate(across(contains("Name"), ~ toupper(.x))) %>%
-  mutate(across(contains("SSN"), ~ str_pad(.x, 9, side = "left", pad = "0")))
+  janitor::clean_names() %>%
+  mutate(across(c(contains("date"), contains("dob")), ~ as.Date(.x, format = "%m/%d/%Y")),
+         across(contains("name"), ~ toupper(.x)),
+         across(contains("ssn"), ~ str_pad(.x, 9, side = "left", pad = "0")))
 
-sha_voucher_date <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Waitlist data/Voucher_Issuance_date_2017_waitlist_received 2022-02-02.xlsx") %>%
-  mutate(across(contains("NAME"), ~ toupper(.x))) %>%
-  mutate(SSN = str_remove_all(SSN, "-"),
-         voucher_date = as.Date(MIN_VOUCHER_ISSUE_DATE))
+sha_voucher_date <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/Waitlist data/Voucher_Issuance_date_2017_waitlist_received 2022-03-31.xlsx", sheet = "Issuance and Lease Up") %>%
+  janitor::clean_names() %>%
+  mutate(across(contains("names"), ~ toupper(.x)),
+         ssn = str_remove_all(ssn, "-"),
+         across(c("termination_date", "placed_on_clock", "initial_shopping_term_end",
+                  "new_move_in_date", "other_change_of_unit_date"), 
+                ~ as.Date(as.numeric(.x), origin = "1899-12-30")),
+         voucher_date = as.Date(effective_date))
 
 
 ## KCHA ----
@@ -64,7 +69,7 @@ kcha_stage <- dbGetQuery(db_hhsaw, "SELECT DISTINCT hh_id, id_hash FROM pha.stag
 
 kcha_waitlist_jhu <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/kcha_shopping success 2015-2021 final.csv")
 
-kcha_waitlist_lease <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/Shopping success 2015-2021 final_received 2022-02-11.xlsx") %>%
+kcha_waitlist_lease <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/Shopping success 2015-2021 final_received 2022-04-04.xlsx") %>%
   janitor::clean_names() %>%
   mutate(across(c(contains("_date"), "hoh_birthdate"), ~ as.Date(.x, format = "%m/%d/%Y")),
          across(c("voucherissueddate_n", "admissiondate_n", "effectivedate_n"), 
@@ -76,9 +81,9 @@ kcha_waitlist_lease <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/
 
 # SHA ANALYSES ----
 # Check everyone in the same household has the same status
-sha_waitlist_lease %>% group_by(HeadOfHouseholdID) %>% 
-  mutate(issue_cnt = n_distinct(Is.On.Issuance, na.rm = T), 
-         lease_cnt = n_distinct(Is.On.Issuance, na.rm = T)) %>% 
+sha_waitlist_lease %>% group_by(head_of_household_id) %>% 
+  mutate(issue_cnt = n_distinct(is_on_issuance, na.rm = T), 
+         lease_cnt = n_distinct(is_on_issuance, na.rm = T)) %>% 
   ungroup() %>% count(issue_cnt, lease_cnt)
 
 
@@ -88,14 +93,20 @@ sha_lease_chk <- sha_waitlist_lease %>%
                         prior_housing_kcha, post_lottery_entry, post_lottery_housing) %>%
               filter(agency_application == "SHA") %>%
               mutate(present = 1L),
-            by = c("HeadOfHouseholdID" = "app_num"))
+            by = c("head_of_household_id" = "app_num"))
 
-sha_lease_chk %>% count(Is.On.LeaseUp, present)
+sha_lease_chk %>% count(is_on_lease_up, present)
+# is_on_lease_up   present     n
+# 1          FALSE       1 22139
+# 2          FALSE      NA   370
+# 3           TRUE       1  7861
+# 4           TRUE      NA    73
+
 
 # Look at why people didn't match
 sha_lease_chk %>% filter(is.na(present)) %>%
-  select(HeadOfHouseholdID, Relationship, DOB) %>%
-  mutate(age_2019 = floor(interval(start = DOB, end = "2019-12-31") / years(1))) %>%
+  select(head_of_household_id, relationship, dob) %>%
+  mutate(age_2019 = floor(interval(start = dob, end = "2019-12-31") / years(1))) %>%
   count(age_2019)
 
 # 367/443 (82.8% over 65)
@@ -171,95 +182,171 @@ sha_lease_chk %>% filter(is.na(present)) %>%
 
 ## Find people who had a voucher issued but didn't lease up ----
 # Using inner join now to exclude non-matches
-sha_waitlist_non_lease <- distinct(sha_waitlist_lease, HeadOfHouseholdID, Is.On.Waitlist, Is.On.Issuance, Is.On.LeaseUp) %>%
+sha_waitlist_non_lease <- distinct(sha_waitlist_lease, head_of_household_id, is_on_waitlist, is_on_issuance, is_on_lease_up) %>%
   inner_join(., distinct(waitlist_all_output, agency_application, app_num, id_apde, prior_housing_sha, 
-                        prior_housing_kcha, post_lottery_entry, post_lottery_housing) %>%
-              mutate(present = 1L),
-            by = c("HeadOfHouseholdID" = "app_num"))
+                        prior_housing_kcha, post_lottery_entry, post_lottery_housing, post_general_voucher) %>%
+              mutate(present = 1L,
+                     post_general_voucher = case_when(is.infinite(post_general_voucher) ~ 0,
+                                                      is.na(post_general_voucher) ~ 0,
+                                                      TRUE ~ post_general_voucher)),
+            by = c("head_of_household_id" = "app_num"))
 
 
 # See how many non-leased up people appear to actually have housing
-sha_waitlist_non_lease %>% count(Is.On.LeaseUp, post_lottery_housing) %>%
-  group_by(Is.On.LeaseUp) %>%
+sha_waitlist_non_lease %>% count(is_on_lease_up, post_lottery_housing) %>%
+  group_by(is_on_lease_up) %>%
   mutate(Total = sum(n), pct = round(n / Total * 100, 1))
 
-# Is.On.LeaseUp   post_lottery_housing     n Total   pct
+# is_on_lease_up   post_lottery_housing     n Total   pct
 # 1 FALSE                            0  5300  6648  79.7
 # 2 FALSE                            1  1348  6648  20.3
 # 3 TRUE                             0   107  2190   4.9
 # 4 TRUE                             1  2083  2190  95.1
 
-# See how many non-issued people appear to actually have housing
-sha_waitlist_non_lease %>% count(Is.On.Issuance, post_lottery_housing) %>%
-  group_by(Is.On.Issuance) %>%
+# See how many also had general vouchers
+sha_waitlist_non_lease %>% count(is_on_lease_up, post_lottery_housing, post_general_voucher) %>%
+  group_by(is_on_lease_up) %>%
   mutate(Total = sum(n), pct = round(n / Total * 100, 1))
 
-# Is.On.Issuance   post_lottery_housing     n Total   pct
+# is_on_lease_up post_lottery_housing post_general_voucher     n Total   pct
+# 1 FALSE                            0                    0  5300  6648  79.7
+# 2 FALSE                            1                    0   956  6648  14.4
+# 3 FALSE                            1                    1   392  6648   5.9
+# 4 TRUE                             0                    0   107  2190   4.9
+# 5 TRUE                             1                    0   553  2190  25.3
+# 6 TRUE                             1                    1  1530  2190  69.9
+
+
+# See how many non-issued people appear to actually have housing
+sha_waitlist_non_lease %>% count(is_on_issuance, post_lottery_housing) %>%
+  group_by(is_on_issuance) %>%
+  mutate(Total = sum(n), pct = round(n / Total * 100, 1))
+
+# is_on_issuance   post_lottery_housing     n Total   pct
 # 1 FALSE                             0  4828  5956  81.1
 # 2 FALSE                             1  1128  5956  18.9
 # 3 TRUE                              0   579  2882  20.1
 # 4 TRUE                              1  2303  2882  79.9
 
 
+sha_waitlist_non_lease %>% count(is_on_issuance, post_lottery_housing, post_general_voucher) %>%
+  group_by(is_on_issuance) %>%
+  mutate(Total = sum(n), pct = round(n / Total * 100, 1))
+
+#   is_on_issuance post_lottery_housing post_general_voucher     n Total   pct
+# 1 FALSE                             0                    0  4828  5956  81.1
+# 2 FALSE                             1                    0   785  5956  13.2
+# 3 FALSE                             1                    1   343  5956   5.8
+# 4 TRUE                              0                    0   579  2882  20.1
+# 5 TRUE                              1                    0   724  2882  25.1
+# 6 TRUE                              1                    1  1579  2882  54.8
+
+
 ## Find dates for people who were issued a voucher ----
 # Also add waitlist data for id_apde
 sha_lease_date <- sha_waitlist_lease %>%
-  distinct(HeadOfHouseholdID, FirstName, MiddleInitial, LastName, SSN, HOH_SSN,
-           Is.On.Waitlist, Is.On.Issuance, Is.On.LeaseUp, Leased.Up.Under.Standard.TBV) %>%
-  left_join(., sha_voucher_date, 
-            by = c("FirstName" = "FIRST_NAME", "LastName" = "LAST_NAME", "SSN")) %>%
+  distinct(head_of_household_id, hoh_ssn, is_on_waitlist, is_on_issuance, is_on_lease_up, leased_up_under_standard_tbv) %>%
+  left_join(., sha_voucher_date, by = c("hoh_ssn" = "ssn")) %>%
   left_join(., distinct(waitlist_all_output, agency_application, app_num, id_apde, prior_housing_sha, 
-                        prior_housing_kcha, post_lottery_entry, post_lottery_housing,
+                        prior_housing_kcha, post_lottery_entry, post_lottery_housing, post_general_voucher,
                         post_lottery_agency, move_in) %>%
-              mutate(present = 1L),
-            by = c("HeadOfHouseholdID" = "app_num")) %>%
-  mutate(has_date = !is.na(MIN_VOUCHER_ISSUE_DATE),
+              mutate(present = 1L) %>%
+              filter(agency_application == "SHA"),
+            by = c("head_of_household_id" = "app_num")) %>%
+  mutate(has_voucher_date = !is.na(effective_date),
          has_move_in_date = !is.na(move_in))
   
 
+# See how many people in the voucher date list don't show up in the waitlist data
+sha_waitlist_date_mismatch <- anti_join(sha_voucher_date, waitlist, by = c("ssn" = "hh_ssn"))
+
+
 # See how many issued vouchers don't have a date
 sha_lease_date %>% 
-  distinct(HeadOfHouseholdID, Is.On.Issuance, has_date) %>%
-  count(Is.On.Issuance, has_date)
-#   Is.On.Issuance has_date    n
-# 1          FALSE    FALSE 2967
-# 2          FALSE     TRUE    9
-# 3           TRUE    FALSE  874
-# 4           TRUE     TRUE  864
+  distinct(head_of_household_id, is_on_issuance, has_voucher_date) %>%
+  count(is_on_issuance, has_voucher_date)
+#   is_on_issuance has_voucher_date    n
+# 1          FALSE            FALSE 2969
+# 2           TRUE            FALSE  114
+# 3           TRUE             TRUE 1123
 
 
 # See how many lease ups don't have a date
 sha_lease_date %>% 
-  distinct(HeadOfHouseholdID, Is.On.LeaseUp, has_date) %>%
-  count(Is.On.LeaseUp, has_date)
-#   Is.On.LeaseUp has_date    n
-# 1         FALSE    FALSE 3171
-# 2         FALSE     TRUE  211
-# 3          TRUE    FALSE  670
-# 4          TRUE     TRUE  662
+  distinct(head_of_household_id, is_on_lease_up, has_voucher_date) %>%
+  count(is_on_lease_up, has_voucher_date)
+#   is_on_lease_up has_voucher_date    n
+# 1          FALSE            FALSE 3009
+# 2          FALSE             TRUE  249
+# 3           TRUE            FALSE   74
+# 4           TRUE             TRUE  874
 
 sha_lease_date %>% 
-  distinct(HeadOfHouseholdID, Is.On.LeaseUp, has_date, has_move_in_date) %>%
-  count(Is.On.LeaseUp, has_date, has_move_in_date)
-#   Is.On.LeaseUp has_date has_move_in_date    n
-# 1         FALSE    FALSE            FALSE 2758
-# 2         FALSE    FALSE             TRUE  504
-# 3         FALSE     TRUE            FALSE  173
-# 4         FALSE     TRUE             TRUE   48
-# 5          TRUE    FALSE            FALSE  117
-# 6          TRUE    FALSE             TRUE  639
-# 7          TRUE     TRUE            FALSE   97
-# 8          TRUE     TRUE             TRUE  619
+  distinct(head_of_household_id, is_on_lease_up, has_voucher_date, has_move_in_date) %>%
+  count(is_on_lease_up, has_voucher_date, has_move_in_date)
+#   is_on_lease_up has_voucher_date has_move_in_date    n
+# 1          FALSE            FALSE            FALSE 2627
+# 2          FALSE            FALSE             TRUE  463
+# 3          FALSE             TRUE            FALSE  208
+# 4          FALSE             TRUE             TRUE   51
+# 5           TRUE            FALSE            FALSE   23
+# 6           TRUE            FALSE             TRUE   58
+# 7           TRUE             TRUE            FALSE  128
+# 8           TRUE             TRUE             TRUE  825
+
+
+sha_lease_date %>% 
+  distinct(head_of_household_id, has_voucher_date, has_move_in_date) %>%
+  count(has_voucher_date, has_move_in_date)
+#   has_voucher_date has_move_in_date    n
+# 1            FALSE            FALSE 2650
+# 2            FALSE             TRUE  521
+# 3             TRUE            FALSE  336
+# 4             TRUE             TRUE  876
 
 
 # Look into leases without dates
-sha_lease_date %>% filter(Is.On.LeaseUp & has_date == F) %>% head()
+sha_lease_date %>% filter(is_on_lease_up & has_voucher_date == F) %>% head()
+
 
 # Look into people who were not flagged as leasing up but had voucher dates
-sha_lease_date %>% filter(Is.On.LeaseUp == F & has_date) %>% head()
+sha_lease_date %>% filter(is_on_lease_up == F & has_voucher_date) %>% head()
+sha_lease_date %>% filter(is_on_lease_up == F & has_voucher_date) %>% count(status)
+#             status   n
+# 1  FAILED_LEASE_UP 535
+# 2         SHOPPING  21
+# 3 SUCCESS_LEASE_UP  48
+
+
+# Look into people who had voucher dates but no general voucher move-in date
+sha_lease_date %>% filter(has_voucher_date & has_move_in_date == F) %>% count(status)
+#             status   n
+# 1  FAILED_LEASE_UP 440
+# 2         SHOPPING  19
+# 3 SUCCESS_LEASE_UP 170
+sha_lease_date %>% filter(has_voucher_date & has_move_in_date == F & status == "SUCCESS_LEASE_UP") %>% head()
+
+
+# Look into people who had move in dates but no voucher date
+sha_lease_date %>% filter(has_move_in_date == T & has_voucher_date == F) %>% 
+  distinct(head_of_household_id, post_lottery_agency) %>% count(post_lottery_agency)
+
+sha_lease_date %>% filter(has_move_in_date == T & has_voucher_date == F) %>% 
+  distinct(head_of_household_id, post_general_voucher) %>% count(post_general_voucher)
+
+sha_lease_date %>% 
+  filter(has_move_in_date == T & has_voucher_date == F & post_lottery_agency == "SHA" & post_general_voucher == 1) %>% 
+  count(year(move_in))
+
+sha_lease_date %>% 
+  filter(has_move_in_date == T & has_voucher_date == F & post_lottery_agency == "SHA" & post_general_voucher == 1) %>% 
+  sample_n(5)
+
 
 # Set up data for export
-sha_lease_date_export <- sha_lease_date %>% select(id_apde, HeadOfHouseholdID, voucher_date)
+sha_lease_date_export <- sha_lease_date %>% 
+  distinct(id_apde, head_of_household_id, voucher_date, has_voucher_date, has_move_in_date, status)
+
 
 
 # KCHA ANALYSES ----
@@ -297,26 +384,31 @@ kcha_pii_join <- sqldf("SELECT a.*, b.* FROM
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
+# 1169
 
 kcha_pii_join %>% distinct(household_id, waitlist) %>% 
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
+# 2071
 
 # See how many overlapping and non-overlapping rows there were each approach
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   anti_join(., distinct(kcha_pii_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
+# 114
 
 kcha_pii_join %>% distinct(household_id, waitlist) %>% 
   anti_join(., distinct(kcha_hh_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
+# 1016
 
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   inner_join(., distinct(kcha_pii_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
+1055
 
 
 ## Join together and prepare for exporting ----
@@ -343,7 +435,8 @@ kcha_dates <- bind_rows(kcha_hh_join %>%
 kcha_date_export <- kcha_dates %>%
   filter(!is.na(agency_application)) %>%
   select(app_num, id_apde, voucher_issued_date, voucher_effective_date, voucher_end_date,
-         voucher_expiration_date, lease_begin_date, effective_date, no_lease_up)
+         voucher_expiration_date, lease_begin_date, effective_date, no_lease_up) %>%
+  distinct()
 
 
 # EXPORT DATA ----
