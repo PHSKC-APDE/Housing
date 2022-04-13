@@ -53,10 +53,10 @@ load_raw_sha_hcv_2020 <- function(conn = NULL,
   names <- names(sha_hcv_2020)
   names <- tolower(str_replace_all(names,"[:punct:]|[:space:]", ""))
   
-  if (length(names[names %in% unique(fields$sha_2019) == F]) > 0) {
+  if (length(names[names %in% unique(fields$sha) == F]) > 0) {
     qa_names_result <- "FAIL"
     qa_names_note <- glue("The following new columns were detected: ", 
-                          "{glue_collapse(names[names %in% unique(fields$sha_2019) == F], sep = ', ', last = ', and ')}. ",
+                          "{glue_collapse(names[names %in% unique(fields$sha) == F], sep = ', ', last = ', and ')}. ",
                           "Update the field_name_mapping.csv file.")
     warning(qa_names_note)
   } else {
@@ -246,7 +246,7 @@ load_raw_sha_hcv_2020 <- function(conn = NULL,
   sha_hcv_2020 <- sha_hcv_2020 %>%
     rename_with(., ~ str_replace_all(.,"[:punct:]|[:space:]", "")) %>%
     rename_with(., tolower) %>%
-    setnames(., fields$common_name[match(names(.), fields$sha_2019)])
+    setnames(., fields$common_name[match(names(.), fields$sha)])
   
   
   # DATA CLEANING ----
