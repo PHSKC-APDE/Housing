@@ -67,7 +67,16 @@ sha_voucher_date <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/SHA
 ## KCHA ----
 kcha_stage <- dbGetQuery(db_hhsaw, "SELECT DISTINCT hh_id, id_hash FROM pha.stage_kcha")
 
-kcha_waitlist_jhu <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/kcha_shopping success 2015-2021 final.csv")
+kcha_waitlist_jhu <- read.csv("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/Shopping success 2015-2021 final 2022_05_04.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(across(c(contains("_date"), "hoh_birthdate", "voucherissueddate_n", 
+                  "admissiondate_n", "effectivedate_n"), 
+                ~ as.Date(.x, format = "%m/%d/%Y")),
+         across(c("hapdetailbegindate_n", "edate"), 
+                ~ as.Date(.x, origin = "1960-01-01")),
+         across(contains("_name"), ~ toupper(.x)),
+         hoh_ssn = str_pad(str_remove_all(hoh_ssn, "-"), 9, pad = "0"))
+
 
 kcha_waitlist_lease <- readxl::read_xlsx("//phdata01/DROF_DATA/DOH DATA/Housing/KCHA/Original_data/2017 waitlist data/Shopping success 2015-2021 final_received 2022-04-04.xlsx") %>%
   janitor::clean_names() %>%
@@ -352,8 +361,9 @@ sha_lease_date_export <- sha_lease_date %>%
 # KCHA ANALYSES ----
 # Try to join lease up date data with existing waitlist and other data
 # First use household ID to join
-kcha_hh_join <- kcha_waitlist_lease %>% 
+kcha_hh_join <- kcha_waitlist_jhu %>% 
   select(household_id, hoh_birthdate, hoh_first_name, hoh_last_name, hoh_ssn,
+         program_type, vouchertype, vouchertype_collapse, reason, port_out_ind, 
          voucher_number, voucher_issued_date, voucher_effective_date, voucher_effective_date,
          voucher_end_date, lease_begin_date, finalization_result, effective_date, no_lease_up) %>%
   left_join(., mutate(kcha_stage, stage = 1L), by = c("household_id" = "hh_id")) %>%
@@ -370,9 +380,10 @@ kcha_hh_join <- kcha_waitlist_lease %>%
 # Then join on name or SSN match
 kcha_pii_join <- sqldf("SELECT a.*, b.* FROM
              (SELECT household_id, hoh_birthdate, hoh_first_name, hoh_last_name, hoh_ssn,
+             program_type, vouchertype, vouchertype_collapse, reason, port_out_ind, 
                voucher_number, voucher_issued_date, voucher_effective_date, voucher_expiration_date,
                voucher_end_date, lease_begin_date, finalization_result, effective_date, no_lease_up
-               FROM kcha_waitlist_lease) a
+               FROM kcha_waitlist_jhu) a
              LEFT JOIN
              (SELECT DISTINCT app_num, fname, mname, lname, ssn, dob, 1 AS waitlist
                FROM waitlist WHERE agency = 'KCHA') b
@@ -384,38 +395,39 @@ kcha_pii_join <- sqldf("SELECT a.*, b.* FROM
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
-# 1169
+# 1387
 
 kcha_pii_join %>% distinct(household_id, waitlist) %>% 
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
-# 2071
+# 2601
 
 # See how many overlapping and non-overlapping rows there were each approach
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   anti_join(., distinct(kcha_pii_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
-# 114
+# 176
 
 kcha_pii_join %>% distinct(household_id, waitlist) %>% 
   anti_join(., distinct(kcha_hh_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
-# 1016
+# 1390
 
 kcha_hh_join %>% distinct(household_id, waitlist) %>% 
   inner_join(., distinct(kcha_pii_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
   filter(!is.na(waitlist)) %>%
   summarise(cnt = n())
-1055
+# 1211
 
 
 ## Join together and prepare for exporting ----
 kcha_dates <- bind_rows(kcha_hh_join %>%
                           filter(!is.na(waitlist)) %>%
                           select(id_apde, app_num, agency_application, household_id, 
-                                 ends_with("_date"), no_lease_up) %>%
+                                 program_type, vouchertype, vouchertype_collapse, port_out_ind,
+                                 ends_with("_date"), -effective_date, no_lease_up) %>%
                           distinct() %>%
                           mutate(source = "hh"),
                         kcha_pii_join %>% 
@@ -423,10 +435,16 @@ kcha_dates <- bind_rows(kcha_hh_join %>%
                           anti_join(., distinct(kcha_hh_join, household_id, waitlist), by = c("household_id", "waitlist")) %>%
                           filter(!is.na(waitlist)) %>%
                           select(household_id) %>%
-                          left_join(., select(kcha_pii_join, app_num, household_id, ends_with("_date"), no_lease_up) %>% 
+                          left_join(., 
+                                    select(kcha_pii_join, app_num, household_id, 
+                                           program_type, vouchertype, vouchertype_collapse, port_out_ind,
+                                           ends_with("_date"), -effective_date, no_lease_up) %>% 
                                       distinct(), 
                                     by = "household_id") %>%
-                          left_join(., distinct(waitlist_all_output, agency_application, app_num, id_apde),
+                          left_join(., distinct(waitlist_all_output, agency_application, app_num, id_apde,
+                                                prior_housing_sha, prior_housing_kcha, post_lottery_entry, 
+                                                post_general_voucher, agency_mismatch, post_lottery_agency, 
+                                                move_in, post_lottery_housing, agency_mismatch_new),
                                     by = "app_num") %>%
                           mutate(source = "pii")
                         ) %>%
@@ -434,8 +452,10 @@ kcha_dates <- bind_rows(kcha_hh_join %>%
 
 kcha_date_export <- kcha_dates %>%
   filter(!is.na(agency_application)) %>%
-  select(app_num, id_apde, voucher_issued_date, voucher_effective_date, voucher_end_date,
-         voucher_expiration_date, lease_begin_date, effective_date, no_lease_up) %>%
+  select(app_num, id_apde, 
+         program_type, vouchertype, vouchertype_collapse, port_out_ind,
+         voucher_issued_date, voucher_effective_date, voucher_end_date,
+         voucher_expiration_date, lease_begin_date, no_lease_up) %>%
   distinct()
 
 
