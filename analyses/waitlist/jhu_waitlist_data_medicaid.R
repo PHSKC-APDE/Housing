@@ -1,4 +1,4 @@
-/## Script name: jhu_waitlist_data_medicaid
+## Script name: jhu_waitlist_data_medicaid
 ##
 ## Purpose of script: Pull Medicaid data for selected PHA IDs
 ##
@@ -58,8 +58,8 @@ mcaid_ids <- left_join(ids, xwalk_old, by = "id_apde") %>%
 ## Medicaid enrollment ----
 mcaid_enroll <- elig_timevar_collapse(conn = db_hhsaw,
                                       server = "hhsaw", source = "mcaid",
-                                      dual = T, full_benefit = T, geo_add1 = T,
-                                      geocode_vars = T,
+                                      dual = T, full_benefit = T, cov_type = T,
+                                      geo_add1 = T, geocode_vars = T,
                                       ids = unique(mcaid_ids$id_mcaid[!is.na(mcaid_ids$id_mcaid)]))
 
 
@@ -191,7 +191,7 @@ mcaid_enroll_output <- left_join(mcaid_enroll,
                                  distinct(mcaid_ids, id_apde, id_mcaid) %>%
                                    filter(!is.na(id_mcaid)),
                                  by = "id_mcaid") %>%
-  select(id_apde, from_date, to_date, dual, full_benefit, geo_tract_code) %>%
+  select(id_apde, from_date, to_date, dual, full_benefit, cov_type, geo_tract_code) %>%
   filter(to_date >= "2013-01-01") %>%
   mutate(from_date = pmax(from_date, as.Date("2013-01-01")))
 
