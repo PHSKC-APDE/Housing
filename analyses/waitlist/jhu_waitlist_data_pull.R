@@ -226,6 +226,7 @@ pha_timevar_use <- pha_timevar %>%
   select(id_apde, id_hash, from_date, to_date, cov_time, gap, period,
          hh_id_long, disability,
          agency, major_prog, subsidy_type, prog_type, operator_type, vouch_type_final, 
+         port_in, port_out_kcha, port_out_sha,
          geo_tractce10) %>%
   distinct()
 
@@ -418,11 +419,15 @@ received_voucher <- received_voucher %>%
          post_lottery_entry = ifelse((agency_housed == "SHA" & from_date >= "2017-02-01") |
                                        (agency_housed == "KCHA" & from_date >= "2017-04-01"), 1L, 0L),
          post_lottery_housing = ifelse((agency_housed == "SHA" & to_date >= "2017-02-01") |
-                                         (agency_housed == "KCHA" & to_date >= "2017-04-01"), 1L, 0L)) %>%
+                                         (agency_housed == "KCHA" & to_date >= "2017-04-01"), 1L, 0L),
+         post_lottery_port = ifelse(((agency_housed == "SHA" & from_date >= "2017-02-01") |
+                                     (agency_housed == "KCHA" & from_date >= "2017-04-01")) &
+                                     port_in == 1, 1L, 0L)) %>%
   group_by(id_apde) %>%
   # Don't take the max of post_lottery here because we want to be able filter on this
   mutate(prior_housing_sha = max(prior_housing_sha, na.rm = T),
-         prior_housing_kcha = max(prior_housing_kcha, na.rm = T)) %>%
+         prior_housing_kcha = max(prior_housing_kcha, na.rm = T),
+         post_lottery_port = max(post_lottery_port, na.rm = T)) %>%
   ungroup()
 
 received_voucher %>% distinct(id_apde, prior_housing_sha, prior_housing_kcha) %>%
@@ -460,13 +465,19 @@ received_voucher <- received_voucher %>%
 ### Flag people who ended up at a different PHA from the waitlist ----
 received_mismatch <- received_voucher %>%
   filter(post_lottery_entry == 1) %>%
-  mutate(agency_match = agency_application == agency_housed) %>%
+  mutate(agency_match = case_when(post_lottery_entry == 0 ~ NA_integer_,
+                                  agency_application == agency_housed ~ 1L,
+                                  TRUE ~ 0L)) %>%
   group_by(id_apde) %>%
-  summarise(agency_mismatch = ifelse(max(agency_match) == 1, 0L, 1L)) %>%
-  ungroup()
+  mutate(agency_mismatch_any = case_when(is.nan(min(agency_match, na.rm = T)) ~ NA_integer_,
+                                         min(agency_match, na.rm = T) == 1L ~ 0L, 
+                                         min(agency_match, na.rm = T) == 0L ~ 1L)) %>%
+  ungroup() %>%
+  distinct(id_apde, agency_application, agency_housed, agency_match, agency_mismatch_any)
 
 # Join back to main data
-received_voucher <- left_join(received_voucher, received_mismatch, by = "id_apde")
+received_voucher <- left_join(received_voucher, received_mismatch, 
+                              by = c("id_apde", "agency_application", "agency_housed"))
 
 
 ### Set up table for joining with overall waitlist ----
@@ -534,6 +545,13 @@ received_voucher %>%
 
 #       cnt    cnt_hh
 #   1   531    470
+
+# See if it is because of prior housing
+received_voucher %>% 
+  filter(is.na(move_in)) %>% 
+  filter(prog_type %in% c("TBS8", "TENANT BASED") & vouch_type_final == "GENERAL TENANT-BASED VOUCHER") %>%
+  count(prior_housing_sha, prior_housing_kcha)
+
 
 
 ### Join to Medicaid data ----
@@ -649,122 +667,6 @@ pha_mcaid <- bind_rows(distinct(received_voucher_mcaid, id_apde, id_mcaid),
                        distinct(no_voucher_mcaid, id_apde, id_mcaid)) %>%
   distinct()
 
-# Load this to a temp SQL table for joining to mcaid data
-try(dbRemoveTable(db_hhsaw, "##temp_ids", temporary = T))
-dbWriteTable(db_hhsaw,
-             "##temp_ids",
-             pha_mcaid,
-             overwrite = T)
-
-# Add index to id and from_date for faster join
-DBI::dbExecute(db_hhsaw, "CREATE NONCLUSTERED INDEX temp_ids_id ON ##temp_ids (id_mcaid)")
-
-
-
-# MEDICAID TABLES ----
-# Restrict to IDs also found in the waitlist data
-
-## Medicaid demographics ----
-mcaid_demog <- dbGetQuery(db_hhsaw,
-                          "SELECT a.id_apde, b.*
-                           FROM 
-                        (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                        INNER JOIN
-                        (SELECT * FROM claims.final_mcaid_elig_demo) b
-                        ON a.id_mcaid = b.id_mcaid")
-
-## Medicaid header ----
-mcaid_header <- dbGetQuery(db_hhsaw,
-                           "SELECT a.id_apde, b.*
-                           FROM 
-                        (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                        INNER JOIN
-                        (SELECT * FROM claims.final_mcaid_claim_header
-                        WHERE sud_dx_rda_any <> 1 AND first_service_date <= '2019-08-31') b
-                        ON a.id_mcaid = b.id_mcaid")
-
-# Remove columns that don't need to be transferred
-mcaid_header <- mcaid_header %>%
-  select(-id_mcaid, -ends_with("nyu"), -ed_avoid_ca, -ed_avoid_ca_nohosp, -sud_dx_rda_any)
-
-
-## Medicaid claim ICDCM header ----
-mcaid_icdcm_header <- dbGetQuery(db_hhsaw,
-                                 "SELECT a.id_apde, b.*
-                                 FROM 
-                                 (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                                 INNER JOIN
-                                 (SELECT * FROM claims.final_mcaid_claim_icdcm_header
-                                 WHERE first_service_date <= '2019-08-31') b
-                                 ON a.id_mcaid = b.id_mcaid")
-
-# Remove any claims that were dropped from the header table
-mcaid_icdcm_header <- inner_join(distinct(mcaid_header, claim_header_id),
-                                 mcaid_icdcm_header,
-                                 by = "claim_header_id") %>%
-  select(-id_mcaid)
-
-
-## Medicaid claim line ----
-mcaid_line <- dbGetQuery(db_hhsaw,
-                           "SELECT a.id_apde, b.*
-                           FROM 
-                           (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                           INNER JOIN
-                           (SELECT * FROM claims.final_mcaid_claim_line
-                           WHERE first_service_date <= '2019-08-31') b
-                           ON a.id_mcaid = b.id_mcaid")
-
-# Remove any claims that were dropped from the header table
-mcaid_line <- inner_join(distinct(mcaid_header, claim_header_id),
-                         mcaid_line,
-                         by = "claim_header_id") %>%
-  select(-id_mcaid)
-
-
-## Medicaid pharmacy claims ----
-mcaid_pharm <- dbGetQuery(db_hhsaw,
-                         "SELECT a.id_apde, b.*
-                           FROM 
-                           (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                           INNER JOIN
-                           (SELECT * FROM claims.final_mcaid_claim_pharm) b
-                         ON a.id_mcaid = b.id_mcaid")
-
-# Remove any claims that were dropped from the header table
-mcaid_pharm <- inner_join(distinct(mcaid_header, claim_header_id),
-                          mcaid_pharm,
-                         by = "claim_header_id") %>%
-  select(-id_mcaid)
-
-
-## Medicaid claim procedure codes ----
-mcaid_procedure <- dbGetQuery(db_hhsaw,
-                         "SELECT a.id_apde, b.*
-                           FROM 
-                           (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                           INNER JOIN
-                           (SELECT * FROM claims.final_mcaid_claim_procedure
-                           WHERE first_service_date <= '2019-08-31') b
-                         ON a.id_mcaid = b.id_mcaid")
-
-# Remove any claims that were dropped from the header table
-mcaid_procedure <- inner_join(distinct(mcaid_header, claim_header_id),
-                              mcaid_procedure,
-                              by = "claim_header_id") %>%
-  select(-id_mcaid)
-
-
-## Medicaid Chronic Condition Warehouse table ----
-mcaid_ccw <- dbGetQuery(db_hhsaw,
-                           "SELECT a.id_apde, b.from_date, b.to_date, b.ccw_code, b.ccw_desc 
-                           FROM 
-                           (SELECT id_apde, id_mcaid FROM ##temp_ids) a
-                           INNER JOIN
-                           (SELECT DISTINCT id_mcaid, from_date, to_date, ccw_code, ccw_desc
-                           FROM claims.final_mcaid_claim_ccw
-                           WHERE ccw_desc IN ('ccw_asthma', 'ccw_depression')) b
-                          ON a.id_mcaid = b.id_mcaid")
 
 
 # PREPARE FINAL OUTPUT ----
@@ -786,14 +688,17 @@ waitlist_all_output <- waitlist_use %>%
   select(-id_mcaid, -age_65) %>%
   distinct() %>%
   rename(agency_application = agency) %>%
-  left_join(., distinct(received_housing, id_apde, prior_housing_sha, prior_housing_kcha, 
+  left_join(., distinct(received_housing, id_apde, agency_application, prior_housing_sha, prior_housing_kcha, 
                         post_lottery_entry, post_lottery_housing, post_general_voucher, 
-                        agency_mismatch),
-            by = "id_apde") %>%
+                        agency_match, agency_mismatch_any, post_lottery_port),
+            by = c("id_apde", "agency_application")) %>%
   left_join(., move_in_lottery, by = "id_apde") %>%
   left_join(., distinct(no_voucher, id_apde, post_lottery_housing), by = "id_apde") %>%
   mutate(post_lottery_housing = coalesce(post_lottery_housing.x, post_lottery_housing.y)) %>%
-  select(-post_lottery_housing.x, -post_lottery_housing.y)
+  select(-post_lottery_housing.x, -post_lottery_housing.y) %>%
+  distinct() %>%
+  mutate(hh_veteran = as.integer(hh_veteran),
+         hh_disability = as.integer(hh_disability))
 
 
 ## PHA data  ----
@@ -814,32 +719,12 @@ pha_timevar_output <- inner_join(distinct(waitlist_use, id_apde),
             by = c("id_apde", "from_date", "to_date"))
 
 
-## Medicaid tables ----
-mcaid_demog_output <- mcaid_demog %>% 
-  mutate(age_2017 = floor(interval(start = dob, end = "2017-12-31") / years(1))) %>%
-  select(-id_mcaid, -dob)
-
-mcaid_enroll_output <- left_join(mcaid_enroll,
-                                 distinct(waitlist_use, id_apde, id_mcaid),
-                                 by = "id_mcaid") %>%
-  select(id_apde, from_date, to_date, dual, full_benefit, geo_tract_code)
-
-# Other tables can be exported as is
-
 
 # EXPORT DATA ----
 tables_for_export <- list("waitlist_output" = waitlist_output,
                           "waitlist_all_output" = waitlist_all_output,
                           "pha_demo_output" = pha_demo_output,
-                          "pha_timevar_output" = pha_timevar_output,
-                          "mcaid_demog_output" = mcaid_demog_output,
-                          "mcaid_enroll_output" = mcaid_enroll_output,
-                          "mcaid_header" = mcaid_header,
-                          "mcaid_icdcm_header" = mcaid_icdcm_header,
-                          "mcaid_line" = mcaid_line,
-                          "mcaid_pharm" = mcaid_pharm,
-                          "mcaid_procedure" = mcaid_procedure,
-                          "mcaid_ccw" = mcaid_ccw)
+                          "pha_timevar_output" = pha_timevar_output)
 
 
 lapply(names(tables_for_export), function(x) {
@@ -847,5 +732,6 @@ lapply(names(tables_for_export), function(x) {
   write.csv(tables_for_export[[x]], 
             file = paste0("//dchs-shares01/DCHSDATA/DCHSPHClaimsData/Analyses/Alastair/jhu_waitlist_output/",
                           x, ".csv"),
+            na = "",
             row.names = F)
 })

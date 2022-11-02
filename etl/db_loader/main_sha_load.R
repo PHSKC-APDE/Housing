@@ -351,6 +351,68 @@ load_raw_sha_hcv_2020(conn = db_hhsaw,
 rm(load_raw_sha_hcv_2020, etl_batch_id_hcv_2020)
 
 
+# LOAD 2021 PH DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_ph_2021.R")
+
+# Set up etl_batch_id
+etl_batch_id_ph_2021 <- load_metadata_etl_log(conn = db_hhsaw,
+                                              to_schema = qa_schema,
+                                              to_table = etl_table,
+                                              data_source = "sha",
+                                              data_type = "ph",
+                                              date_min = "2021-01-01",
+                                              date_max = "2021-12-31",
+                                              date_delivery = "2021-03-23",
+                                              note = "Initial delivery of data")
+
+# Run function
+load_raw_sha_ph_2021(conn = db_hhsaw,
+                     to_schema = "pha",
+                     to_table = "raw_sha_ph_2021",
+                     qa_schema = qa_schema,
+                     qa_table = qa_table,
+                     file_path = file_path_sha,
+                     date_min = "2021-01-01",
+                     date_max = "2021-12-31",
+                     etl_batch_id = etl_batch_id_ph_2021)
+
+
+# Clean up
+rm(load_raw_sha_ph_2021, etl_batch_id_ph_2021)
+
+
+# LOAD 2021 HCV DATA ----
+# Bring in function
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_hcv_2021.R")
+
+# Set up etl_batch_id
+etl_batch_id_hcv_2021 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "sha",
+                                               data_type = "hcv",
+                                               date_min = "2021-01-01",
+                                               date_max = "2021-12-31",
+                                               date_delivery = "2021-03-23",
+                                               note = "Initial delivery of data")
+
+# Run function
+load_raw_sha_hcv_2021(conn = db_hhsaw,
+                      to_schema = "pha",
+                      to_table = "raw_sha_hcv_2021",
+                      qa_schema = qa_schema,
+                      qa_table = qa_table,
+                      file_path = file_path_sha,
+                      date_min = "2021-01-01",
+                      date_max = "2021-12-31",
+                      etl_batch_id = etl_batch_id_hcv_2021)
+
+
+# Clean up
+rm(load_raw_sha_hcv_2021, etl_batch_id_hcv_2021)
+
+
 
 # MAKE STAGE SHA TABLE ----
 # Bring in function

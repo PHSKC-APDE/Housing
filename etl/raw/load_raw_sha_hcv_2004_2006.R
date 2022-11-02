@@ -82,7 +82,7 @@ load_raw_sha_hcv_2004_2006 <- function(conn = NULL,
     map(~ .x %>% 
           rename_with(., ~ str_replace_all(.,"[:punct:]|[:space:]", "")) %>%
           rename_with(., tolower)) %>%
-    map(~ setnames(.x, fields$common_name[match(names(.x), fields$sha_2004_2012)]))
+    map(~ setnames(.x, fields$common_name[match(names(.x), fields$sha)]))
   
   # Do the same for the voucher code data (the portfolio data is already named appropriately)
   sha_vouchers <- sha_vouchers %>% 
