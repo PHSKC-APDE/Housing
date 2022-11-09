@@ -32,6 +32,13 @@ ssn, pha_id, lname, fname, mname, dob, NULL AS female,
 NULL as r_aian, NULL as r_asian, NULL as r_black, 
 NULL as r_hisp, NULL as r_nhpi, NULL as r_white, 
 CONVERT(CHAR(64), HASHBYTES('SHA2_256', concat(ssn, '|', pha_id, '|', lname, '|', fname, '|', mname, '|', dob, '|')), 2) AS id_hash,
-'pha_exits' AS source
+'pha_exit' AS source
 FROM pha.stage_pha_exit
 WHERE ssn IS NOT NULL OR pha_id IS NOT NULL OR lname IS NOT NULL OR fname IS NOT NULL OR mname IS NOT NULL OR dob IS NOT NULL
+
+UNION
+SELECT
+ssn, NULL AS pha_id, lname, fname, mname, dob, female, r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white, id_hash,
+'pha_waitlist' AS source
+FROM pha.stage_pha_waitlist
+WHERE ssn IS NOT NULL OR lname IS NOT NULL OR fname IS NOT NULL OR mname IS NOT NULL OR dob IS NOT NULL
