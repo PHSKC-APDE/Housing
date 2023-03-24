@@ -14,7 +14,7 @@
 
 # BRING IN DATA ----
 # Bring in data
-sha_portfolios <- data.table::fread("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/sha_buildings_programs_and_portfolios_2021-04-30.csv",
+sha_portfolios <- data.table::fread("//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/sha_buildings_programs_and_portfolios_2023-03-23.csv",
                                    na.strings = c("NA", "", "NULL", "N/A", "."), 
                                    stringsAsFactors = F)
 

@@ -26,29 +26,106 @@ load_raw_kcha_2019 <- function(conn = NULL,
                                etl_batch_id = NULL) {
   
   # BRING IN DATA ----
-  kcha_p1_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_01.csv"), 
-                        na.strings = c("NA", "", "NULL", "N/A", "."), 
-                        stringsAsFactors = F)
-  kcha_p2_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_02.csv"), 
-                        na.strings = c("NA", "", "NULL", "N/A", "."), 
-                        stringsAsFactors = F)
-  kcha_p3_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_03.csv"), 
-                        na.strings = c("NA", "", "NULL", "N/A", "."), 
-                        stringsAsFactors = F)
+    kcha_p1_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_01.csv"), 
+                          na.strings = c("NA", "", "NULL", "N/A", "."), 
+                          stringsAsFactors = F)
+    kcha_p2_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_02.csv"), 
+                          na.strings = c("NA", "", "NULL", "N/A", "."), 
+                          stringsAsFactors = F)
+    kcha_p3_2019 <- fread(file = file.path(file_path, "kcha_2019_panel_03.csv"), 
+                          na.strings = c("NA", "", "NULL", "N/A", "."), 
+                          stringsAsFactors = F)
+    
+    # Bring in field names
+    fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
   
   
+  # Initial QA checks ----
+    # Row counts same across panels ----
+      if(nrow(kcha_p1_2019) == nrow(kcha_p2_2019) && nrow(kcha_p2_2019) == nrow(kcha_p3_2019)){
+        message("\U0001f642 each panel has the same number of rows")
+      } else {
+        warning("\U00026A0 the three panels do not have the same number of rows")
+      }
   
-  # QA CHECKS ----
-  # Older KCHA files have already been fairly robustly examined so no specific QA 
-  # is included here. Some QA values are loaded for future checks.
-  # However, things to consider for new years are as follows:
-  # - Row counts (ideally is the same across all panels but isn't always)
-  # - Column names (do they line up with the expected fields in the mapping csv?)
-  # - Number of IDs (how does it compare to last year?)
-  # - Action dates (do they fall in the expected range?)
-  # - Program types (are there some typos/inconsistencies?)
-  # - Portfolio names, action codes (do they have the same structure as before?)
-  
+    # Check that all column names are in last year's SQL database ----
+      old.colnames <- paste0("SELECT top(0) * FROM [pha].[raw_kcha_", as.integer(rads::substrRight(ls(pattern = 'kcha_p1_'), 1, 4))-1, "]")
+      old.colnames <- names(DBI::dbGetQuery(conn = db_hhsaw, old.colnames))
+      old.colnames <- tolower(str_replace_all(old.colnames,"[:punct:]|[:space:]", ""))
+
+      mypanels <- grep("^kcha_p[1-3]_", ls(), value = T)
+      new.colnames <- c()
+      for(mypanel in mypanels){
+        namez <- names(get(mypanel))
+        namez <- tolower(str_replace_all(namez,"[:punct:]|[:space:]", ""))
+        new.colnames <- unique(c(new.colnames, namez))
+      }
+      
+      extra.old <- setdiff(setdiff(old.colnames, new.colnames), c("hhlname", "hhfname", "hhmname", "hhssn", "hhdob", "phasource", "etlbatchid"))
+      extra.new <- setdiff(new.colnames, old.colnames)
+    
+      if(length(extra.old) > 0){
+        message(paste0("\U00026A0 the following exist in the previous year's raw SQL table: ", extra.old))} else {
+         message("\U0001f642 there are no columns missing from this year's table vs the previous raw SQL table") 
+        }
+      
+      if(length(extra.new) > 0){
+        message(paste0("\U00026A0 the following exist in this year's table but are missing in the previous year's raw SQL table: ", extra.new))} else {
+          message("\U0001f642 there are no extra columns in this year's table vs the previous raw SQL table") 
+        }
+
+    # Compare number of ids that had some action to last years ----
+        new.id_hh <- length(unique(kcha_p1_2019$householdid))
+        old.query <- paste0("SELECT counter = count(distinct(householdid)) FROM [pha].[raw_kcha_", as.integer(rads::substrRight(ls(pattern = 'kcha_p1_'), 1, 4))-1, "]")
+        old.id.hh <- DBI::dbGetQuery(conn = db_hhsaw, old.query)$counter
+        diff.id.hh <- new.id_hh - old.id.hh
+        if(diff.id.hh < 0){
+          message(paste0("There are ", abs(diff.id.hh), " LESS unique household ids compared to the previous year" ))
+        } else {message(paste0("There are ", abs(diff.id.hh), " MORE unique household ids compared to the previous year" ))}
+
+    # Check range of action dates ----    
+      action.dates <- as.Date(kcha_p1_2019$h2b, "%m/%d/%Y")
+      this.year <- as.integer(rads::substrRight(ls(pattern = 'kcha_p1_'), 1, 4))
+      if(max(action.dates) > as.Date(paste0(this.year, "-12-31")) ||
+         min(action.dates) < as.Date(paste0(this.year, "-01-01")) ){
+        warning(paste0("\U0001f47f either your minimum (", min(action.dates), ") or maximum (", max(action.dates), ") are out of range."))
+      } else { message(paste0("\U0001f642 both your minimum (", min(action.dates), ") and maximum (", max(action.dates), ") are within range."))}
+
+    # Check program_type values ----
+      if(identical(sort(unique(kcha_p1_2019$program_type)), c("P", "PR", "T"))){
+        message("\U0001f642 `program_type` is limited to the three standard program_type values: P, PR, T")
+      } else {warning("\U00026A0 `program_type` is not consistent with the three standard program_type values: P, PR, T")}
+      
+    # Check action codes vs previous year's data ----
+      action.codes.new <- sort(unique(kcha_p1_2019$h2a))
+      old.query <- paste0("SELECT distinct(h2a) FROM [pha].[raw_kcha_", as.integer(rads::substrRight(ls(pattern = 'kcha_p1_'), 1, 4))-1, "]")
+      action.codes.old <- sort(DBI::dbGetQuery(conn = db_hhsaw, old.query)[]$h2a)
+      if(identical(action.codes.new, action.codes.old)){
+        message("\U0001f642 the action code (h2a) in this year's data match those in the previous year's data")
+      } else {
+        warning(paste0("\U0001f47f the action codes (h2a) in this year's data DO NOT match those in the previous year's data: \n   this year: ", 
+                       paste(action.codes.new, collapse = ",")), 
+                "\n   last year: ", paste(action.codes.old, collapse = ","))
+      }
+      
+    # Check portfolio ids vs previous year ----
+      message("\U00026A0 cannot check whether portfolio information is present since, beginning with 2018, 
+              we use the actual address rather than any id code for matching with portfolio")
+      
+    # Check that voucher type exists ----
+      if(!'spec_vouch' %in% tolower(names(kcha_p1_2019))){
+        stop("\n \U0001f47f the `spec_vouch` doesn't exist. Please check if column with voucher_type has changed names")
+      } else {
+              voucher.values <- unique(kcha_p1_2019[!is.na(spec_vouch)]$spec_vouch)
+              if(length(voucher.values) == 0){
+                stop("\n \U0001f47f the `spec_vouch` column that has the voucher_types is empty")
+              } else {
+                message(paste0("\U0001f642 `spec_vouch` exists and has the following values: ", paste(voucher.values, collapse = ', ')))
+              }
+      }
+
+      
+      
   ## Add QA values ----
   # Row counts
   DBI::dbExecute(conn,
