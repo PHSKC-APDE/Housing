@@ -1,0 +1,42 @@
+﻿code,desc
+1,New Admission 
+2,Annual Reexamination 
+3,Interim Reexamination 
+4,Portability Move-in (VO only) 
+5,Portability Move-out (VO only)
+6,End Participation 
+7,Other Change of Unit
+8,FSS/WtW Addendum Only
+9,Annual Reexamination Searching (VO only) 
+10,Issuance of Voucher (VO only) 
+11,Expiration of Voucher (VO only)
+12,Flat Rent Annual Update (PH only) 
+13,Annual HQS Inspection Only (S8 only)
+14,Historical Adjustment
+15,Void
+99,
+,A
+,Annual HQS Inspection Only
+,AR
+,Annual Recertification
+,Annual Reexamination
+,Annual Reexamination Searching
+,B
+,End Participation
+,Expiration of Voucher
+,FSS/MTW Self-Sufficiency Only
+,Gross Rent Change
+,Interim Reexamination
+,Issuance of Voucher
+,MI
+,Move In
+,Move Out
+,MO
+,New Admission
+,Port-Out Update (Not Submitted To MTCS)
+,Portability Move-in
+,Portability Move-out
+,Termination
+,TM
+,Unit Transfer
+,UT
