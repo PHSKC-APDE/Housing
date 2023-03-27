@@ -306,6 +306,8 @@ load_stage_kcha <- function(conn = NULL,
           adds_final <- adds_already_clean
         }
         
+        adds_final <- unique(adds_final)
+        
         rads::sql_clean(adds_final)
         
   
@@ -371,7 +373,7 @@ load_stage_kcha <- function(conn = NULL,
     # Note ref table is currently hard coded could switch to function input and/or YAML config
     # Also hard coded to HHSAW prod since that's where the table is
     db_hhsaw_prod <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
-    kcha_portfolio_codes <- dbGetQuery(db_hhsaw_prod, "SELECT * FROM pha.ref_kcha_portfolio_codes")
+    kcha_portfolio_codes <- unique(setDT(dbGetQuery(db_hhsaw_prod, "SELECT * FROM pha.ref_kcha_portfolio_codes")))
     
     # Join and clean up duplicate variables
     kcha_long <- kcha_long %>% 
@@ -694,3 +696,5 @@ load_stage_kcha <- function(conn = NULL,
     })
     
 }
+
+# The end! ----
