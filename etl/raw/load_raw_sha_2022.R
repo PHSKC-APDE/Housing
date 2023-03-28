@@ -39,7 +39,7 @@ load_raw_sha_2022 <- function(conn = NULL,
   rads::sql_clean(sha_2022)
   
   # Bring in mapping of building/property IDs and portfolios/program types
-  sha_portfolios <- setDT(dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes"))
+  sha_portfolios <- unique(setDT(dbGetQuery(conn, "SELECT * FROM pha.ref_sha_portfolio_codes")))
   
   # Ensure all income columns are integers
   for(incvar in grep('income', names(sha_2022), value = T, ignore.case = T)){

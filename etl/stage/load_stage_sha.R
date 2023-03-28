@@ -199,9 +199,15 @@ load_stage_sha <- function(conn = NULL,
                 mutate(hh_size = as.integer(hh_size), 
                        bed_cnt = as.integer(bed_cnt), 
                        rent_tenant = as.integer(rent_tenant), 
-                       rent_mixfam = as.integer(rent_mixfam), 
-                       mbr_num = as.integer(mbr_num))) 
-        
+                       rent_mixfam = as.integer(rent_mixfam)) %>% 
+                mutate_at(if('mbr_num' %in% names(.)) 'mbr_num', as.integer) %>%
+                mutate_at(if('tb_util_allow' %in% names(.)) 'tb_util_allow', as.integer) %>% 
+                mutate_at(if('rent_tenant_owner' %in% names(.)) 'rent_tenant_owner', as.integer) %>% 
+                mutate_at(if('rent_mixfam_owner' %in% names(.)) 'rent_mixfam_owner', as.integer) %>% 
+                mutate_at(if('cert_id' %in% names(.)) 'cert_id', as.integer) %>% 
+                mutate_at(if('list_zip' %in% names(.)) 'list_zip', as.integer) %>% 
+                mutate_at(if('rent_gross' %in% names(.)) 'rent_gross', as.integer))
+              
     ## Agency ----
       sha_raw <- sha_raw %>%
         map(~ .x %>% mutate(agency = "SHA"))
@@ -337,28 +343,19 @@ load_stage_sha <- function(conn = NULL,
         map(~ .x %>%
               mutate(across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), ~ str_replace_all(., "-", "")),
                      across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), 
-                            ~ case_when(. %in% c("010010101", "011111111", "011223333", 
-                                                 "078051120", # woolworth wallet SSN 
-                                                 "111111111", "112234455", "111119999", "123121234", "123123123", "123456789", 
-                                                 "222111212", "222332222",
-                                                 "219099999", # SS administration advertisement SSN
-                                                 "333333333", "444444444", 
-                                                 "457555462", # Lifelock CEO Todd Davis (at least 13 cases of identity theft)
-                                                 "555112222", "555115555", "555555555", "555555566",
-                                                 "699999999",  
-                                                 "888888888", "898989898", "898888899") ~ NA_character_,
-                                        as.numeric(.) < 1000000 | as.numeric(.) >= 900000000 ~ NA_character_,
-                                        between(as.numeric(.), 666000000, 666999999) ~ NA_character_,
-                                        str_sub(., -4, -1) == "0000" | str_sub(., 1, 3) == "999" |
-                                          str_detect(., "XXX|A00-0|A000") ~ NA_character_,
-                                        TRUE ~ .)),
+                            ~ case_when(str_detect(., "XXX|A00-0|A000") ~ NA_character_, TRUE ~ .)),
                      across(any_of(c("ssn", "hh_ssn", "fhh_ssn")), ~ ifelse(str_detect(., "[:alpha:]"), ., NA_character_),
-                            .names = "{.col}_new"),
-                     across(any_of(c("ssn", "hh_ssn", "fhh_ssn")),
-                            ~ str_pad(round(as.numeric(.), digits = 0), width = 9, side = "left", pad = "0")))) %>%
+                            .names = "{.col}_new")) %>%
+                     housing::validate_ssn(DTx = ., "ssn") %>% 
+                     housing::validate_ssn(DTx = ., "hh_ssn"))
+
         # Change new column names
-        map(~ .x %>% rename_with(., ~ str_replace(., "ssn_new", "pha_id"), .cols = matches("ssn_new")))
-    
+        sha_raw <- lapply(X = sha_raw, 
+                          FUN = function(X){
+                            setnames(X, "ssn_new", "pha_id")
+                            setnames(X, "hh_ssn_new", "hh_pha_id")
+                            if("fhh_ssn_new" %in% names(X)){setnames(X, "fhh_ssn_new", "fhh_pha_id")}
+                            return(X)})          
     
     ## Program types ----
       sha_raw <- sha_raw %>%
@@ -520,8 +517,11 @@ load_stage_sha <- function(conn = NULL,
         } else {
           adds_final <- adds_already_clean
         }
-        
+      
+        adds_final <- unique(adds_final)
+      
         rads::sql_clean(adds_final)
+        
       
     ## Join clean addresses back to original data ----
         sha_raw <- sha_raw %>%
@@ -652,17 +652,17 @@ load_stage_sha <- function(conn = NULL,
                                               .con = conn)))
       
       if (str_detect(cols_current[1], "Error", negate = T)) {
-        if (length(setdiff(names(cols_current), names(sha_long))) > 1) {
-          qa_names_result <- "WARNING"
-          qa_names_note <- glue("The existing stage table has columns not found in the new data")
-          warning(paste("\U00026A0", qa_names_note))
-        } else if (length(setdiff(names(sha_long), names(cols_current))) > 1) {
+        if (length(setdiff(names(sha_long), names(cols_current))) > 1) {
           qa_names_result <- "FAIL"
           qa_names_note <- glue("The new stage table has columns not found in the current data")
           warning(paste("\U00026A0", qa_names_note))
-        } else {
+        } else if (identical(sort(names(cols_current)), sort(names(sha_long)))){
           qa_names_result <- "PASS"
           qa_names_note <- glue("The existing and new stage tables have matching columns")
+          message(paste("\U0001f642", qa_names_note))
+        } else {
+          qa_names_result <- "PASS"
+          qa_names_note <- glue("All the columnns in the new data currently exist in SQL.")
           message(paste("\U0001f642", qa_names_note))
         }
       } else {
@@ -687,7 +687,7 @@ load_stage_sha <- function(conn = NULL,
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {nrow(sha_long)},
+                                  'value', 'row_count', {rows_refresh},
                                   {Sys.time()}, NULL)",
                           .con = conn))
   
@@ -731,3 +731,6 @@ load_stage_sha <- function(conn = NULL,
   })
   
 }
+
+
+# The end ----
