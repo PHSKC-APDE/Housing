@@ -37,8 +37,8 @@ load_raw_kcha_2019 <- function(conn = NULL,
                           stringsAsFactors = F)
     
     # Bring in field names
-    fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
-  
+    fields <- rads::sql_clean(setDT(read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))))
+    
   
   # Initial QA checks ----
     # Row counts same across panels ----
@@ -70,7 +70,7 @@ load_raw_kcha_2019 <- function(conn = NULL,
         }
       
       if(length(extra.new) > 0){
-        message(paste0("\U00026A0 the following exist in this year's table but are missing in the previous year's raw SQL table: ", extra.new))} else {
+        message(paste0("\U00026A0 the following exist in this year's table but are missing in the previous year's raw SQL table: ", paste0(extra.new, collapse = ', ')))} else {
           message("\U0001f642 there are no extra columns in this year's table vs the previous raw SQL table") 
         }
 
@@ -112,20 +112,7 @@ load_raw_kcha_2019 <- function(conn = NULL,
       message("\U00026A0 cannot check whether portfolio information is present since, beginning with 2018, 
               we use the actual address rather than any id code for matching with portfolio")
       
-    # Check that voucher type exists ----
-      if(!'spec_vouch' %in% tolower(names(kcha_p1_2019))){
-        stop("\n \U0001f47f the `spec_vouch` doesn't exist. Please check if column with voucher_type has changed names")
-      } else {
-              voucher.values <- unique(kcha_p1_2019[!is.na(spec_vouch)]$spec_vouch)
-              if(length(voucher.values) == 0){
-                stop("\n \U0001f47f the `spec_vouch` column that has the voucher_types is empty")
-              } else {
-                message(paste0("\U0001f642 `spec_vouch` exists and has the following values: ", paste(voucher.values, collapse = ', ')))
-              }
-      }
 
-      
-      
   ## Add QA values ----
   # Row counts
   DBI::dbExecute(conn,
@@ -156,6 +143,11 @@ load_raw_kcha_2019 <- function(conn = NULL,
     Reduce(function(dtf1, dtf2) left_join(
       dtf1, dtf2, by = c("householdid", "certificationid", "vouchernumber", "h2a", "h2b")), .)
   
+  # Confirm that that dataset contains voucher_type ----
+    if(length(intersect(fields[common_name %like% 'vouch_type' & !is.na(kcha_modified)]$kcha_modified, names(kcha_2019_full)))==0){
+      stop("\n\U0001f47f You are column corresponding to 'vouch_type', which is a critical variable. Do not continue without correcting the code or updating the data.")
+    } else {message("\U0001f642 You have a column corresponding to 'vouch_type', which is a critical variable.")}
+      
   
   # FORMAT DATA ----
   ## Dates ----

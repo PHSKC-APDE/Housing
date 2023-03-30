@@ -43,7 +43,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
                         stringsAsFactors = F)
   
   
-  fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
+  fields <- rads::sql_clean(setDT(read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))))
   
   
   # QA CHECKS ----
@@ -265,6 +265,11 @@ load_raw_kcha_2020 <- function(conn = NULL,
   if (nrow(kcha_2020_full) != nrow(kcha_p1_2020)) {
     stop("Joining the panels together produced an unexpected number of rows")
   }
+  
+  # Confirm that that dataset contains voucher_type ----
+  if(length(intersect(fields[common_name %like% 'vouch_type' & !is.na(kcha_modified)]$kcha_modified, names(kcha_2020_full)))==0){
+    stop("\n\U0001f47f You are column corresponding to 'vouch_type', which is a critical variable. Do not continue without correcting the code or updating the data.")
+  } else {message("\U0001f642 You have a column corresponding to 'vouch_type', which is a critical variable.")}
   
   
   # FORMAT DATA ----

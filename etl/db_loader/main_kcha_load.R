@@ -182,8 +182,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                data_type = "hcv_ph",
                                                date_min = "2018-01-01",
                                                date_max = "2018-12-31",
-                                               date_delivery = "2019-03-25",
-                                               note = "Initial delivery of data")
+                                               date_delivery = "2023-03-29",
+                                               note = "Complete refresh with fixes from KCHA")
     
     # Run function
     load_raw_kcha_2018(conn = db_hhsaw,
@@ -218,8 +218,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                data_type = "hcv_ph",
                                                date_min = "2019-01-01",
                                                date_max = "2019-12-31",
-                                               date_delivery = "2020-09-10",
-                                               note = "Initial delivery of data")
+                                               date_delivery = "2023-03-29",
+                                               note = "Complete refresh with fixes from KCHA")
     
     # Run function
     load_raw_kcha_2019(conn = db_hhsaw,
@@ -253,8 +253,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                data_type = "hcv_ph",
                                                date_min = "2020-01-01",
                                                date_max = "2020-12-31",
-                                               date_delivery = "2021-05-25",
-                                               note = "Initial delivery of data")
+                                               date_delivery = "2023-03-29",
+                                               note = "Complete refresh with fixes from KCHA")
     
     # Run function
     load_raw_kcha_2020(conn = db_hhsaw,
@@ -290,8 +290,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                data_type = "hcv_ph",
                                                date_min = "2021-01-01",
                                                date_max = "2021-12-31",
-                                               date_delivery = "2022-06-17",
-                                               note = "Initial delivery of data")
+                                               date_delivery = "2023-03-29",
+                                               note = "Complete refresh with fixes from KCHA")
     
     # Run function
     load_raw_kcha_2021(conn = db_hhsaw,
@@ -308,6 +308,43 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
     rm(load_raw_kcha_2021, etl_batch_id_2021)  
   } else {print("The [pha].[raw_kcha_2021] table already exists and will not be reloaded.")}
   rm(sql.2021)
+
+# LOAD 2022 DATA ----
+  sql.2022 <- tryCatch(odbc::dbGetQuery(conn = db_hhsaw, "SELECT TOP(0) * FROM pha.raw_kcha_2022"), 
+                       error = function(e)
+                         print("The [pha].[raw_kcha_2022] table does not exist so data will be loaded"))
+  
+  if(class(sql.2022) != "data.frame"){
+    # Bring in function
+    # devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2022.R") # commented out because development not on main branch
+    source(file.path(here::here(), 'etl', 'raw', 'load_raw_kcha_2022.R'))
+    
+    # Set up etl_batch_id
+    etl_batch_id_2022 <- load_metadata_etl_log(conn = db_hhsaw,
+                                               to_schema = qa_schema,
+                                               to_table = etl_table,
+                                               data_source = "kcha",
+                                               data_type = "hcv_ph",
+                                               date_min = "2022-01-01",
+                                               date_max = "2022-12-31",
+                                               date_delivery = "2023-03-29",
+                                               note = "Initial delivery of data")
+    
+    # Run function
+    load_raw_kcha_2022(conn = db_hhsaw,
+                       to_schema = "pha",
+                       to_table = "raw_kcha_2022",
+                       qa_schema = qa_schema,
+                       qa_table = qa_table,
+                       file_path = file_path_kcha,
+                       date_min = "2022-01-01",
+                       date_max = "2022-12-31",
+                       etl_batch_id = etl_batch_id_2022)
+    
+    # Clean up
+    rm(load_raw_kcha_2022, etl_batch_id_2022)  
+  } else {print("The [pha].[raw_kcha_2022] table already exists and will not be reloaded.")}
+  rm(sql.2022)
 
 # MAKE STAGE KCHA TABLE ----
   stage.warning <- glue::glue("\U00026A0 
@@ -329,7 +366,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                         from_table = "raw_kcha",
                         qa_schema = qa_schema,
                         qa_table = qa_table,
-                        years = c(2015:2021),
+                        years = c(2015:2022),
                         truncate = T)
   }else{message("Please run load_stage_kcha.R manually")}
 
