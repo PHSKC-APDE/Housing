@@ -1,7 +1,6 @@
 #### CODE TO LOAD 2020 KING COUNTY HOUSING AUTHORITY DATA
-# Alastair Matheson, PHSKC (APDE)
-#
-# 2021-06
+# Alastair Matheson, PHSKC (APDE) 2021-06
+# Revised by Danny Colombara, PHSKC (APE) 2023-07
 
 ### Run from main_kcha_load script
 # https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_kcha_load.R
@@ -52,29 +51,37 @@ load_raw_kcha_2020 <- function(conn = NULL,
   if (nrow(kcha_p1_2020) == nrow(kcha_p2_2020) & nrow(kcha_p1_2020) == nrow(kcha_p3_2020)) {
     qa_row_result <- "PASS"
     qa_row_note <- glue("Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2020), big.mark = ',')}")
-    message(qa_row_note)
+    message(paste0('\U0001f642 ', qa_row_note))
   } else if (nrow(kcha_p1_2020) != nrow(kcha_p1_2020) | nrow(kcha_p1_2020) != nrow(kcha_p3_2020)) {
     qa_row_result <- "FAIL"
     qa_row_note <- glue("Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2020), big.mark = ',')}, ",
                    "Panel 2 = {format(nrow(kcha_p2_2020), big.mark = ',')}, ", 
                    "Panel 3 = {format(nrow(kcha_p3_2020), big.mark = ',')}")
-    warning(qa_row_note)
+    warning(paste("\U00026A0", qa_row_note))
   }
   
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                          'row_count', {qa_row_result}, {Sys.time()}, {qa_row_note})",
+                          'row_counts_equal', {qa_row_result}, {Sys.time()}, {qa_row_note})",
                           .con = conn))
   
   
   ## Row counts vs. previous year ----
   # How do the number of rows compare to last time?
   rows_2019 <- as.integer(dbGetQuery(conn,
-    glue_sql("SELECT qa_result FROM {`qa_schema`}.{`qa_table`} 
-             WHERE table_name = 'pha.raw_kcha_2019' AND qa_type = 'value' AND 
-             qa_item = 'row_count'", .con = conn)))
+    glue_sql("SELECT qa_result
+          FROM {`qa_schema`}.{`qa_table`} 
+          WHERE table_name = 'pha.raw_kcha_2019' 
+            AND qa_type = 'value' 
+            AND qa_item = 'row_count' 
+            AND etl_batch_id = (
+              SELECT MAX(etl_batch_id) 
+              FROM {`qa_schema`}.{`qa_table`} 
+              WHERE table_name = 'pha.raw_kcha_2019' 
+                AND qa_type = 'value' 
+                AND qa_item = 'row_count')", .con = conn)))
   
   row_diff <- nrow(kcha_p1_2020) - rows_2019
   row_pct <- round(abs(row_diff) / nrow(kcha_p1_2020) * 100, 1)
@@ -84,13 +91,13 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # Arbitrarily set 10% changes as threshold for alert
   if (!is.na(row_pct) & row_pct > 10) {
     qa_row_diff_result <- "FAIL"
-    warning(qa_row_diff_note)
+    warning(paste('\U00026A0', qa_row_diff_note))
   } else if (!is.na(row_pct) & row_pct <= 10) {
     qa_row_diff_result <- "PASS"
-    message(qa_row_diff_note)
+    message(paste("\U0001f642", qa_row_diff_note))
   } else {
     qa_row_diff_result <- "FAIL"
-    message("Something went wrong when checking the number of last year's rows. Check code.")
+    message("\U0001f47f Something went wrong when checking the number of last year's rows. Check code.")
   }
   
   DBI::dbExecute(conn,
@@ -117,11 +124,11 @@ load_raw_kcha_2020 <- function(conn = NULL,
     qa_names_note <- glue("The following new columns were detected: ", 
                           "{glue_collapse(names[names %in% fields$kcha_modified == F], sep = ', ', last = ', and ')}. ",
                           "Update the field_name_mapping.csv file.")
-    warning(qa_names_note)
+    warning(paste('\U0001f47f', qa_names_note))
   } else {
     qa_names_result <- "PASS"
     qa_names_note <- "No new columns detected"
-    message(qa_names_note)
+    message(paste('\U0001f642', qa_names_note))
   }
   
   DBI::dbExecute(conn,
@@ -130,7 +137,6 @@ load_raw_kcha_2020 <- function(conn = NULL,
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
                           'field_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
                           .con = conn))
-  
   
   ## Action dates ----
   # Do they fall in the expected range?
@@ -146,19 +152,19 @@ load_raw_kcha_2020 <- function(conn = NULL,
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
-    warning(qa_date_note)
+    warning(paste('\U0001f47f', qa_date_note))
   } else if (dates$date_min - date_min > 30 | date_max - dates$date_max > 30) {
     qa_date_note <- glue("Large gap between expected and actual min or max date: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "FAIL"
-    warning(qa_date_note)
+    warning(paste('\U0001f47f', qa_date_note))
   } else {
     qa_date_note <- glue("Date fell in expected range: ", 
                          "min date = {dates$date_min} (expected {date_min}), ",
                          "max date = {dates$date_max} (expected {date_max})")
     qa_date_result <- "PASS"
-    message(qa_date_note)
+    message(paste('\U0001f642', qa_date_note))
   }
   
   DBI::dbExecute(conn,
@@ -178,18 +184,18 @@ load_raw_kcha_2020 <- function(conn = NULL,
                          "{glue_collapse(prog_types[prog_types %in% c('P', 'PBS8', 'PH', 'PR', 'T', 'TBS8', 'VO') == FALSE], 
                          sep = ', ')}")
     qa_prog_result <- "FAIL"
-    warning(qa_prog_note)
+    warning(paste('\U0001f47f', qa_prog_note))
   } else {
     qa_prog_note <- "There were no unexpected program types"
     qa_prog_result <- "PASS"
-    message(qa_prog_note)
+    message(paste('\U0001f642', qa_prog_note))
   }
   
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                          'date_range', {qa_prog_result}, {Sys.time()}, {qa_prog_note})",
+                          'program_types', {qa_prog_result}, {Sys.time()}, {qa_prog_note})",
                           .con = conn))
   
   
@@ -201,11 +207,11 @@ load_raw_kcha_2020 <- function(conn = NULL,
     qa_act_note <- glue("The following unexpected action types were present: ",
                          "{glue_collapse(act_types[act_types %in% 1:14 == FALSE], sep = ', ')}")
     qa_act_result <- "FAIL"
-    warning(qa_act_note)
+    warning(paste('\U0001f47f', qa_act_note))
   } else {
     qa_act_note <- "There were no unexpected action types (all between 1 and 14)"
     qa_act_result <- "PASS"
-    message(qa_act_note)
+    message(paste('\U0001f642', qa_act_note))
   }
   
   DBI::dbExecute(conn,

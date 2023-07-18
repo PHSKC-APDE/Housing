@@ -172,7 +172,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   
   if(class(sql.2018) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2018.R")
+    # devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2018.R")
+    source(file.path(here::here(), "/etl/raw/load_raw_kcha_2018.R"))
     
     # Set up etl_batch_id
     etl_batch_id_2018 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -208,7 +209,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
 
   if(class(sql.2019) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2019.R")
+    # devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2019.R")
+    source(file.path(here::here(), "/etl/raw/load_raw_kcha_2019.R"))
     
     # Set up etl_batch_id
     etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -243,7 +245,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
 
   if(class(sql.2020) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2020.R")
+    # devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_kcha_2020.R")
+    source(file.path(here::here(), "/etl/raw/load_raw_kcha_2020.R"))
     
     # Set up etl_batch_id
     etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,
