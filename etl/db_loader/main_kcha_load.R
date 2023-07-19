@@ -359,8 +359,9 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   proceed <- askYesNo(msg = stage.warning)
   if(isTRUE(proceed)){
       # Bring in function
-        devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_kcha.R")
-      
+        # devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_kcha.R")
+        source(file.path(here::here(), 'etl', 'stage', 'load_stage_kcha.R'))
+                     
       # Run function
         load_stage_kcha(conn = db_hhsaw,
                         to_schema = "pha",
