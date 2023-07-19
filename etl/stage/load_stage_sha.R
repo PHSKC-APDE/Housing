@@ -676,7 +676,7 @@ load_stage_sha <- function(conn = NULL,
                      glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                               (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                               VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                              'row_count_vs_previous', {qa_names_result}, {Sys.time()}, {qa_names_note})",
+                              'column_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
                               .con = conn))
     
     

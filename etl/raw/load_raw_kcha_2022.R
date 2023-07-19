@@ -1,6 +1,5 @@
-#### CODE TO LOAD 2020 KING COUNTY HOUSING AUTHORITY DATA
-# Alastair Matheson, PHSKC (APDE) 2021-06
-# Revised by Danny Colombara, PHSKC (APE) 2023-07
+#### CODE TO LOAD 2022 KING COUNTY HOUSING AUTHORITY DATA
+# Danny Colombara, PHSKC (APE) 2023-07
 
 ### Run from main_kcha_load script
 # https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_kcha_load.R
@@ -16,14 +15,14 @@
 # date_max = the maximum action date expected in the data
 # etl_batch_id = the value in the ETL logging table that corresponds to these data
 
-load_raw_kcha_2020 <- function(conn = NULL,
+load_raw_kcha_2022 <- function(conn = NULL,
                                to_schema = NULL,
                                to_table = NULL,
                                qa_schema = NULL,
                                qa_table = NULL,
                                file_path = NULL,
-                               date_min = "2020-01-01",
-                               date_max = "2020-12-31",
+                               date_min = "2022-01-01",
+                               date_max = "2022-12-31",
                                etl_batch_id = NULL) {
   
   # SET UP VARIABLES ----
@@ -31,13 +30,13 @@ load_raw_kcha_2020 <- function(conn = NULL,
   date_max <- as.Date(date_max, format = "%Y-%m-%d")
   
   # BRING IN DATA ----
-  kcha_p1_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_01.csv"), 
+  kcha_p1_2022 <- fread(file = file.path(file_path, "kcha_2022_panel_01.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_02.csv"), 
+  kcha_p2_2022 <- fread(file = file.path(file_path, "kcha_2022_panel_02.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2020 <- fread(file = file.path(file_path, "kcha_2020_panel_03.csv"), 
+  kcha_p3_2022 <- fread(file = file.path(file_path, "kcha_2022_panel_03.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
   
@@ -48,15 +47,15 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # QA CHECKS ----
   ## Row counts across panels ----
   # Do the number of rows match between each panel?
-  if (nrow(kcha_p1_2020) == nrow(kcha_p2_2020) & nrow(kcha_p1_2020) == nrow(kcha_p3_2020)) {
+  if (nrow(kcha_p1_2022) == nrow(kcha_p2_2022) & nrow(kcha_p1_2022) == nrow(kcha_p3_2022)) {
     qa_row_result <- "PASS"
-    qa_row_note <- glue("Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2020), big.mark = ',')}")
+    qa_row_note <- glue("Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2022), big.mark = ',')}")
     message(paste0('\U0001f642 ', qa_row_note))
-  } else if (nrow(kcha_p1_2020) != nrow(kcha_p1_2020) | nrow(kcha_p1_2020) != nrow(kcha_p3_2020)) {
+  } else if (nrow(kcha_p1_2022) != nrow(kcha_p1_2022) | nrow(kcha_p1_2022) != nrow(kcha_p3_2022)) {
     qa_row_result <- "FAIL"
-    qa_row_note <- glue("Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2020), big.mark = ',')}, ",
-                   "Panel 2 = {format(nrow(kcha_p2_2020), big.mark = ',')}, ", 
-                   "Panel 3 = {format(nrow(kcha_p3_2020), big.mark = ',')}")
+    qa_row_note <- glue("Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2022), big.mark = ',')}, ",
+                   "Panel 2 = {format(nrow(kcha_p2_2022), big.mark = ',')}, ", 
+                   "Panel 3 = {format(nrow(kcha_p3_2022), big.mark = ',')}")
     warning(paste("\U00026A0", qa_row_note))
   }
   
@@ -70,28 +69,28 @@ load_raw_kcha_2020 <- function(conn = NULL,
   
   ## Row counts vs. previous year ----
   # How do the number of rows compare to last time?
-  rows_2019 <- as.integer(dbGetQuery(conn,
+  rows_2021 <- as.integer(dbGetQuery(conn,
     glue_sql("SELECT qa_result
           FROM {`qa_schema`}.{`qa_table`} 
-          WHERE table_name = 'pha.raw_kcha_2019' 
+          WHERE table_name = 'pha.raw_kcha_2021' 
             AND qa_type = 'value' 
             AND qa_item = 'row_count' 
             AND etl_batch_id = (
               SELECT MAX(etl_batch_id) 
               FROM {`qa_schema`}.{`qa_table`} 
-              WHERE table_name = 'pha.raw_kcha_2019' 
+              WHERE table_name = 'pha.raw_kcha_2021' 
                 AND qa_type = 'value' 
                 AND qa_item = 'row_count')", .con = conn)))
   
-  row_diff <- nrow(kcha_p1_2020) - rows_2019
-  row_pct <- round(abs(row_diff) / nrow(kcha_p1_2020) * 100, 1)
+  row_diff <- nrow(kcha_p1_2022) - rows_2021
+  row_pct <- round(abs(row_diff) / nrow(kcha_p1_2022) * 100, 1)
   qa_row_diff_note <- glue("There were {row_pct}% ({format(abs(row_diff), big.mark = ',')}) ", 
-                      "{ifelse(row_diff < 0, 'fewer', 'more')} rows in 2020 than 2019")
+                      "{ifelse(row_diff < 0, 'fewer', 'more')} rows in 2022 than 2021")
   
   # Arbitrarily set 10% changes as threshold for alert
   if (!is.na(row_pct) & row_pct > 10) {
-    qa_row_diff_result <- "FAIL"
-    warning(paste('\U00026A0', qa_row_diff_note))
+    qa_row_diff_result <- "WARNING"
+    message("\U00026A0 There is a >= 10% difference in the number of rows compared to the previous year. If this is unexpected, check the code.")
   } else if (!is.na(row_pct) & row_pct <= 10) {
     qa_row_diff_result <- "PASS"
     message(paste("\U0001f642", qa_row_diff_note))
@@ -111,7 +110,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   ## Field names ----
   # Are there any new names not seen before?
   # Note that the fields list has names for when the data are pivoted so need to account for this
-  names <- c(names(kcha_p1_2020), names(kcha_p2_2020), names(kcha_p3_2020))
+  names <- c(names(kcha_p1_2022), names(kcha_p2_2022), names(kcha_p3_2022))
   names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")], 1, 3)
   names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")], 1, 4)
   # Just simplify all the expected race/eth and income groups into one
@@ -142,7 +141,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # Do they fall in the expected range?
   # Some may be from earlier years so will want to manually check them 
   # (and see if they appear in previous data)
-  dates <- kcha_p1_2020 %>%
+  dates <- kcha_p1_2022 %>%
     mutate(h2b = as.Date(h2b, format = "%m/%d/%Y")) %>%
     summarise(date_min = min(h2b, na.rm = T),
               date_max = max(h2b, na.rm = T))
@@ -177,7 +176,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   
   ## Program types ----
   # Make sure there aren't any new variations
-  prog_types <- unique(kcha_p1_2020$program_type)
+  prog_types <- unique(kcha_p1_2022$program_type)
   
   if (min(prog_types %in% c("P", "PBS8", "PH", "PR", "T", "TBS8", "VO")) == 0) {
     qa_prog_note <- glue("The following unexpected program types were present: ",
@@ -201,7 +200,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   
   ## Action codes ----
   # Do they have the expected range?
-  act_types <- sort(unique(kcha_p1_2020$h2a[!is.na(kcha_p1_2020$h2a)]))
+  act_types <- sort(unique(kcha_p1_2022$h2a[!is.na(kcha_p1_2022$h2a)]))
   
   if (min(act_types %in% 1:14) == 0) {
     qa_act_note <- glue("The following unexpected action types were present: ",
@@ -229,7 +228,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {nrow(kcha_p1_2020)},
+                                  'value', 'row_count', {nrow(kcha_p1_2022)},
                                   {Sys.time()}, NULL)",
                           .con = conn))
   
@@ -238,7 +237,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # CHECK QA PASSED ----
   # Stop processing if one or more QA check failed
   if (min(qa_row_result, qa_row_diff_result, qa_names_result, qa_date_result) == "FAIL") {
-    stop(glue("One or more QA checks failed on {to_schema}.{to_table}. See {`qa_schema`}.{`qa_table`} for more details."))
+    stop(glue("\U0001f47f One or more QA checks failed on {to_schema}.{to_table}. See {`qa_schema`}.{`qa_table`} for more details."))
   } else {
     # Clean up QA objects if everything passed
     rm(list = ls(pattern = "^qa_"))
@@ -253,7 +252,7 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # PANEL DATA CLEANING ----
   ### Program types ----
   # Some typos/inconsistencies in the program types
-  kcha_p1_2020 <- kcha_p1_2020 %>%
+  kcha_p1_2022 <- kcha_p1_2022 %>%
     mutate(program_type = case_when(program_type == "P" ~ "PH",
                                     program_type == "PR" ~ "PBS8",
                                     program_type %in% c("T", "VO") ~ "TBS8",
@@ -263,31 +262,31 @@ load_raw_kcha_2020 <- function(conn = NULL,
   # COMBINE DATA ----
   ### Join into a single file for each extract
   # Using a left_join because without the panel 1 info (names, SSN, etc.) the info is not much help
-  kcha_2020_full <- list(kcha_p1_2020, kcha_p2_2020, kcha_p3_2020) %>%
+  kcha_2022_full <- list(kcha_p1_2022, kcha_p2_2022, kcha_p3_2022) %>%
     Reduce(function(dtf1, dtf2) left_join(
       dtf1, dtf2, by = c("householdid", "certificationid", "vouchernumber", "h2a", "h2b")), .)
   
   # Check there wasn't a blowout in the number of rows due to join issues
-  if (nrow(kcha_2020_full) != nrow(kcha_p1_2020)) {
+  if (nrow(kcha_2022_full) != nrow(kcha_p1_2022)) {
     stop("Joining the panels together produced an unexpected number of rows")
   }
   
   # Confirm that that dataset contains voucher_type ----
-  if(length(intersect(fields[common_name %like% 'vouch_type' & !is.na(kcha_modified)]$kcha_modified, names(kcha_2020_full)))==0){
+  if(length(intersect(fields[common_name %like% 'vouch_type' & !is.na(kcha_modified)]$kcha_modified, names(kcha_2022_full)))==0){
     stop("\n\U0001f47f You are column corresponding to 'vouch_type', which is a critical variable. Do not continue without correcting the code or updating the data.")
   } else {message("\U0001f642 You have a column corresponding to 'vouch_type', which is a critical variable.")}
   
   
   # FORMAT DATA ----
   ## Dates ----
-  kcha_2020_full <- kcha_2020_full %>%
+  kcha_2022_full <- kcha_2022_full %>%
     mutate_at(vars(h2b, h2h, starts_with("h3e")),
               list(~ as.Date(., format = "%m/%d/%Y")))
   
   
   # SET UP HEAD OF HOUSEHOLD DATA ----
   # Helpful for joining to EOP data and reshaping
-  kcha_2020_full <- kcha_2020_full %>%
+  kcha_2022_full <- kcha_2022_full %>%
     mutate(hh_lname = h3b01,
            hh_fname = h3c01,
            hh_mname = h3d01,
@@ -297,13 +296,13 @@ load_raw_kcha_2020 <- function(conn = NULL,
   
   # LOAD DATA TO SQL ----
   # Add source field to track where each row came from
-  kcha_2020_full <- kcha_2020_full %>% 
-    mutate(pha_source = "kcha2020",
+  kcha_2022_full <- kcha_2022_full %>% 
+    mutate(pha_source = "kcha2022",
            etl_batch_id = etl_batch_id)
   
   # Load data
   dbWriteTable(conn,
                name = DBI::Id(schema = to_schema, table = to_table),
-               value = as.data.frame(kcha_2020_full),
+               value = as.data.frame(kcha_2022_full),
                overwrite = T, append = F)
 }

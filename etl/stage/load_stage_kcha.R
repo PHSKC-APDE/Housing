@@ -269,17 +269,16 @@ load_stage_kcha <- function(conn = NULL,
         adds_to_clean <- adds_distinct[!geo_hash_raw %in% adds_already_clean$geo_hash_raw] 
   
     ## Actual geocode using kcgeocode (SLOW!!!)----
-        message("Geocoding ... be patient!")
         if(nrow(adds_to_clean) > 0){
+          message("\U023F3 Geocoding ... be patient!")
           kcgeocode::submit_ads_for_cleaning(
             ads = setDF(copy(adds_to_clean)), 
             con = db_hhsaw_prod
-          )
-        }
+          )}else{message('\U0001f642 There is nothing to geocode!')}
         
     ## Check geocoding status ----
         message("To check the geocoding status, update and uncomment the following line ... ")
-        # kcgeocode::check_status('2023-03-23 16:21:50', type = 'timestamp', con = db_hhsaw_prod)
+        # kcgeocode::check_status('2023-07-18 16:29:07', type = 'timestamp', con = db_hhsaw_prod)
         
     ## Get newly cleaned/geocoded addresses ----
         if(nrow(adds_to_clean) > 0){
@@ -607,19 +606,22 @@ load_stage_kcha <- function(conn = NULL,
                                glue_sql("SELECT TOP 0 * FROM {`to_schema`}.{`to_table`}",
                                         .con = conn)))
     
-    if (str_detect(cols_current[1], "Error", negate = T)) {
-      if (length(names(cols_current)[names(cols_current) %in% names(kcha_long) == F]) > 1) {
+    if (!inherits(cols_current, 'try-error')) { # condition is for when cols_current exists
+      cols_current <- setdiff(names(cols_current), 
+                              c('subsidy_id', 'row_n', 'h19g', 'eop_source', 'property_id')) # these are columns that only exist in 2015 or 2016, so it is okay if they are missing in future years
+      
+      if (length(setdiff(cols_current, names(kcha_long))) >= 1) {
+        qa_names_result <- "WARNING"
+        qa_names_note <- glue("The existing stage table in SQL has columns not found in the new data")
+        warning(paste('\U00026A0', qa_names_note))
+      } else if (length(setdiff(names(kcha_long), cols_current)) >= 1) {
         qa_names_result <- "FAIL"
-        qa_names_note <- glue("The existing stage table has columns not found in the new data")
-        warning(qa_names_note)
-      } else if (length(names(kcha_long)[names(kcha_long) %in% names(cols_current) == F]) > 1) {
-        qa_names_result <- "FAIL"
-        qa_names_note <- glue("The new stage table has columns not found in the current data")
-        warning(qa_names_note)
+        qa_names_note <- glue("The new stage table has columns not found in the current data in SQL")
+        warning(paste('\U00026A0', qa_names_note))
       } else {
         qa_names_result <- "PASS"
-        qa_names_note <- glue("The existing and new stage tables have matching columns")
-        message(qa_names_note)
+        qa_names_note <- glue("The existing SQL stage table and new stage tables have matching columns")
+        message(paste('\U0001f642', qa_names_note))
       }
     } else {
       qa_names_result <- "PASS"
@@ -631,18 +633,18 @@ load_stage_kcha <- function(conn = NULL,
                    glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                             (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
                             VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'row_count_vs_previous', {qa_names_result}, {Sys.time()}, {qa_names_note})",
+                            'column_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
                             .con = conn))
     
     
   # ADD VALUES TO METADATA ----
-  # Row counts
+  # Row counts (new rows + existing rows in SQL)
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
                             qa_type, qa_item, qa_result, qa_date, note) 
                           VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {nrow(kcha_long)},
+                                  'value', 'row_count', {rows_refresh},
                                   {Sys.time()}, NULL)",
                           .con = conn))
   

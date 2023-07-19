@@ -1,7 +1,6 @@
 #### CODE TO LOAD 2021 KING COUNTY HOUSING AUTHORITY DATA
-# Alastair Matheson, PHSKC (APDE) / revised by Danny Colombara
-#
-# 2021-06 / revised 2022-11-08
+# Alastair Matheson, PHSKC (APDE) 2021-06
+# Revised by Danny Colombara, PHSKC (APE) 2023-07
 
 ### Run from main_kcha_load script
 # https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_kcha_load.R
@@ -32,204 +31,199 @@ load_raw_kcha_2021 <- function(conn = NULL,
   date_max <- as.Date(date_max, format = "%Y-%m-%d")
   
   # BRING IN DATA ----
-  kcha_p1_2021 <- fread(file = file.path(file_path_kcha, "kcha_2021_panel_01.csv"), 
+  kcha_p1_2021 <- fread(file = file.path(file_path, "kcha_2021_panel_01.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p2_2021 <- fread(file = file.path(file_path_kcha, "kcha_2021_panel_02.csv"), 
+  kcha_p2_2021 <- fread(file = file.path(file_path, "kcha_2021_panel_02.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
-  kcha_p3_2021 <- fread(file = file.path(file_path_kcha, "kcha_2021_panel_03.csv"), 
+  kcha_p3_2021 <- fread(file = file.path(file_path, "kcha_2021_panel_03.csv"), 
                         na.strings = c("NA", "", "NULL", "N/A", "."), 
                         stringsAsFactors = F)
   
   
-  fields <- read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))
+  fields <- rads::sql_clean(setDT(read.csv(file.path(here::here(), "etl/ref", "field_name_mapping.csv"))))
   
   
   # QA CHECKS ----
-  ### Row counts across panels ----
-    #-- Do the number of rows match between each panel? ----
-    if (nrow(kcha_p1_2021) == nrow(kcha_p2_2021) & nrow(kcha_p1_2021) == nrow(kcha_p3_2021)) {
-      qa_row_result <- "PASS"
-      qa_row_note <- glue("\U0001f642 Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2021), big.mark = ',')}")
-      message(qa_row_note)
-    } else if (nrow(kcha_p1_2021) != nrow(kcha_p1_2021) | nrow(kcha_p1_2021) != nrow(kcha_p3_2021)) {
-      qa_row_result <- "FAIL"
-      qa_row_note <- glue("\U0001f47f Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2021), big.mark = ',')}, ",
-                     "Panel 2 = {format(nrow(kcha_p2_2021), big.mark = ',')}, ", 
-                     "Panel 3 = {format(nrow(kcha_p3_2021), big.mark = ',')}")
-      warning(qa_row_note)
-    }
-    
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'row_count', {qa_row_result}, {Sys.time()}, {qa_row_note})",
-                            .con = conn))
-    
-    
-  ### Row counts vs. previous year ----
-    #-- How do the number of rows compare to last time? ----
-    rows_2020 <- as.integer(dbGetQuery(conn,
-      glue_sql("SELECT qa_result FROM {`qa_schema`}.{`qa_table`} 
-               WHERE table_name = 'pha.raw_kcha_2020' AND qa_type = 'value' AND 
-               qa_item = 'row_count'", .con = conn)))
-    
-    row_diff <- nrow(kcha_p1_2021) - rows_2020
-    row_pct <- round(abs(row_diff) / nrow(kcha_p1_2021) * 100, 1)
-    qa_row_diff_note <- glue("There were {row_pct}% ({format(abs(row_diff), big.mark = ',')}) ", 
-                        "{ifelse(row_diff < 0, 'fewer', 'more')} rows in 2021 than 2020")
-    
-    # Arbitrarily set 10% changes as threshold for alert
-    if (!is.na(row_pct) & row_pct > 10) {
-      qa_row_diff_result <- "WARNING"
-      warning(paste("\U00026A0", qa_row_diff_note))
-    } else if (!is.na(row_pct) & row_pct <= 10) {
-      qa_row_diff_result <- "PASS"
-      message(paste("\U0001f642", qa_row_diff_note))
-    } else {
-      qa_row_diff_result <- "FAIL"
-      message("\U0001f47f Something went wrong when checking the number of last year's rows. Check code.")
-    }
-    
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
-                            .con = conn))
-    
-    
-  ### Field names ----
-    #-- Are there any new names not seen before? ----
-    # Note that the fields list has names for when the data are pivoted so need to account for this
-    namez <- c(names(kcha_p1_2021), names(kcha_p2_2021), names(kcha_p3_2021))
-    namez[str_detect(namez, "^h[0-9]{1}[a-z][0-9]{2}$")] <- str_sub(namez[str_detect(namez, "^h[0-9]{1}[a-z][0-9]{2}$")], 1, 3)
-    namez[str_detect(namez, "^h[0-9]{2}[a-z][0-9]{2}$")] <- str_sub(namez[str_detect(namez, "^h[0-9]{2}[a-z][0-9]{2}$")], 1, 4)
-    # Just simplify all the expected race/eth and income groups into one
-    namez[str_detect(namez, "^h3k[0-9]{2}[a-e]")] <- "h3k1"
-    namez[str_detect(namez, "^h19[a-f][0-9]{1,2}[a-b]")] <- "h19a1"
-    namez <- unique(namez)
-    
-    if (length(namez[namez %in% fields$kcha_modified == F]) > 0) {
-      qa_names_result <- "FAIL"
-      qa_names_note <- glue("\U0001f47f The following new columns were detected: ", 
-                            "{glue_collapse(namez[namez %in% fields$kcha_modified == F], sep = ', ', last = ', and ')}. ",
-                            "Update the field_name_mapping.csv file.")
-      warning(qa_names_note)
-    } else {
-      qa_names_result <- "PASS"
-      qa_names_note <- "\U0001f642 No new columns detected"
-      message(qa_names_note)
-    }
-    
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'field_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
-                            .con = conn))
-    
-    
+  ## Row counts across panels ----
+  # Do the number of rows match between each panel?
+  if (nrow(kcha_p1_2021) == nrow(kcha_p2_2021) & nrow(kcha_p1_2021) == nrow(kcha_p3_2021)) {
+    qa_row_result <- "PASS"
+    qa_row_note <- glue("Equal number of rows across all 3 panels: {format(nrow(kcha_p1_2021), big.mark = ',')}")
+    message(paste0('\U0001f642 ', qa_row_note))
+  } else if (nrow(kcha_p1_2021) != nrow(kcha_p1_2021) | nrow(kcha_p1_2021) != nrow(kcha_p3_2021)) {
+    qa_row_result <- "FAIL"
+    qa_row_note <- glue("Unequal number of rows across all 3 panels: Panel 1 = {format(nrow(kcha_p1_2021), big.mark = ',')}, ",
+                   "Panel 2 = {format(nrow(kcha_p2_2021), big.mark = ',')}, ", 
+                   "Panel 3 = {format(nrow(kcha_p3_2021), big.mark = ',')}")
+    warning(paste("\U00026A0", qa_row_note))
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'row_counts_equal', {qa_row_result}, {Sys.time()}, {qa_row_note})",
+                          .con = conn))
+  
+  
+  ## Row counts vs. previous year ----
+  # How do the number of rows compare to last time?
+  rows_2020 <- as.integer(dbGetQuery(conn,
+    glue_sql("SELECT qa_result
+          FROM {`qa_schema`}.{`qa_table`} 
+          WHERE table_name = 'pha.raw_kcha_2020' 
+            AND qa_type = 'value' 
+            AND qa_item = 'row_count' 
+            AND etl_batch_id = (
+              SELECT MAX(etl_batch_id) 
+              FROM {`qa_schema`}.{`qa_table`} 
+              WHERE table_name = 'pha.raw_kcha_2020' 
+                AND qa_type = 'value' 
+                AND qa_item = 'row_count')", .con = conn)))
+  
+  row_diff <- nrow(kcha_p1_2021) - rows_2020
+  row_pct <- round(abs(row_diff) / nrow(kcha_p1_2021) * 100, 1)
+  qa_row_diff_note <- glue("There were {row_pct}% ({format(abs(row_diff), big.mark = ',')}) ", 
+                      "{ifelse(row_diff < 0, 'fewer', 'more')} rows in 2021 than 2020")
+  
+  # Arbitrarily set 10% changes as threshold for alert
+  if (!is.na(row_pct) & row_pct > 10) {
+    qa_row_diff_result <- "WARNING"
+    message("\U00026A0 There is a >= 10% difference in the number of rows compared to the previous year. If this is unexpected, check the code.")
+  } else if (!is.na(row_pct) & row_pct <= 10) {
+    qa_row_diff_result <- "PASS"
+    message(paste("\U0001f642", qa_row_diff_note))
+  } else {
+    qa_row_diff_result <- "FAIL"
+    message("\U0001f47f Something went wrong when checking the number of last year's rows. Check code.")
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
+                          .con = conn))
+  
+  
+  ## Field names ----
+  # Are there any new names not seen before?
+  # Note that the fields list has names for when the data are pivoted so need to account for this
+  names <- c(names(kcha_p1_2021), names(kcha_p2_2021), names(kcha_p3_2021))
+  names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{1}[a-z][0-9]{2}$")], 1, 3)
+  names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")] <- str_sub(names[str_detect(names, "^h[0-9]{2}[a-z][0-9]{2}$")], 1, 4)
+  # Just simplify all the expected race/eth and income groups into one
+  names[str_detect(names, "^h3k[0-9]{2}[a-e]")] <- "h3k1"
+  names[str_detect(names, "^h19[a-f][0-9]{1,2}[a-b]")] <- "h19a1"
+  names <- unique(names)
+  
+  if (length(names[names %in% fields$kcha_modified == F]) > 0) {
+    qa_names_result <- "FAIL"
+    qa_names_note <- glue("The following new columns were detected: ", 
+                          "{glue_collapse(names[names %in% fields$kcha_modified == F], sep = ', ', last = ', and ')}. ",
+                          "Update the field_name_mapping.csv file.")
+    warning(paste('\U0001f47f', qa_names_note))
+  } else {
+    qa_names_result <- "PASS"
+    qa_names_note <- "No new columns detected"
+    message(paste('\U0001f642', qa_names_note))
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'field_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
+                          .con = conn))
+  
   ## Action dates ----
-    #-- Do they fall in the expected range? ----
-    # Set completely illogical dates to NA
-    # When there are dates for previous years, provide warning notification and 
-    # deduplicate later when combining all years in stage data
-    kcha_p1_2021 <- kcha_p1_2021[, h2b := as.Date(h2b, "%m/%d/%Y")][!(h2b > as.Date('2015-01-01') & h2b <= as.Date(date_max)), h2b := NA]
-    kcha_p2_2021 <- kcha_p2_2021[, h2b := as.Date(h2b, "%m/%d/%Y")][!(h2b > as.Date('2015-01-01') & h2b <= as.Date(date_max)), h2b := NA]
-    kcha_p3_2021 <- kcha_p3_2021[, h2b := as.Date(h2b, "%m/%d/%Y")][!(h2b > as.Date('2015-01-01') & h2b <= as.Date(date_max)), h2b := NA]
-    
-    dates <- kcha_p1_2021 %>%
-      summarise(date_min = min(h2b, na.rm = T),
-                date_max = max(h2b, na.rm = T))
-    
-    if (dates$date_min < date_min | dates$date_max > date_max) {
-      qa_date_note <- glue("\U00026A0 Dates fell outside the expected range: ", 
-                           "min date = {dates$date_min} (expected {date_min}), ",
-                           "max date = {dates$date_max} (expected {date_max})")
-      qa_date_result <- "WARNING"
-      warning(qa_date_note)
-    } else if (dates$date_min - date_min > 30 | date_max - dates$date_max > 30) {
-      qa_date_note <- glue("\U0001f47f Large gap between expected and actual min or max date: ", 
-                           "min date = {dates$date_min} (expected {date_min}), ",
-                           "max date = {dates$date_max} (expected {date_max})")
-      qa_date_result <- "FAIL"
-      warning(qa_date_note)
-    } else {
-      qa_date_note <- glue("\U0001f642 Date fell in expected range: ", 
-                           "min date = {dates$date_min} (expected {date_min}), ",
-                           "max date = {dates$date_max} (expected {date_max})")
-      qa_date_result <- "PASS"
-      message(qa_date_note)
-    }
-    # nrow(kcha_p1_2021[h2b <'2021-01-01' | h2b > '2021-12-31'])
-    # sort(unique(kcha_p1_2021[h2b <'2021-01-01' | h2b > '2021-12-31']$h2b))    
-
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'date_range', {qa_date_result}, {Sys.time()}, {qa_date_note})",
-                            .con = conn))
-    
-    
+  # Do they fall in the expected range?
+  # Some may be from earlier years so will want to manually check them 
+  # (and see if they appear in previous data)
+  dates <- kcha_p1_2021 %>%
+    mutate(h2b = as.Date(h2b, format = "%m/%d/%Y")) %>%
+    summarise(date_min = min(h2b, na.rm = T),
+              date_max = max(h2b, na.rm = T))
+  
+  if (dates$date_min < date_min | dates$date_max > date_max) {
+    qa_date_note <- glue("Dates fell outside the expected range: ", 
+                         "min date = {dates$date_min} (expected {date_min}), ",
+                         "max date = {dates$date_max} (expected {date_max})")
+    qa_date_result <- "FAIL"
+    warning(paste('\U0001f47f', qa_date_note))
+  } else if (dates$date_min - date_min > 30 | date_max - dates$date_max > 30) {
+    qa_date_note <- glue("Large gap between expected and actual min or max date: ", 
+                         "min date = {dates$date_min} (expected {date_min}), ",
+                         "max date = {dates$date_max} (expected {date_max})")
+    qa_date_result <- "FAIL"
+    warning(paste('\U0001f47f', qa_date_note))
+  } else {
+    qa_date_note <- glue("Date fell in expected range: ", 
+                         "min date = {dates$date_min} (expected {date_min}), ",
+                         "max date = {dates$date_max} (expected {date_max})")
+    qa_date_result <- "PASS"
+    message(paste('\U0001f642', qa_date_note))
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'date_range', {qa_date_result}, {Sys.time()}, {qa_date_note})",
+                          .con = conn))
+  
+  
   ## Program types ----
-    #-- Make sure there aren't any new variations ----
-    prog_types <- unique(kcha_p1_2021$program_type)
-    
-    if (min(prog_types %in% c("P", "PBS8", "PH", "PR", "T", "TBS8", "VO")) == 0) {
-      qa_prog_note <- glue("\U0001f47f The following unexpected program types were present: ",
-                           "{glue_collapse(prog_types[prog_types %in% c('P', 'PBS8', 'PH', 'PR', 'T', 'TBS8', 'VO') == FALSE], 
-                           sep = ', ')}")
-      qa_prog_result <- "FAIL"
-      warning(qa_prog_note)
-    } else {
-      qa_prog_note <- "\U0001f642 There were no unexpected program types"
-      qa_prog_result <- "PASS"
-      message(qa_prog_note)
-    }
-    
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'date_range', {qa_prog_result}, {Sys.time()}, {qa_prog_note})",
-                            .con = conn))
-    
-    
+  # Make sure there aren't any new variations
+  prog_types <- unique(kcha_p1_2021$program_type)
+  
+  if (min(prog_types %in% c("P", "PBS8", "PH", "PR", "T", "TBS8", "VO")) == 0) {
+    qa_prog_note <- glue("The following unexpected program types were present: ",
+                         "{glue_collapse(prog_types[prog_types %in% c('P', 'PBS8', 'PH', 'PR', 'T', 'TBS8', 'VO') == FALSE], 
+                         sep = ', ')}")
+    qa_prog_result <- "FAIL"
+    warning(paste('\U0001f47f', qa_prog_note))
+  } else {
+    qa_prog_note <- "There were no unexpected program types"
+    qa_prog_result <- "PASS"
+    message(paste('\U0001f642', qa_prog_note))
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'program_types', {qa_prog_result}, {Sys.time()}, {qa_prog_note})",
+                          .con = conn))
+  
+  
   ## Action codes ----
-    #-- Do they have the expected range? ----
-    act_types <- sort(unique(kcha_p1_2021$h2a[!is.na(kcha_p1_2021$h2a)]))
-    
-    if (min(act_types %in% 1:14) == 0) {
-      qa_act_note <- glue("\U0001f47f The following unexpected action types were present: ",
-                           "{glue_collapse(act_types[act_types %in% 1:14 == FALSE], sep = ', ')}")
-      qa_act_result <- "FAIL"
-      warning(qa_act_note)
-    } else {
-      qa_act_note <- "\U0001f642 There were no unexpected action types (all between 1 and 14)"
-      qa_act_result <- "PASS"
-      message(qa_act_note)
-    }
-    
-    #-- Push to QA table ----
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'action_types', {qa_act_result}, {Sys.time()}, {qa_act_note})",
-                            .con = conn))
-    
-    
+  # Do they have the expected range?
+  act_types <- sort(unique(kcha_p1_2021$h2a[!is.na(kcha_p1_2021$h2a)]))
+  
+  if (min(act_types %in% 1:14) == 0) {
+    qa_act_note <- glue("The following unexpected action types were present: ",
+                         "{glue_collapse(act_types[act_types %in% 1:14 == FALSE], sep = ', ')}")
+    qa_act_result <- "FAIL"
+    warning(paste('\U0001f47f', qa_act_note))
+  } else {
+    qa_act_note <- "There were no unexpected action types (all between 1 and 14)"
+    qa_act_result <- "PASS"
+    message(paste('\U0001f642', qa_act_note))
+  }
+  
+  DBI::dbExecute(conn,
+                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                          (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                          VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                          'action_types', {qa_act_result}, {Sys.time()}, {qa_act_note})",
+                          .con = conn))
+  
+  
   # ADD VALUES TO METADATA ----
-  ## Row counts ----
+  # Row counts
   DBI::dbExecute(conn,
                  glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
                           (etl_batch_id, last_run, table_name, 
@@ -238,20 +232,23 @@ load_raw_kcha_2021 <- function(conn = NULL,
                                   'value', 'row_count', {nrow(kcha_p1_2021)},
                                   {Sys.time()}, NULL)",
                           .con = conn))
-
+  
+  
+  
   # CHECK QA PASSED ----
-  # Stop processing if one or more QA check failed ----
+  # Stop processing if one or more QA check failed
   if (min(qa_row_result, qa_row_diff_result, qa_names_result, qa_date_result) == "FAIL") {
-    stop(glue("One or more QA checks failed on {to_schema}.{to_table}. See {`qa_schema`}.{`qa_table`} for more details."))
+    stop(glue("\U0001f47f One or more QA checks failed on {to_schema}.{to_table}. See {`qa_schema`}.{`qa_table`} for more details."))
   } else {
     # Clean up QA objects if everything passed
     rm(list = ls(pattern = "^qa_"))
     rm(list = ls(pattern = "^row(s)?_"))
-    rm(namez)
+    rm(names)
     rm(dates)
     rm(prog_types)
     rm(act_types)
   }
+  
   
   # PANEL DATA CLEANING ----
   ### Program types ----
@@ -274,6 +271,11 @@ load_raw_kcha_2021 <- function(conn = NULL,
   if (nrow(kcha_2021_full) != nrow(kcha_p1_2021)) {
     stop("Joining the panels together produced an unexpected number of rows")
   }
+  
+  # Confirm that that dataset contains voucher_type ----
+  if(length(intersect(fields[common_name %like% 'vouch_type' & !is.na(kcha_modified)]$kcha_modified, names(kcha_2021_full)))==0){
+    stop("\n\U0001f47f You are column corresponding to 'vouch_type', which is a critical variable. Do not continue without correcting the code or updating the data.")
+  } else {message("\U0001f642 You have a column corresponding to 'vouch_type', which is a critical variable.")}
   
   
   # FORMAT DATA ----
