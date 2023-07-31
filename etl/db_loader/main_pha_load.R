@@ -32,7 +32,7 @@ library(keyring) # Access stored credentials
 library(housing) # Has some functions specific to the PHA data
 # library(apde) # Handy functions for working with data in APDE
 library(RecordLinkage) # Manage identities across data sources
-
+library(rads) # primarily for rounding function (https://github.com/PHSKC-APDE/rads)
 
 # SET UP VARIABLES AND CONNECTIONS ----
 options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 999)
@@ -122,26 +122,26 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
   
 # MAKE DEMO EVER TABLE ----
 # Consolidate non- and mostly non-time varying demographics
-## Stage ----
-# Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_demo.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage_pha_demo.R")
-
-# Run function
-load_stage_demo(conn = db_hhsaw)
-
-# QA stage table
-qa_stage_pha_demo(conn = db_hhsaw, load_only = F)
-
-
-## Final ----
-# Manually for now, fix later
-if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
-  dbExecute(db_hhsaw, "DROP TABLE pha.final_demo")
-}
-dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
-
-
+  ## Stage ----
+  # Bring in functions
+    source(file.path(here::here(), "/etl/stage/load_stage_pha_demo.R"))
+    source(file.path(here::here(), "/etl/stage/qa_stage_pha_demo.R"))
+      
+  # Run function
+  load_stage_demo(conn = db_hhsaw)
+  
+  # QA stage table
+  qa_stage_pha_demo(conn = db_hhsaw, load_only = F)
+  
+  
+  ## Final ----
+  # Manually for now, fix later
+  if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
+    dbExecute(db_hhsaw, "DROP TABLE pha.final_demo")
+  }
+  dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
+  
+  
 # MAKE TIMEVAR TABLE ----
 # Consolidate time varying data
 ## Stage ----

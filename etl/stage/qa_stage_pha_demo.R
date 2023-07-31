@@ -75,8 +75,8 @@ qa_stage_pha_demo <- function(conn = NULL,
                        ({row_count} vs. {previous_rows})')",
                        .con = conn))
       
-      message(glue::glue("Fewer rows than found last time.  
-                  Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
+      message(glue::glue("\U00026A0 Fewer rows than found last time.  
+                  Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
     } else {
       row_qa_fail <- 0
       DBI::dbExecute(
@@ -91,6 +91,8 @@ qa_stage_pha_demo <- function(conn = NULL,
                    'There were {row_diff} more rows in the most recent table 
                        ({row_count} vs. {previous_rows})')",
                        .con = conn))
+      
+      message(glue::glue("\U0001f642 There were {row_diff} more rows than last time."))
     }
   }
   
@@ -113,8 +115,8 @@ qa_stage_pha_demo <- function(conn = NULL,
                        'There were {id_count} distinct IDs but {row_count} rows (should be the same)')",
                      .con = conn))
     
-    message(glue::glue("Number of distinct IDs ({id_count}) doesn't match the number of rows ({row_count}). 
-                      Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
+    message(glue::glue("\U0001f47f Number of distinct IDs ({id_count}) doesn't match the number of rows ({row_count}). 
+                      Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
   } else {
     id_distinct_qa_fail <- 0
     DBI::dbExecute(
@@ -128,6 +130,9 @@ qa_stage_pha_demo <- function(conn = NULL,
                        {Sys.time()}, 
                        'The number of distinct IDs matched the number of rows ({id_count})')",
                      .con = conn))
+    
+    message(glue::glue("\U0001f642 The number of distinct IDs ({id_count}) matches the number of rows ({row_count}) -- as they should. 
+                      Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
   }
   
   
