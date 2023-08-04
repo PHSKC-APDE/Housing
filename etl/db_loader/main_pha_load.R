@@ -143,27 +143,28 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
   
   
 # MAKE TIMEVAR TABLE ----
-# Consolidate time varying data
-## Stage ----
-# Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_timevar.R")
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/qa_stage_pha_timevar.R")
-
-# Run function
-load_stage_timevar(conn = db_hhsaw)
-
-# QA stage table
-qa_stage_pha_timevar(conn = db_hhsaw, load_only = F)
-
-
-## Final ----
-# Manually for now, fix later
-if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_timevar"))) {
-  dbExecute(db_hhsaw, "DROP TABLE pha.final_timevar")
-}
-dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
-
-
+  # Consolidate time varying data
+  ## Stage ----
+    # Bring in functions
+    source(file.path(here::here(), "/etl/stage/load_stage_pha_timevar.R"))
+    
+    source(file.path(here::here(), "/etl/stage/qa_stage_pha_timevar.R"))
+    
+    # Run function
+    load_stage_timevar(conn = db_hhsaw)
+    
+    # QA stage table
+    qa_stage_pha_timevar(conn = db_hhsaw, load_only = F)
+  
+  
+  ## Final ----
+    # Manually for now, fix later
+    if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_timevar"))) {
+      dbExecute(db_hhsaw, "DROP TABLE pha.final_timevar")
+    }
+    dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
+    
+  
 # MAKE CALYEAR TABLE ----
 # Set up pre-analyzed calendar year tables
 ## Stage ----
