@@ -65,7 +65,7 @@ load_stage_demo <- function(conn = NULL,
   
   # WORK ON DOB ----
     message("Processing DOB data")
-    elig_dob <- unique(pha[, c("id_kc_pha", "act_date", "dob")])
+    elig_dob <- unique(copy(pha)[, c("id_kc_pha", "act_date", "dob", 'admit_date')][!is.na(dob)])
     
     maxdob <- max(
       DBI::dbGetQuery(conn = conn, paste0('SELECT maxdate = max(act_date) FROM ', from_schema, '.', from_table, 'kcha'))[['maxdate']], 
@@ -78,10 +78,14 @@ load_stage_demo <- function(conn = NULL,
     elig_dob[between(year(dob), (1000 + as.integer(substr(year(maxdob), 3, 4)) + 1 ), 1880), dob := as.Date(format(dob, "19%y-%m-%d"))]
     elig_dob[between(year(dob), 1000, (1000 + as.integer(substr(year(maxdob), 3, 4)))), dob := as.Date(format(dob, "20%y-%m-%d"))]
     
+    # drop illogical dob ... i.e., those that take place  after the admit_date (because can't be negative years old at admission)
+    elig_dob[admit_date < '1941-01-01', admit_date := NA] # these PHAs didn't start until ~1940 ... see next section on Admit Date for details
+    elig_dob[, tempage := rads::calc_age(from = dob, to = admit_date)]
+    elig_dob <- elig_dob[is.na(tempage) | tempage >= 0][, c('admit_date', 'tempage') := NULL]
+
     # keep the most recent dob only
     setorder(elig_dob, id_kc_pha, -act_date, na.last = T)
-    elig_dob[, myrank := 1:.N, .(id_kc_pha)]
-    elig_dob <- elig_dob[myrank ==1][, .(id_kc_pha, dob)]
+    elig_dob <- elig_dob[, .SD[1], id_kc_pha][, act_date := NULL]
 
     # ensure all dob are reasonable
     if(max(elig_dob$dob, na.rm = T) > maxdob){
@@ -97,12 +101,17 @@ load_stage_demo <- function(conn = NULL,
     # Also want to derive an empirical start date using the first act_date for each person
     
     message("Processing date person entered KCHA/SHA")
-    elig_admit <- pha[, c("id_kc_pha", "agency", "act_date", "admit_date")]
+    elig_admit <- copy(pha)[!is.na(admit_date)][, c("id_kc_pha", "agency", "act_date", "admit_date")]
     
     # Take the earliest date per ID by overall and each PHA
-    elig_admit_all <- elig_admit[!is.na(admit_date), .(admit_date_all = min(admit_date, na.rm = T)), by = "id_kc_pha"]
-    elig_admit_kcha <- elig_admit[!is.na(admit_date) & agency == "KCHA", .(admit_date_kcha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
-    elig_admit_sha <- elig_admit[!is.na(admit_date) & agency == "SHA", .(admit_date_sha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+      # There are irrational admit dates that occurred before the PHAs existed! First set those values to NA
+      elig_admit <- elig_admit[agency %in% c('SHA', 'KCHA')] # other extraneous PHAs should be dropped  
+      elig_admit <- elig_admit[!(agency == 'SHA' & admit_date < '1941-01-01')] # SHA started in 1938 & opened Yesler Terrace around 1941
+      elig_admit <- elig_admit[!(agency == 'KCHA' & admit_date < '1942-01-01')] # KCHA started in 1939 & opened Black Diamond site in 1942 
+      
+      elig_admit_all <- elig_admit[!is.na(admit_date), .(admit_date_all = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+      elig_admit_kcha <- elig_admit[!is.na(admit_date) & agency == "KCHA", .(admit_date_kcha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+      elig_admit_sha <- elig_admit[!is.na(admit_date) & agency == "SHA", .(admit_date_sha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
     
     # Merge back into a single table
     elig_admit <- merge(elig_admit_sha, merge(elig_admit_kcha, elig_admit_all, all = T), all = T)
