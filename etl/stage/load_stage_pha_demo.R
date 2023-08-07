@@ -338,7 +338,7 @@ load_stage_demo <- function(conn = NULL,
   message("Bringing it all together")
   elig_demo_final <- Reduce(function(df1, df2) 
                               merge(df1, df2, by = "id_kc_pha", all.x = TRUE), 
-                              list(elig_dob, elig_admit, elig_gender_final, elig_race_final))
+                              list(elig_gender_final, elig_race_final, elig_dob, elig_admit))
   
  
   # Add in date for last run
