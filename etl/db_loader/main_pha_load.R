@@ -16,10 +16,8 @@
 # This script is the main 'control tower' for all the component scripts that load combined PHA data.
 # Other scripts exist to load SHA and KCHA data.
 #
-# Alastair Matheson (PHSKC-APDE)
-# alastair.matheson@kingcounty.gov
-# 2021-06
-# 
+# Alastair Matheson (PHSKC-APDE), alastair.matheson@kingcounty.gov, 2021-06
+# Upated by Danny Colombara (PHSKC-APDE), dcolombara@kingcounty.gov, 2023-08
 
 # LOAD LIBRARIES AND FUNCTIONS ----
 library(data.table) # Manipulate data
@@ -128,10 +126,10 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
     source(file.path(here::here(), "/etl/stage/qa_stage_pha_demo.R"))
       
   # Run function
-  load_stage_demo(conn = db_hhsaw)
+    load_stage_demo(conn = db_hhsaw)
   
   # QA stage table
-  qa_stage_pha_demo(conn = db_hhsaw, load_only = F)
+    qa_stage_pha_demo(conn = db_hhsaw, load_only = F)
   
   
   ## Final ----
@@ -167,19 +165,24 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
   
 # MAKE CALYEAR TABLE ----
 # Set up pre-analyzed calendar year tables
-## Stage ----
-# Bring in functions
-devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_pha_calyear.R")
+  ## Stage ----
+  # Bring in functions
+    source(file.path(here::here(), "/etl/stage/load_stage_pha_calyear.R"))
+    source(file.path(here::here(), "/etl/stage/qa_stage_pha_calyear.R"))
 
-# Run function
-load_stage_pha_calyear(conn = db_hhsaw, to_schema = "pha", to_table = "stage_calyear")
+  # Run function
+      load_stage_pha_calyear(conn = db_hhsaw, max_year = 2022)
 
-# QA stage table
-# Needs development, maybe check years run, IDs per year, etc.
+  # QA stage table
+      qa_stage_pha_calyear(conn = db_hhsaw, load_only = F)
+      
+  ## Final ----
+    # Manually for now, fix later
+    if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_calyear"))) {
+      dbExecute(db_hhsaw, "DROP TABLE pha.final_calyear")
+    }
+    dbExecute(db_hhsaw, "SELECT * INTO pha.final_calyear FROM pha.stage_calyear")
 
-## Final ----
-# Manually for now, fix later
-if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_calyear"))) {
-  dbExecute(db_hhsaw, "DROP TABLE pha.final_calyear")
-}
-dbExecute(db_hhsaw, "SELECT * INTO pha.final_calyear FROM pha.stage_calyear")
+# The end!
+    message("\U0001f642 \U0001f308 \U0001f973")
+    
