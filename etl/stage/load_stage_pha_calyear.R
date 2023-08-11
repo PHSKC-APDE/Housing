@@ -11,6 +11,7 @@
 # Also adds a summary of person-time (days) for each each category
 
 load_stage_pha_calyear <- function(conn = NULL,
+                                   max_year = NULL, 
                                    to_schema = "pha",
                                    to_table = "stage_calyear",
                                    demo_schema = "pha",
@@ -21,13 +22,13 @@ load_stage_pha_calyear <- function(conn = NULL,
   # BRING IN DATA ----
   pha_demo <- dbGetQuery(conn, glue_sql("SELECT * FROM {`demo_schema`}.{`demo_table`}",
                                         .con = conn))
-  pha_timevar <- dbGetQuery(conn, glue_sql("SELECT a.*, c.geo_tractce10 FROM
+  pha_timevar <- dbGetQuery(conn, glue_sql("SELECT a.*, c.geo_id20_tract FROM
                                            (SELECT * FROM {`timevar_schema`}.{`timevar_table`}) a
                                            LEFT JOIN
                                            (SELECT DISTINCT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
                                            ON a.geo_hash_clean = b.geo_hash_clean
                                            LEFT JOIN
-                                           (SELECT DISTINCT geo_hash_geocode, geo_tractce10 FROM ref.address_geocode) c
+                                           (SELECT DISTINCT geo_hash_geocode, geo_id20_tract FROM ref.address_geocode) c
                                            ON b.geo_hash_geocode = c.geo_hash_geocode",
                                            .con = conn))
   
@@ -46,178 +47,191 @@ load_stage_pha_calyear <- function(conn = NULL,
    
     
     ## Set up overlap between time period of interest and enrollment ----
-    df <- df %>%
-      mutate(
-        overlap_amount = as.numeric(lubridate::intersect(
-          #time_int,
-          lubridate::interval(from_date, to_date),
-          lubridate::interval(time_start, time_end)) / ddays(1) + 1)
-      ) %>%
-      # Remove any rows that don't overlap
-      dplyr::filter(!is.na(overlap_amount))
-     
+    setDT(df)
+    df[, overlap_amount := as.numeric(
+                            lubridate::intersect(
+                              lubridate::interval(from_date, to_date),
+                              lubridate::interval(time_start, time_end)
+                            ) # close intersection 
+                            / ddays(1) + 1)] # convert time interval measure to days, need to add 1 to get correct number. E.g., Jan 30 would be 29 days otherwise
+      
+    df <- df[!is.na(overlap_amount)]  
     
     ## Find the row with the most person-time in each agency and group ----
     # (ties will be broken by whatever other ordering exists)
-    pt <- df %>%
-      group_by(agency, id_kc_pha, across(all_of(by_vars))) %>%
-      summarise(pt = sum(overlap_amount))
-    
+    pt <- df[, .(pt = sum(overlap_amount)), by = c('agency', 'id_kc_pha', by_vars)]
+
     # Join back to a single df and sort so largest time is first in the group
-    pop <- left_join(df, pt, by = c("agency", "id_kc_pha", by_vars)) %>%
-      arrange(id_kc_pha, agency, desc(pt), desc(overlap_amount))
-    
+    pop <- merge(df, 
+                 pt, 
+                 by = c("agency", "id_kc_pha", by_vars), 
+                 all.x = T, all.y = F)
+    setorder(pop, id_kc_pha, agency, -pt, -overlap_amount)
+
     # Take first row in group
-    pop <- pop %>%
-      group_by(agency, id_kc_pha) %>%
-      slice(1) %>%
-      ungroup()
-    
+    pop <- pop[, .SD[1], .(agency, id_kc_pha)]
+
     # Remove junk columns or columns with no meaning
-    pop <- pop %>%
-      select(id_kc_pha, agency, all_of(by_vars), pt)
-    
+    pop <- pop[, c('id_kc_pha', 'agency', by_vars, 'pt'), with = FALSE]
+
     return(pop)
   }
   
 
   
   # Set up calendar years
-  years <- seq(2012, 2020)
+  years <- seq(2012, max_year)
   
   # Set up each grouping variable
   categories <- c("hh_id_kc_pha", "disability", "major_prog", "subsidy_type", "prog_type",
                   "operator_type", "vouch_type_final", "property_id", "portfolio_final",
-                  "geo_zip_clean", "geo_tractce10")
+                  "geo_zip_clean", "geo_id20_tract")
   
   
-  allocated <- bind_rows(lapply(years, function(x) {
+  allocated <- rbindlist(lapply(years, function(x) {
     
     message("Working on ", x)
     
     # Run over agency in general
     total <- allocate_calyear(df = pha_timevar, 
                               time_start = paste0(x, "-01-01"), 
-                              time_end = paste0(x, "-12-31")) %>%
-      rename(pt_total = pt)
+                              time_end = paste0(x, "-12-31"))
+    setnames(total, 'pt', 'pt_total')
     
-    cats <- bind_rows(lapply(categories, function(y) {
+    cats <- rbindlist(lapply(categories, function(y) {
       message("working on ", y)
       cat <- allocate_calyear(df = pha_timevar, 
                                time_start = paste0(x, "-01-01"), 
                                time_end = paste0(x, "-12-31"),
-                               by_vars = y) %>%
-        rename(group = y) %>%
-        mutate(category = rlang::as_name(y),
-               group = as.character(group))
+                               by_vars = y)
+      setnames(cat, y, 'group')
+      cat[, category := paste0(y)]
+      cat[, group := as.character(group)]
     }))
-    output <- left_join(total, cats, by = c("id_kc_pha", "agency")) %>% 
-      mutate(year = x) %>%
-      select(year, id_kc_pha, agency, pt_total, category, group, pt)
+    output <- merge(total, 
+                    cats, 
+                    by = c("id_kc_pha", "agency"), 
+                    all.x = T, all.y = F) 
+    output[, year := x]
+    output <- output[, .(year, id_kc_pha, agency, pt_total, category, group, pt)]
   }))
   
   
   # Reshape to get wide output and reorder
   # Also truncate the few (~145) rows with pt > 365/6
-  allocated_wide <- allocated %>%
-    mutate(pt = case_when(year %in% c(2012, 2016, 2020, 2024) & pt > 366 ~ 366,
-                          pt > 365 ~ 365,
-                          TRUE ~ pt)) %>%
-    pivot_wider(names_from = category, 
-                values_from = c(group, pt),
-                names_glue = "{category}_{.value}") %>%
-    rename_with(~ str_remove(., "_group"), .cols = contains("_group"))
+  allocated[year %in% seq(2012, 2100, 4) & pt > 366, pt := 366]
+  allocated[!year %in% seq(2012, 2100, 4) & pt > 365, pt := 365]
+
+  allocated[year %in% seq(2012, 2100, 4) & pt_total > 366, pt_total := 366]
+  allocated[!year %in% seq(2012, 2100, 4) & pt_total > 365, pt_total := 365]
   
-  
+  allocated_wide <- dcast(allocated, 
+                          formula = year + id_kc_pha + agency + pt_total ~ category, 
+                          value.var = c('pt', 'group'))
+  setnames(allocated_wide, gsub("group_", "", names(allocated_wide)))
+  setnames(allocated_wide, grep('^pt_', names(allocated_wide), value = T), paste0(gsub("pt_", "", grep('^pt_', names(allocated_wide), value = T)), '_pt'))
+  setnames(allocated_wide, 'total_pt', 'pt_total') # switch this one back because it was not made by the reshaping to wide process
+
   # ID AN ADMIT DATE FOR EACH YEAR ----
   # A person's first admit_date overall and for each PHA is captured in the pha_demo table
   # However, we may want to use a from_date as the admit_date if there has been a lengthy
   #   gap in their coverage. For example, if a person has coverage from 2012-2014 then 2016-2020,
   #   we would want their admit date to be 2016 for the second period.
   # For now, treat gaps of 1+ years as sufficient to trigger a new admit_date
-  admit_date_setup <- pha_timevar %>%
-    filter(from_date == period_start) %>%
-    # Also filter gap_length = 0 where people have duplicate rows
-    filter(gap_length != 0 | is.na(gap_length)) %>%
-    distinct(id_kc_pha, gap_length, period_start) %>%
-    mutate(use_new_date = case_when(is.na(gap_length) ~ 0L,
-                                    gap_length >= 365 ~ 1L, 
-                                    TRUE ~ 0L)) %>%
-    distinct(id_kc_pha, period_start, use_new_date)
+  admit_date_setup <- copy(pha_timevar)[from_date == period_start]
+  admit_date_setup <- admit_date_setup[gap_length != 0 | is.na(gap_length)] # filter out where people have duplicate rows
+  admit_date_setup[, use_new_date := fcase(is.na(gap_length), 0L, 
+                                           gap_length >= 365, 1L, 
+                                           default = 0L)]
+  admit_date_setup <- unique(admit_date_setup[, .(id_kc_pha, period_start, use_new_date)])
   
-  pha_timevar <- left_join(pha_timevar, admit_date_setup, by = c("id_kc_pha", "period_start"))
+  pha_timevar <- merge(pha_timevar, 
+                       admit_date_setup, 
+                       by = c("id_kc_pha", "period_start"), 
+                       all.x = T, all.y = F)
   
   
   # Find a admit_date for each year
-  admit_dates <- bind_rows(map(years, function(x) {
+  admit_dates <- rbindlist(lapply(years, function(x) {
     message("Working on ", x)
-    output <- pha_timevar %>%
-      mutate(
-        overlap_amount = as.numeric(lubridate::intersect(
-          #time_int,
+    
+    output <- copy(pha_timevar)
+    
+    output[, overlap_amount := as.numeric(
+      lubridate::intersect(
           lubridate::interval(from_date, to_date),
-          lubridate::interval(as.Date(paste0(x, "-01-01")), as.Date(paste0(x, "-12-31")))) / ddays(1) + 1)
-      ) %>%
-      # Remove any rows that don't overlap
-      dplyr::filter(!is.na(overlap_amount)) %>%
-      left_join(., select(pha_demo, id_kc_pha, starts_with("admit_date")), by = "id_kc_pha")
+          lubridate::interval(as.Date(paste0(x, "-01-01")), as.Date(paste0(x, "-12-31")))) / ddays(1) + 1)]
     
-    output <- output %>%
-      mutate(admit_date_yr = case_when(use_new_date == 1 ~ period_start,
-                                       year(admit_date_all) > x ~ period_start,
-                                       !is.na(admit_date_all) ~ admit_date_all,
-                                       agency == "KCHA" & !is.na(admit_date_kcha) ~ admit_date_kcha,
-                                       agency == "SHA" & !is.na(admit_date_sha) ~ admit_date_sha,
-                                       TRUE ~ period_start)) %>%
-      distinct(id_kc_pha, agency, admit_date_yr) %>%
-      group_by(id_kc_pha) %>%
-      summarise(admit_date_yr = max(admit_date_yr, na.rm = T)) %>%
-      ungroup() %>%
-      mutate(year = x)
+    # Remove any rows that don't overlap
+    output <- output[!is.na(overlap_amount)]
     
-    output
+    output <- merge(output, 
+                    pha_demo[, c('id_kc_pha', grep('^admit_date', names(pha_demo), value = T))], 
+                    by = 'id_kc_pha', 
+                    all.x = T, 
+                    all.y = F)
+
+    output[, admit_date_yr := case_when(use_new_date == 1 ~ period_start,
+                                        year(admit_date_all) > x ~ period_start,
+                                        !is.na(admit_date_all) ~ admit_date_all,
+                                        agency == "KCHA" & !is.na(admit_date_kcha) ~ admit_date_kcha,
+                                        agency == "SHA" & !is.na(admit_date_sha) ~ admit_date_sha,
+                                        TRUE ~ period_start)]
+    
+    output <- unique(output[, .(id_kc_pha, agency, admit_date_yr)])
+    output <- output[, .(admit_date_yr = max(admit_date_yr, na.rm = T)), id_kc_pha][, year := x]
+    
+    return(output)
   }))
-  
+
+
   # Join back to other year table
-  allocated_wide <- left_join(allocated_wide, admit_dates, by = c("id_kc_pha", "year"))
+  allocated_wide <- merge(allocated_wide, 
+                          admit_dates, 
+                          by = c("id_kc_pha", "year"), 
+                          all.x = T, all.y = F)
   
   
   # JOIN TO DEMO TABLE AND ADD CALCULATED FIELDS ----
-  calyear <- setDT(left_join(allocated_wide, 
-                             select(pha_demo, -last_run, -contains("_t")),
-                             by = "id_kc_pha"))
+  calyear <- merge(allocated_wide,
+                   pha_demo[, grep('_t$|last_run', names(pha_demo), invert = T)],
+                   by = "id_kc_pha", 
+                   all.x = T, all.y = F)
     
   
-  calyear[, age_yr := floor(interval(start = dob, end = paste0(year, "-12-31")) / years(1))]
-  calyear[, adult := case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L)]
-  calyear[, senior := case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L)]
+  calyear[, age_yr := rads::calc_age(from = dob, to = paste0(year, "-12-31"))]
+  calyear[age_yr < 0, age_yr := NA] # As of 8/7/23 there are four rows where the age is -1
+  calyear[, adult := fcase(age_yr >= 18, 1L, 
+                           age_yr < 18, 0L)]
+  calyear[, senior := fcase(age_yr >= 62, 1L, 
+                            age_yr < 62, 0L)]
   calyear[, agegrp := 
-            case_when(age_yr < 18 ~ "<18",
-                      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-                      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
-                      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
-                      age_yr >= 65 ~ "65+",
-                      is.na(age_yr) ~ NA_character_)]
+            fcase(age_yr < 18,  "<18",
+                  data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+                  data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+                  data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+                  age_yr >= 65, "65+",
+                  is.na(age_yr), NA_character_)]
   calyear[, agegrp_expanded := 
-            case_when(age_yr < 10 ~ "<10",
-                      data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
-                      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
-                      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
-                      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
-                      data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
-                      age_yr >= 75 ~ "75+",
-                      is.na(age_yr) ~ NA_character_)]
+            fcase(age_yr < 10, "<10",
+                  data.table::between(age_yr, 10, 17.99, NAbounds = NA), "10-17",
+                  data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+                  data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+                  data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+                  data.table::between(age_yr, 65, 74.99, NAbounds = NA), "65-74",
+                  age_yr >= 75, "75+",
+                  is.na(age_yr), NA_character_)]
   calyear[, time_housing_yr := round(interval(start = admit_date_yr, end = paste0(year, "-12-31")) / years(1), 1)]
   calyear[, time_housing := 
-            case_when(time_housing_yr < 3 ~ "<3 years",
-                      data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA) ~ "3 to <6 years",
-                      time_housing_yr >= 6 ~ "6+ years",
-                      TRUE ~ "Unknown")]
+            fcase(time_housing_yr < 3, "<3 years",
+                  data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA), "3 to <6 years",
+                  time_housing_yr >= 6, "6+ years",
+                  TRUE, "Unknown")]
   calyear[, last_run := Sys.time()]
   
   
   # WRITE DATA TO SQL SERVER ----
-  ## Select and arrange columns
+  ## Select and arrange columns ----
   cols_select <- c(
     # Core variables
     "year", "id_kc_pha", "agency", "pt_total", 
@@ -239,13 +253,13 @@ load_stage_pha_calyear <- function(conn = NULL,
     "geo_zip_clean", "geo_zip_clean_pt", 
     "property_id", "property_id_pt",
     "portfolio_final", "portfolio_final_pt", 
-    "geo_tractce10", "geo_tractce10_pt",
+    "geo_id20_tract", "geo_id20_tract_pt",
     # Other info
     "last_run")
   
   calyear <- calyear[, ..cols_select]
   
-  # Load to SQL
+  ## Load to SQL ----
   # Split into smaller tables to avoid SQL connection issues
   start <- 1L
   max_rows <- 100000L

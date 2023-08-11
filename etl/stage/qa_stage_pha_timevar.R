@@ -79,8 +79,8 @@ qa_stage_pha_timevar <- function(conn = NULL,
                        ({row_count} vs. {previous_rows})')",
                        .con = conn))
       
-      message(glue::glue("Fewer rows than found last time.  
-                  Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
+      message(glue::glue("\U00026A0 Fewer rows than found last time.  
+                  Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
     } else {
       row_qa_fail <- 0
       DBI::dbExecute(
@@ -95,6 +95,8 @@ qa_stage_pha_timevar <- function(conn = NULL,
                    'There were {row_diff} more rows in the most recent table 
                        ({row_count} vs. {previous_rows})')",
                        .con = conn))
+      message(glue::glue("\U0001f642 The new number of rows is the same or greater than the number loaded last time.  
+                  Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
     }
   }
   
@@ -125,7 +127,7 @@ qa_stage_pha_timevar <- function(conn = NULL,
                         (latter should be the same or higher)')",
                      .con = conn))
     
-    warning(glue::glue("Number of distinct IDs doesn't match the number of rows. 
+    warning(glue::glue("\U00026A0 Number of distinct IDs doesn't match the number of rows. 
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
   } else {
     id_distinct_qa_fail <- 0
@@ -141,6 +143,8 @@ qa_stage_pha_timevar <- function(conn = NULL,
                        'The number of distinct IDs ({id_count_timevar}) was the same or 
                      less than in the demo table ({id_count_demo})')",
                      .con = conn))
+    message(glue::glue("\U0001f642 The number of distinct IDs ({id_count_timevar}) was the same or 
+                     less than in the demo table ({id_count_demo})"))
   }
   
   
@@ -166,7 +170,7 @@ qa_stage_pha_timevar <- function(conn = NULL,
                        'There were {dup_row_count} distinct rows but {row_count} rows overall (should be the same)')",
                                   .con = conn))
     
-    warning(glue::glue("There appear to be duplicate rows. 
+    warning(glue::glue("\U00026A0 There appear to be duplicate rows. 
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
   } else {
     dup_row_qa_fail <- 0
@@ -181,6 +185,7 @@ qa_stage_pha_timevar <- function(conn = NULL,
                        {Sys.time()}, 
                        'The number of distinct rows matched number total rows ({row_count})')",
                      .con = conn))
+    message(glue::glue("\U0001f642 The number of distinct rows matched number total rows ({row_count})"))
   }
   
   

@@ -29,583 +29,590 @@ load_stage_timevar <- function(conn = NULL,
                                id_schema = "pha",
                                id_table = "final_identities") {
   
-  # BUG CHECK ----
-  # As of 2022-02-04, a bug in data.table is making some of the hh lines not work properly
-  # Turn off optimization
-  # Next time this function is run, check if the bug is fixed
-  warning("See the load_stage_timevar function code for a data.table bug issue that needs checking")
-  options(datatable.optimize = 0L)
-  
-  
   # BRING IN DATA AND COMBINE ----
-  kcha <- dbGetQuery(
-    conn,
-    glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
-      FROM 
-      (SELECT agency, act_type, act_date, pha_source, 
-      id_hash, ssn, lname, fname, relcode, disability, 
-      hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, hh_inc_vary, 
-      hh_id, subsidy_id, cert_id, vouch_num, 
-      port_in, port_out_kcha, portability, cost_pha, 
-      subs_type, major_prog, prog_type, vouch_type,
-      geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-      geo_hash_clean, geo_blank, portfolio, portfolio_type
-        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
-      LEFT JOIN
-      (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
-      ON a.id_hash = b.id_hash
-      LEFT JOIN
-      (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
-      ON b.id_kc_pha = c.id_kc_pha",
-      .con = conn))
+      kcha <- dbGetQuery(
+        conn,
+        glue_sql(
+          "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
+          FROM 
+          (SELECT agency, act_type, act_date, pha_source, 
+          id_hash, ssn, lname, fname, relcode, disability, 
+          hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, hh_inc_vary, 
+          hh_id, subsidy_id, cert_id, vouch_num, 
+          port_in, port_out_kcha, portability, cost_pha, 
+          subs_type, major_prog, prog_type, vouch_type,
+          geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
+          geo_hash_clean, geo_blank, portfolio, portfolio_type
+            FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
+          LEFT JOIN
+          (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+          ON a.id_hash = b.id_hash
+          LEFT JOIN
+          (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
+          ON b.id_kc_pha = c.id_kc_pha",
+          .con = conn))
+      
+      # Once upstream stage files are changed, change the following:
+      # It would be good if I'd recorded which upstream changes and how to change the following,
+      # but I did not
+      sha <- dbGetQuery(
+        conn,
+        glue_sql(
+          "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
+          FROM 
+          (SELECT agency, act_type, act_date, pha_source, 
+          id_hash, ssn, lname, fname, relcode, disability, 
+          hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, 
+          cert_id, incasset_id, 
+          port_in, port_out_sha, portability, cost_pha, 
+          recert_sched,
+          subs_type, major_prog, prog_type, vouch_type,
+          geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
+          geo_hash_clean, geo_blank, portfolio, property_id
+            FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
+          LEFT JOIN
+          (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+          ON a.id_hash = b.id_hash
+          LEFT JOIN
+          (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
+          ON b.id_kc_pha = c.id_kc_pha",
+          .con = conn))
+
+      pha <- setDT(bind_rows(kcha, sha))
   
-  
-  # Once upstream stage files are changed, change the following:
-  # It would be good if I'd recorded which upstream changes and how to change the following,
-  # but I did not
-  sha <- dbGetQuery(
-    conn,
-    glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
-      FROM 
-      (SELECT agency, act_type, act_date, pha_source, 
-      id_hash, ssn, lname, fname, relcode, disability, 
-      hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, 
-      cert_id, incasset_id, 
-      port_in, port_out_sha, portability, cost_pha, 
-      recert_sched,
-      subs_type, major_prog, prog_type, vouch_type,
-      geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-      geo_hash_clean, geo_blank, portfolio, property_id
-        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
-      LEFT JOIN
-      (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
-      ON a.id_hash = b.id_hash
-      LEFT JOIN
-      (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
-      ON b.id_kc_pha = c.id_kc_pha",
-      .con = conn))
-  
-  
-  pha <- setDT(bind_rows(kcha, sha))
-  
-  # Remove the rows with missing id_kc_pha since we won't be able to join on this
-  pha <- pha[!is.na(id_kc_pha)]
-  # Remove Sedro-Woolley HA
-  pha <- pha[agency != "SWHA"]
-  
+  # BASIC CRITICAL CLEANING ----
+    # Remove the rows with missing id_kc_pha since we won't be able to join on this
+    pha <- pha[!is.na(id_kc_pha)]
+      
+    # Remove Sedro-Woolley HA (no idea how Skagit County HA data got into KC data)
+    pha <- pha[agency != "SWHA"]
   
   # KEY VARIABLES ----
-  ## Household ID ----
-  # Make a temp hh_id that can be used to find the following:
-  # 1) Multiple rows per ID/date/etc but one is missing an address
-  # 2) There are two heads of households listed so multiple rows
-  pha[, hh_id_tmp := .GRP, by = c("agency", "act_date", "act_type", "hh_id", "subsidy_id", 
-                                  "cert_id", "vouch_num", "incasset_id")]
-  # Also flag when there is >1 row per ID/HH_ID combo
-  pha[, hh_id_cnt := .N, by = c("id_kc_pha", "hh_id_tmp")]
+    ## Household ID ----
+      # Make a temp hh_id that can be used to find the following:
+      # 1) Multiple rows per ID/date/etc but one is missing an address
+      # 2) There are two heads of households listed so multiple rows
+      pha[, hh_id_tmp := .GRP, by = c("agency", "act_date", "act_type", "hh_id", "subsidy_id", 
+                                      "cert_id", "vouch_num", "incasset_id")]
+        
+      # Also flag when there is >1 row per ID/HH_ID combo
+      pha[, hh_id_cnt := .N, by = c("id_kc_pha", "hh_id_tmp")]
   
 
-  ## Subsidy type ----
-  # Make program type upper case (in case it isn't)
-  pha[, prog_type := toupper(prog_type)]
-  
-  # Hard vs. TBS8 units (subsidy type)
-  pha[, subsidy_type := case_when(
-    str_detect(prog_type, "TBS8|PORT|TENANT BASED") ~ "TENANT BASED/SOFT UNIT",
-    prog_type %in% c("PH", "SHA OWNED AND MANAGED", "SHA OWNED/MANAGED", "PBS8") ~ "HARD UNIT",
-    prog_type == "COLLABORATIVE HOUSING" & (subs_type != "HCV" | is.na(subs_type)) ~ "HARD UNIT",
-    prog_type == "COLLABORATIVE HOUSING" & subs_type == "HCV" ~ "TENANT BASED/SOFT UNIT",
-    is.na(prog_type) & subs_type == "HCV" ~ "TENANT BASED/SOFT UNIT",
-    TRUE ~ NA_character_)]
-  
-  # Check output
-  pha %>% count(agency, prog_type, subs_type, subsidy_type)
-  
-  
-  ## Portfolio ----
-  # Finalize portfolios
-  pha[, portfolio_final := case_when(
-    agency == "SHA" ~ toupper(portfolio),
-    agency == "KCHA" & !is.na(portfolio_type) & portfolio_type != "" ~ portfolio_type,
-    TRUE ~ NA_character_
-  )]
-  
-  # Check output
-  pha %>% count(agency, subsidy_type, portfolio_type, portfolio_final)
+    ## Subsidy type ----
+      # Make program type upper case (in case it isn't)
+      pha[, prog_type := toupper(prog_type)]
+      
+      # Hard vs. TBS8 units (subsidy type)
+      pha[, subsidy_type := case_when(
+        str_detect(prog_type, "TBS8|PORT|TENANT BASED") ~ "TENANT BASED/SOFT UNIT",
+        prog_type %in% c("PH", "SHA OWNED AND MANAGED", "SHA OWNED/MANAGED", "PBS8") ~ "HARD UNIT",
+        prog_type == "COLLABORATIVE HOUSING" & (subs_type != "HCV" | is.na(subs_type)) ~ "HARD UNIT",
+        prog_type == "COLLABORATIVE HOUSING" & subs_type == "HCV" ~ "TENANT BASED/SOFT UNIT",
+        is.na(prog_type) & subs_type == "HCV" ~ "TENANT BASED/SOFT UNIT",
+        TRUE ~ NA_character_)]
+      
+      # Check output
+      pha %>% count(agency, prog_type, subs_type, subsidy_type)
   
   
-  ## Operator type ----
-  pha[, operator_type := case_when(
-    prog_type %in% c("PH", "SHA OWNED AND MANAGED") ~ "PHA OPERATED",
-    toupper(vouch_type) == "SHA OWNED PROJECT-BASED" & !is.na(vouch_type) ~ "PHA OPERATED",
-    !is.na(portfolio_final) & str_detect(portfolio_final, "COLLABORATIVE") == F ~ "PHA OPERATED",
-    prog_type %in% c("PBS8") & is.na(portfolio_final) ~ "NON-PHA OPERATED",
-    subsidy_type == "HARD UNIT" & agency == "SHA" & prog_type == "COLLABORATIVE HOUSING" & 
-      (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type)) ~ "NON-PHA OPERATED",
-    TRUE ~ NA_character_)]
+    ## Portfolio ----
+      # Finalize portfolios
+      pha[, portfolio_final := case_when(
+        agency == "SHA" ~ toupper(portfolio),
+        agency == "KCHA" & !is.na(portfolio_type) & portfolio_type != "" ~ portfolio_type,
+        TRUE ~ NA_character_
+      )]
+      
+      # Check output
+      pha %>% count(agency, subsidy_type, portfolio_type, portfolio_final)
   
-  # Check output
-  pha %>% count(agency, subsidy_type, operator_type)
-  
-  
-  ## Voucher type ----
-  pha[, vouch_type := toupper(vouch_type)]
-  pha[, vouch_type_final := case_when(
-    # Special types (some in hard units also)
-    vouch_type == "AGENCY VOUCHER" ~ "AGENCY TENANT-BASED VOUCHER",
-    vouch_type == "FUP" ~ "FUP",
-    vouch_type == "HASP" ~ "HASP",
-    vouch_type == "MOD REHAB" ~ "MOD REHAB",
-    vouch_type == "VASH" ~ "VASH",
-    vouch_type %in% c("DOMESTIC VIOLENCE", "TERMINALLY ILL", "OTHER - DV/TI") ~ "OTHER (TI/DV)",
-    # Other soft units
-    subsidy_type == "TENANT BASED/SOFT UNIT" & 
-      vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                        "PH REDEVELOPMENT", 
-                        "PROJECT-BASED - LOCAL",
-                        "PROJECT-BASED - REPLACEMENT HOUSING",
-                        "SOUND FAMILIES", 
-                        "SUPPORTIVE HOUSING",
-                        "TENANT BASED VOUCHER") ~ "GENERAL TENANT-BASED VOUCHER",
-    subsidy_type == "TENANT BASED/SOFT UNIT" & 
-      is.na(vouch_type) ~ "GENERAL TENANT-BASED VOUCHER",
-    # Partner vouchers
-    subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" &
-      vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                        "PH REDEVELOPMENT", 
-                        "PROJECT-BASED - LOCAL",
-                        "PROJECT-BASED - REPLACEMENT HOUSING",
-                        "SOUND FAMILIES", 
-                        "SUPPORTIVE HOUSING",
-                        "TENANT BASED VOUCHER") ~ "PARTNER PROJECT-BASED VOUCHER",
-    subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" & 
-      is.na(vouch_type) ~ "PARTNER PROJECT-BASED VOUCHER",
-    # PHA operated vouchers
-    subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" &
-      vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
-                        "PH REDEVELOPMENT", 
-                        "PROJECT-BASED - LOCAL",
-                        "PROJECT-BASED - REPLACEMENT HOUSING",
-                        "SOUND FAMILIES", 
-                        "SUPPORTIVE HOUSING",
-                        "TENANT BASED VOUCHER") ~ "PHA OPERATED VOUCHER",
-    subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" & 
-      is.na(vouch_type) ~ NA_character_,
-    # The rest
-    TRUE ~ NA_character_
-  )]
-  
-  # Check output
-  pha %>% count(agency, subsidy_type, vouch_type, vouch_type_final)
+
+    ## Operator type ----
+      pha[, operator_type := case_when(
+        prog_type %in% c("PH", "SHA OWNED AND MANAGED") ~ "PHA OPERATED",
+        toupper(vouch_type) == "SHA OWNED PROJECT-BASED" & !is.na(vouch_type) ~ "PHA OPERATED",
+        !is.na(portfolio_final) & str_detect(portfolio_final, "COLLABORATIVE") == F ~ "PHA OPERATED",
+        prog_type %in% c("PBS8") & is.na(portfolio_final) ~ "NON-PHA OPERATED",
+        subsidy_type == "HARD UNIT" & agency == "SHA" & prog_type == "COLLABORATIVE HOUSING" & 
+          (vouch_type != "SHA OWNED PROJECT-BASED" | is.na(vouch_type)) ~ "NON-PHA OPERATED",
+        TRUE ~ NA_character_)]
+      
+      # Check output
+      pha %>% count(agency, subsidy_type, operator_type)
   
   
-  ## Age ----
-  # Use this to determine time between recertifications
-  pha[, age := round(interval(start = dob, end = act_date) / years(1), 1)]
+    ## Voucher type ----
+      pha[, vouch_type := toupper(vouch_type)]
+      pha[, vouch_type_final := case_when(
+        # Special types (some in hard units also)
+        vouch_type == "AGENCY VOUCHER" ~ "AGENCY TENANT-BASED VOUCHER",
+        vouch_type == "FUP" ~ "FUP",
+        vouch_type == "HASP" ~ "HASP",
+        vouch_type == "MOD REHAB" ~ "MOD REHAB",
+        vouch_type == "VASH" ~ "VASH",
+        vouch_type %in% c("DOMESTIC VIOLENCE", "TERMINALLY ILL", "OTHER - DV/TI") ~ "OTHER (TI/DV)",
+        # Other soft units
+        subsidy_type == "TENANT BASED/SOFT UNIT" & 
+          vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                            "PH REDEVELOPMENT", 
+                            "PROJECT-BASED - LOCAL",
+                            "PROJECT-BASED - REPLACEMENT HOUSING",
+                            "SOUND FAMILIES", 
+                            "SUPPORTIVE HOUSING",
+                            "TENANT BASED VOUCHER") ~ "GENERAL TENANT-BASED VOUCHER",
+        subsidy_type == "TENANT BASED/SOFT UNIT" & 
+          is.na(vouch_type) ~ "GENERAL TENANT-BASED VOUCHER",
+        # Partner vouchers
+        subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" &
+          vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                            "PH REDEVELOPMENT", 
+                            "PROJECT-BASED - LOCAL",
+                            "PROJECT-BASED - REPLACEMENT HOUSING",
+                            "SOUND FAMILIES", 
+                            "SUPPORTIVE HOUSING",
+                            "TENANT BASED VOUCHER") ~ "PARTNER PROJECT-BASED VOUCHER",
+        subsidy_type == "HARD UNIT" & operator_type == "NON-PHA OPERATED" & 
+          is.na(vouch_type) ~ "PARTNER PROJECT-BASED VOUCHER",
+        # PHA operated vouchers
+        subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" &
+          vouch_type %in% c("PERMANENT SUPPORTIVE HOUSING",
+                            "PH REDEVELOPMENT", 
+                            "PROJECT-BASED - LOCAL",
+                            "PROJECT-BASED - REPLACEMENT HOUSING",
+                            "SOUND FAMILIES", 
+                            "SUPPORTIVE HOUSING",
+                            "TENANT BASED VOUCHER") ~ "PHA OPERATED VOUCHER",
+        subsidy_type == "HARD UNIT" & operator_type == "PHA OPERATED" & 
+          is.na(vouch_type) ~ NA_character_,
+        # The rest
+        TRUE ~ NA_character_
+      )]
   
-  # See how many extreme/wrong ages there are and decide if more investigate is needed
-  pha %>% filter(is.na(age)) %>% summarise(cnt = n())
-  pha %>% filter(age < -1) %>% summarise(cnt = n())
-  pha %>% filter(age > 110) %>% summarise(cnt = n())
+      # Check output
+      pha %>% count(agency, subsidy_type, vouch_type, vouch_type_final)
   
-  # Set up age-related variables
-  pha[, ':=' (adult = ifelse(age >= 18, 1, 0),
-              senior = ifelse(age >= 62, 1, 0))]
+    ## prog_type ----
+      pha[grepl('PBS8|COLLABORATIVE HOUSING', prog_type, ignore.case = T), prog_type := 'PBV']
+      pha[grepl('PH|SHA OWNED AND MANAGED', prog_type, ignore.case = T), prog_type := 'PH']
+      pha[grepl('PORT|TBS8|TENANT BASED', prog_type, ignore.case = T), prog_type := 'TBV']
+      if( length(setdiff(unique(pha$prog_type), c('PH', 'PBV', 'TBV', NA))) > 0){
+        stop(paste0("\n\U0001f47f The `prog_type` variable has the following values that need to recoded: "), setdiff(unique(pha$prog_type), c('PH', 'PBV', 'TBV', NA)))
+      }
+      
+      pha[is.na(prog_type) & major_prog == 'PH', prog_type := 'PH']
+      pha[is.na(prog_type) & major_prog == 'HCV' & 
+            grepl('Partner Project-Based Voucher|PHA OPERATED VOUCHER', vouch_type, ignore.case = T), 
+          prog_type := 'PBV']
+      pha[is.na(prog_type) & major_prog == 'HCV' & 
+            grepl('GENERAL TENANT-BASED VOUCHER', vouch_type, ignore.case = T), 
+          prog_type := 'TBV']
+      
+      if(length(setdiff(unique(pha[is.na(prog_type)]$vouch_type), NA)) > 0){
+        warning('\U00026A0 There are rows where there is a missing prog_type but vouch_type is not missing. Check with PHAs if can use this information to identify the missing prog_type.')
+      }
+      
+      
+    ## Age ----
+      # Use this to determine time between recertifications
+      pha[, age := rads::calc_age(from = dob, to = act_date)]
+      
+      # See how many extreme/wrong ages there are and decide if more investigation is needed
+      pha %>% filter(is.na(age)) %>% summarise(cnt = n())
+      pha %>% filter(age < -1) %>% summarise(cnt = n())
+      pha %>% filter(age > 110) %>% summarise(cnt = n())
+      
+      # Set up age-related variables
+      pha[, ':=' (adult = ifelse(age >= 18, 1, 0),
+                  senior = ifelse(age >= 62, 1, 0))]
+      
+      pha %>% count(adult, senior)
+      
   
-  pha %>% count(adult, senior)
-  
-  
-  ## Concatenated agency field ----
-  pha[, agency_prog_concat := paste(agency, subsidy_type, operator_type, 
-                                    vouch_type_final, portfolio_final, 
-                                    sep = ", ")]
+    ## Concatenated agency field ----
+      pha[, agency_prog_concat := paste(agency, subsidy_type, operator_type, 
+                                        vouch_type_final, portfolio_final, 
+                                        sep = ", ")]
   
   
   # HEAD OF HOUSEHOLD ----
-  ## Make a new HH ID to track households over time ----
-  hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname", "dob",
-                "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "relcode", "hh_id_tmp")]
-  hh <- unique(hh)
-  
-  # Attach id_kc_pha to each HH to make tracking easier
-  hh_id <- hh[, c("id_kc_pha", "act_date", "ssn", "lname", "fname", "dob", "hh_ssn", "hh_lname", "hh_fname")]
-  hh_id <- unique(hh_id)
-  
-  hh_id[, hh_id_kc_pha := case_when(
-    hh_ssn == ssn & !is.na(ssn) & (hh_lname == lname | hh_fname == fname) ~ id_kc_pha,
-    hh_lname == lname & hh_fname == fname & (is.na(hh_ssn) | is.na(ssn)) ~ id_kc_pha,
-    hh_ssn != ssn & !is.na(ssn) ~ NA_character_
-  )]
-  hh_id <- hh_id[!is.na(hh_id_kc_pha), c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname", "hh_id_kc_pha")]
-  hh_id <- unique(hh_id)
-  
-  # Join back to HH data
-  hh <- merge(hh, hh_id, by = c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
-  
-  hh[, hh_flag := case_when(
-    mbr_num == 1 | relcode == "H" ~ 1L,
-    mbr_num > 1 | relcode != "H" ~ 0L,
-    hh_ssn == ssn & !is.na(ssn) ~ 1L,
-    hh_lname == lname & hh_fname == fname ~ 1L,
-    TRUE ~ 0L)]
-  
-  # Check how many households don't have a HH or have multiple HHs
-  # Also count how many rows have any ID on it (used for tiebreakers later)
-  hh[, has_hh := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
-  hh[, hh_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = "hh_id_tmp"]
-  hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
-  hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
-  
-  
-  # Count by people
-  hh %>% count(agency, has_hh) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  hh %>% count(agency, has_hh, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  hh %>% count(agency, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  
-  # Count by household
-  hh %>% distinct(agency, hh_id_tmp, has_hh) %>% count(agency, has_hh) %>% 
-    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  hh %>% distinct(agency, hh_id_tmp, has_hh, hh_id_cnt) %>% count(agency, has_hh, hh_id_cnt) %>% 
-    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  hh %>% distinct(agency, hh_id_tmp, hh_id_cnt) %>% count(agency, hh_id_cnt) %>% 
-    group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
-  
-  # For households with no hh_id_kc_pha, add some possibilities
-  hh[hh_id_cnt == 0 & has_hh != 1, hh_id_poss := case_when(
-    RecordLinkage::jarowinkler(hh_ssn, ssn) > 0.9 ~ 1L,
-    (ssn == hh_ssn | (is.na(hh_ssn) | is.na(ssn))) & fname == hh_fname ~ 1L,
-    hh_lname == lname & hh_fname == fname & (!is.na(hh_ssn) | !is.na(ssn)) ~ 1L,
-    TRUE ~ 0L
-  )]
-  
-  hh[, hh_id_poss_cnt := sum(hh_id_poss, na.rm = T), by = "hh_id_tmp"]
-  hh %>% count(hh_id_poss_cnt)
+    ## Make a new HH ID to track households over time ----
+      hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname", "dob",
+                    "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "relcode", "hh_id_tmp")]
+      hh <- unique(hh)
+      
+      # Attach id_kc_pha to each HH to make tracking easier
+      hh_id <- hh[, c("id_kc_pha", "act_date", "ssn", "lname", "fname", "dob", "hh_ssn", "hh_lname", "hh_fname")]
+      hh_id <- unique(hh_id)
+      
+      hh_id[, hh_id_kc_pha := case_when(
+        hh_ssn == ssn & !is.na(ssn) & (hh_lname == lname | hh_fname == fname) ~ id_kc_pha,
+        hh_lname == lname & hh_fname == fname & (is.na(hh_ssn) | is.na(ssn)) ~ id_kc_pha,
+        hh_ssn != ssn & !is.na(ssn) ~ NA_character_
+      )]
+      hh_id <- hh_id[!is.na(hh_id_kc_pha), c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname", "hh_id_kc_pha")]
+      hh_id <- unique(hh_id)
+      
+      # Join back to HH data
+      hh <- merge(hh, hh_id, by = c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
+      
+      hh[, hh_flag := case_when(
+        mbr_num == 1 | relcode == "H" ~ 1L,
+        mbr_num > 1 | relcode != "H" ~ 0L,
+        hh_ssn == ssn & !is.na(ssn) ~ 1L,
+        hh_lname == lname & hh_fname == fname ~ 1L,
+        TRUE ~ 0L)]
+      
+      # Check how many households don't have a HH or have multiple HHs
+      # Also count how many rows have any ID on it (used for tiebreakers later)
+      hh[, has_hh := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+      hh[, hh_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = "hh_id_tmp"]
+      hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
+      hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
+      
+      # Count by people
+      hh %>% count(agency, has_hh) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      hh %>% count(agency, has_hh, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      hh %>% count(agency, hh_id_cnt) %>% group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      
+      # Count by household
+      hh %>% distinct(agency, hh_id_tmp, has_hh) %>% count(agency, has_hh) %>% 
+        group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      hh %>% distinct(agency, hh_id_tmp, has_hh, hh_id_cnt) %>% count(agency, has_hh, hh_id_cnt) %>% 
+        group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      hh %>% distinct(agency, hh_id_tmp, hh_id_cnt) %>% count(agency, hh_id_cnt) %>% 
+        group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
+      
+      # For households with no hh_id_kc_pha, add some possibilities
+      hh[hh_id_cnt == 0 & has_hh != 1, hh_id_poss := case_when( RecordLinkage::jarowinkler(hh_ssn, ssn) > 0.9 ~ 1L,
+                                                                (ssn == hh_ssn | (is.na(hh_ssn) | is.na(ssn))) & fname == hh_fname ~ 1L,
+                                                                hh_lname == lname & hh_fname == fname & (!is.na(hh_ssn) | !is.na(ssn)) ~ 1L,
+                                                                TRUE ~ 0L
+      )]
+      
+      hh[, hh_id_poss_cnt := sum(hh_id_poss, na.rm = T), by = "hh_id_tmp"]
+      hh %>% count(hh_id_poss_cnt)
   
   
-  ## Assign head of household as needed ----
-  ## Use the following to allocate HH for a given act_date/hh combo when 2+ candidates
-  # 1) If 2+ hh_flags but only one row with a hh_id_value, take the one with a hh_id_pha_value 
-  # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1/relcode == "H"
-  # 3) If no mbr_num/relcode or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
-  # 4) If no DOB for #3, take the row with a hh_ssn value (regardless of mbr_num)
-  # 5) If still undecided, randomly assign one of the people with a hh_id_kc_pha value
-  # 6) If 2+ hh_id_kc_pha values, take mbr_num = 1
-  # 7) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
-  # 8) If no DOB for #7, randomly assign one of the people with a hh_id_kc_pha value
-  # 9) If no hh_id_kc_pha values and 2+ with mbr_num = 1, take the oldest person with mbr_num = 1
-  # 10) If no DOB for #9, randomly take one of the mbr_num = 1 people
-  # 11) If no hh_id_kc_pha and no mbr_num, take the possible hh_id person
-  # 12) If multiple possible hh_id people, take the eldest
-  # 13) If no DOBs for #12, take a random hh_id contender
-  # 14) If no possible hh_id contenders, take the oldest person in the house
-  # 15) If no DOB for #14 or oldest is a tie, randomly take one person in the house
-  hh_decider <- hh[has_hh != 1]
-  hh_decider[mbr_num == 1 | relcode == "H", mbr1_cnt := .N, by = c("hh_id_tmp")]
-  hh_decider[mbr_num == 1 | relcode == "H", mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
-  hh_decider[!is.na(hh_id_kc_pha), has_ssn_id := !is.na(hh_ssn)]
-  hh_decider[!is.na(hh_id_kc_pha), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), 
-             oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[(mbr_num == 1 | relcode == "H"), oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[hh_id_poss == 1, oldest_hh_poss := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  hh_decider[, oldest_any := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-  # Apply key numbers to whole household
-  hh_decider[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, mbr1_cnt := max(mbr1_cnt, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, mbr1_id_cnt := max(mbr1_id_cnt, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, mbr1_id_row_cnt := max(mbr1_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, has_ssn_id_cnt := sum(has_ssn_id, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, oldest_hh_id_cnt := sum(oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, oldest_hh_id_mbr1_cnt := sum(oldest_hh_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, oldest_mbr1_cnt := sum(oldest_mbr1, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, oldest_hh_poss_cnt := sum(oldest_hh_poss, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, oldest_any_cnt := sum(oldest_any, na.rm = T), by = c("hh_id_tmp")]
-  # Set up random numbers for each scenario
-  set.seed(98104)
-  hh_decider[!is.na(hh_id_kc_pha), decider_id := runif(.N, 0, 1)]
-  hh_decider[!is.na(hh_id_kc_pha) & (mbr_num == 1 | relcode == "H"), decider_id_mbr1 := runif(.N, 0, 1)]
-  hh_decider[mbr_num == 1 | relcode == "H", decider_mbr1 := runif(.N, 0, 1)]
-  hh_decider[hh_id_poss == 1, decider_hh_poss := runif(.N, 0, 1)]
-  hh_decider[oldest_hh_id == T, decider_oldest_hh_id := runif(.N, 0, 1)]
-  hh_decider[oldest_any == T, decider_oldest := runif(.N, 0, 1)]
-  hh_decider[, decider_any := runif(.N, 0, 1)]
-  # Apply max random numbers to whole household
-  hh_decider[, decider_id_max := max(decider_id, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_id_mbr1_max := max(decider_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_mbr1_max := max(decider_mbr1, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_hh_poss_max := max(decider_hh_poss, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_oldest_hh_id_max := max(decider_oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_oldest_max := max(decider_oldest, na.rm = T), by = c("hh_id_tmp")]
-  hh_decider[, decider_any_max := max(decider_any, na.rm = T), by = c("hh_id_tmp")]
+    ## Assign head of household as needed ----
+      ### Use the following to allocate HH for a given act_date/hh combo when 2+ candidates ----
+      # 1) If 2+ hh_flags but only one row with a hh_id_value, take the one with a hh_id_pha_value 
+      # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1/relcode == "H"
+      # 3) If no mbr_num/relcode or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+      # 4) If no DOB for #3, take the row with a hh_ssn value (regardless of mbr_num)
+      # 5) If still undecided, randomly assign one of the people with a hh_id_kc_pha value
+      # 6) If 2+ hh_id_kc_pha values, take mbr_num = 1
+      # 7) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+      # 8) If no DOB for #7, randomly assign one of the people with a hh_id_kc_pha value
+      # 9) If no hh_id_kc_pha values and 2+ with mbr_num = 1, take the oldest person with mbr_num = 1
+      # 10) If no DOB for #9, randomly take one of the mbr_num = 1 people
+      # 11) If no hh_id_kc_pha and no mbr_num, take the possible hh_id person
+      # 12) If multiple possible hh_id people, take the eldest
+      # 13) If no DOBs for #12, take a random hh_id contender
+      # 14) If no possible hh_id contenders, take the oldest person in the house
+      # 15) If no DOB for #14 or oldest is a tie, randomly take one person in the house
+      hh_decider <- hh[has_hh != 1]
+      hh_decider[mbr_num == 1 | relcode == "H", mbr1_cnt := .N, by = c("hh_id_tmp")]
+      hh_decider[mbr_num == 1 | relcode == "H", mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
+      hh_decider[!is.na(hh_id_kc_pha), has_ssn_id := !is.na(hh_ssn)]
+      hh_decider[!is.na(hh_id_kc_pha), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), 
+                 oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      hh_decider[(mbr_num == 1 | relcode == "H"), oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      hh_decider[hh_id_poss == 1, oldest_hh_poss := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      hh_decider[, oldest_any := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      # Apply key numbers to whole household
+      hh_decider[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, mbr1_cnt := max(mbr1_cnt, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, mbr1_id_cnt := max(mbr1_id_cnt, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, mbr1_id_row_cnt := max(mbr1_id_row_cnt, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, has_ssn_id_cnt := sum(has_ssn_id, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, oldest_hh_id_cnt := sum(oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, oldest_hh_id_mbr1_cnt := sum(oldest_hh_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, oldest_mbr1_cnt := sum(oldest_mbr1, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, oldest_hh_poss_cnt := sum(oldest_hh_poss, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, oldest_any_cnt := sum(oldest_any, na.rm = T), by = c("hh_id_tmp")]
+      # Set up random numbers for each scenario
+      set.seed(98104)
+      hh_decider[!is.na(hh_id_kc_pha), decider_id := runif(.N, 0, 1)]
+      hh_decider[!is.na(hh_id_kc_pha) & (mbr_num == 1 | relcode == "H"), decider_id_mbr1 := runif(.N, 0, 1)]
+      hh_decider[mbr_num == 1 | relcode == "H", decider_mbr1 := runif(.N, 0, 1)]
+      hh_decider[hh_id_poss == 1, decider_hh_poss := runif(.N, 0, 1)]
+      hh_decider[oldest_hh_id == T, decider_oldest_hh_id := runif(.N, 0, 1)]
+      hh_decider[oldest_any == T, decider_oldest := runif(.N, 0, 1)]
+      hh_decider[, decider_any := runif(.N, 0, 1)]
+      # Apply max random numbers to whole household
+      hh_decider[, decider_id_max := max(decider_id, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_id_mbr1_max := max(decider_id_mbr1, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_mbr1_max := max(decider_mbr1, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_hh_poss_max := max(decider_hh_poss, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_oldest_hh_id_max := max(decider_oldest_hh_id, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_oldest_max := max(decider_oldest, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[, decider_any_max := max(decider_any, na.rm = T), by = c("hh_id_tmp")]
+      
+      
+      ### Reset hh_flag ----
+      hh_decider[, hh_flag := NA_integer_]
+      
+      ### One hh_id_kc_pha value with multiple rows ----
+      hh_decider[, hh_flag := case_when(
+        # One row with an ID
+        hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_id_kc_pha) ~ 1L,
+        hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_id_kc_pha) ~ 0L,
+        # One row with mbr_num/relcode = 1
+        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
+        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+          (relcode != "H" | is.na(relcode)) ~ 0L,
+        # 2+ rows with mbr_num/relcode = 1 (take oldest person, most likely actually non-missing DOB)
+        hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
+        hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
+        hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+          (relcode != "H" | is.na(relcode)) ~ 0L,
+        # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, take SSN (regardless of mbr_num)
+        hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == T & has_ssn_id_cnt == 1 ~ 1L,
+        hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == F & has_ssn_id_cnt == 1 ~ 0L,
+        # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, and no SSN
+        hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
+          has_ssn_id_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
+        hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
+          has_ssn_id_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
+        # No member numbers/relcodes, but DOBs
+        hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
+        hh_id_cnt == 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
+        # No member numbers/relcodes, and tied DOB
+        hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
+          decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
+        hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
+          decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
+        # No member numbers/relcodes and no DOBs
+        hh_id_cnt == 1 & decider_id == decider_id_max ~ 1L,
+        hh_id_cnt == 1 & decider_id != decider_id_max ~ 0L,
+        hh_id_cnt == 1 & is.na(decider_id) ~ 0L,
+        TRUE ~ hh_flag)]
+      
+      
+      ### Multiple hh_id_kc_pha values ----
+      hh_decider[, hh_flag := case_when(
+        # One hh_id_kc_pha with mbr_num = 1
+        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
+        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+          (relcode != "H" | is.na(relcode)) ~ 0L,
+        # 2+ hh_id_kc_pha with mbr_num = 1 (take oldest person)
+        hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
+        hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
+        hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
+          (relcode != "H" | is.na(relcode)) ~ 0L,
+        # 2+ hh_id_kc_pha with mbr_num = 1 and no DOB or tied DOB
+        hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
+        hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
+        # No member numbers, but DOBs
+        hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
+        hh_id_cnt > 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
+        # No member numbers, and tied DOB
+        hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
+          decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
+        hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
+          decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
+        # No member numbers and no DOBs
+        hh_id_cnt > 1 & decider_id == decider_id_max ~ 1L,
+        hh_id_cnt > 1 & decider_id != decider_id_max ~ 0L,
+        hh_id_cnt > 1 & is.na(decider_id) ~ 0L,
+        TRUE ~ hh_flag)]
+      
+      
+      ### No hh_id_kc_pha values ----
+      hh_decider[, hh_flag := case_when(
+        # 1+ mbr_num = 1 and DOBs
+        hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
+        hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          (oldest_mbr1 == F | (is.na(oldest_mbr1) & oldest_mbr1_cnt == 1)) ~ 0L,
+        # 1+ mbr_num = 1 and no DOB or tied DOB
+        hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_mbr1_cnt != 1 & decider_mbr1 == decider_mbr1_max ~ 1L,
+        hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
+          oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
+        hh_id_cnt == 0 & mbr1_cnt >= 1 & (mbr_num != 1 | is.na(mbr_num)) & (relcode != "H" | is.na(relcode)) ~ 0L,
+        # No member numbers, one possible hh_id_kc_pha contenders
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt == 1 ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 0 & hh_id_poss_cnt == 1 ~ 0L,
+        # No member numbers, 2+ possible hh_id_kc_pha contenders and DOBs
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & 
+          oldest_hh_poss_cnt == 1 & oldest_hh_poss == T ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt > 1 & 
+          (oldest_hh_poss == F | (is.na(oldest_hh_poss) & oldest_hh_poss_cnt == 1)) ~ 0L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt >= 1 & hh_id_poss == 0 ~ 0L,
+        # No member numbers, 2+ possible hh_id_kc_pha contenders and no DOB or tied DOB
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
+          decider_hh_poss == decider_hh_poss_max ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
+          decider_hh_poss != decider_hh_poss_max ~ 0L,
+        # No member numbers or possible hh_id_kc_pha contenders, but DOBs
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any == T & oldest_any_cnt == 1 ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & 
+          (oldest_any == F | (is.na(oldest_any) & oldest_any_cnt == 1)) ~ 0L,
+        # No member numbers or possible hh_id_kc_pha contenders, and tied DOB
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
+          decider_oldest == decider_oldest_max ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
+          decider_oldest != decider_oldest_max ~ 0L,
+        # No member numbers or possible hh_id_kc_pha contenders, and no DOBs
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 & 
+          decider_any == decider_any_max ~ 1L,
+        hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 &  
+          decider_any != decider_any_max ~ 0L,
+        TRUE ~ hh_flag)]
+      
+      hh_decider %>% count(hh_flag)
+      
+      # Make sure each hh_id_tmp has at least 1 hh_flag
+      if (nrow(hh_decider[is.na(hh_flag)]) > 0) {
+        stop("Check head of household decider code to see why some people were not classified")
+      }
+      
+      # Transfer name and SSN details over to HH fields
+      hh_decider[hh_flag == 1, `:=` (hh_id_kc_pha = id_kc_pha,
+                                     hh_ssn = ssn,
+                                     hh_lname = lname,
+                                     hh_fname = fname)]
+      
+      unique_hh_ids <- length(unique(hh_decider$hh_id_tmp))
+      
+      hh_decider <- hh_decider[hh_flag == 1, .(agency, act_date, hh_id_tmp,
+                                               hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+      hh_decider <- unique(hh_decider)
+      
+      # Check all households are still present
+      if (length(unique(hh_decider$hh_id_tmp)) != unique_hh_ids) {
+        stop("Some hh_id_tmp values disappeared from hh_decider. Check why.")
+      }
+      if (nrow(hh_decider) != unique_hh_ids) {
+        stop ("The number of rows in hh_decider doesn't match the number of hh_id_values. Check why.")
+      }
+      rm(unique_hh_ids)
+      
+      
+    ## Set up data without head of household details ----
+      hh_final <- copy(hh)
+      hh_final[, c('hh_id_kc_pha', 'hh_ssn', 'hh_lname', 'hh_fname') := NULL]
+      hh_final <- unique(hh_final)
   
+    ## Join HH decider back to main DF ----
+      # Pull out all the head of households that didn't need to be decided
+      hh_no_decider <- hh[hh_flag == 1 & has_hh == 1, 
+                          .(agency, act_date, hh_id_tmp, hh_id_kc_pha = id_kc_pha, hh_ssn = ssn, hh_lname = lname, hh_fname = fname, hh_flag)]
+
+      
+      hh_final <- merge(hh_final, 
+                        bind_rows(hh_decider, hh_no_decider), 
+                        by = c("agency", "act_date", "hh_id_tmp"),
+                        all.x = T)
+      
+      
+      hh_final[, `:=` (
+        hh_flag = case_when(has_hh == 1 ~ hh_flag.x,
+                            hh_id_kc_pha == id_kc_pha & 
+                              (hh_ssn == ssn | (is.na(hh_ssn) & is.na(ssn))) & 
+                              (hh_lname == lname | (is.na(hh_lname) & is.na(lname))) & 
+                              (hh_fname == fname | (is.na(hh_fname) & is.na(fname))) ~ 1L,
+                            TRUE ~ 0L)
+      )]
   
-  ### Reset hh_flag ----
-  hh_decider[, hh_flag := NA_integer_]
-  
-  ### One hh_id_kc_pha value with multiple rows ----
-  hh_decider[, hh_flag := case_when(
-    # One row with an ID
-    hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_id_kc_pha) ~ 1L,
-    hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_id_kc_pha) ~ 0L,
-    # One row with mbr_num/relcode = 1
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
-    hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
-      (relcode != "H" | is.na(relcode)) ~ 0L,
-    # 2+ rows with mbr_num/relcode = 1 (take oldest person, most likely actually non-missing DOB)
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
-      (relcode != "H" | is.na(relcode)) ~ 0L,
-    # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, take SSN (regardless of mbr_num)
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == T & has_ssn_id_cnt == 1 ~ 1L,
-    hh_id_cnt == 1 & mbr1_id_row_cnt > 1 & has_ssn_id == F & has_ssn_id_cnt == 1 ~ 0L,
-    # 2+ rows with mbr_num/relcode = 1 and no DOB or tied DOB, and no SSN
-    hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
-      has_ssn_id_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
-    hh_id_cnt == 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_hh_id_mbr1_cnt != 1 & 
-      has_ssn_id_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
-    # No member numbers/relcodes, but DOBs
-    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
-    hh_id_cnt == 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
-    # No member numbers/relcodes, and tied DOB
-    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
-      decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
-    hh_id_cnt == 1 & is.na(mbr1_cnt) & oldest_hh_id_cnt > 1 & 
-      decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
-    # No member numbers/relcodes and no DOBs
-    hh_id_cnt == 1 & decider_id == decider_id_max ~ 1L,
-    hh_id_cnt == 1 & decider_id != decider_id_max ~ 0L,
-    hh_id_cnt == 1 & is.na(decider_id) ~ 0L,
-    TRUE ~ hh_flag)]
-  
-  
-  ### Multiple hh_id_kc_pha values ----
-  hh_decider[, hh_flag := case_when(
-    # One hh_id_kc_pha with mbr_num = 1
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
-    hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
-      (relcode != "H" | is.na(relcode)) ~ 0L,
-    # 2+ hh_id_kc_pha with mbr_num = 1 (take oldest person)
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
-      (relcode != "H" | is.na(relcode)) ~ 0L,
-    # 2+ hh_id_kc_pha with mbr_num = 1 and no DOB or tied DOB
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
-    hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 != decider_id_mbr1_max ~ 0L,
-    # No member numbers, but DOBs
-    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_hh_id == T & oldest_hh_id_cnt == 1 ~ 1L,
-    hh_id_cnt > 1 & is.na(mbr1_cnt) & (oldest_hh_id == F | (is.na(oldest_hh_id) & oldest_hh_id_cnt == 1)) ~ 0L,
-    # No member numbers, and tied DOB
-    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
-      decider_oldest_hh_id == decider_oldest_hh_id_max ~ 1L,
-    hh_id_cnt > 1 & is.na(mbr1_cnt) & oldest_any_cnt > 1 & 
-      decider_oldest_hh_id != decider_oldest_hh_id_max ~ 0L,
-    # No member numbers and no DOBs
-    hh_id_cnt > 1 & decider_id == decider_id_max ~ 1L,
-    hh_id_cnt > 1 & decider_id != decider_id_max ~ 0L,
-    hh_id_cnt > 1 & is.na(decider_id) ~ 0L,
-    TRUE ~ hh_flag)]
-  
-  
-  ### No hh_id_kc_pha values ----
-  hh_decider[, hh_flag := case_when(
-    # 1+ mbr_num = 1 and DOBs
-    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
-    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      (oldest_mbr1 == F | (is.na(oldest_mbr1) & oldest_mbr1_cnt == 1)) ~ 0L,
-    # 1+ mbr_num = 1 and no DOB or tied DOB
-    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_mbr1_cnt != 1 & decider_mbr1 == decider_mbr1_max ~ 1L,
-    hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
-      oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
-    hh_id_cnt == 0 & mbr1_cnt >= 1 & (mbr_num != 1 | is.na(mbr_num)) & (relcode != "H" | is.na(relcode)) ~ 0L,
-    # No member numbers, one possible hh_id_kc_pha contenders
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt == 1 ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 0 & hh_id_poss_cnt == 1 ~ 0L,
-    # No member numbers, 2+ possible hh_id_kc_pha contenders and DOBs
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & 
-      oldest_hh_poss_cnt == 1 & oldest_hh_poss == T ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt > 1 & 
-      (oldest_hh_poss == F | (is.na(oldest_hh_poss) & oldest_hh_poss_cnt == 1)) ~ 0L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt >= 1 & hh_id_poss == 0 ~ 0L,
-    # No member numbers, 2+ possible hh_id_kc_pha contenders and no DOB or tied DOB
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
-      decider_hh_poss == decider_hh_poss_max ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
-      decider_hh_poss != decider_hh_poss_max ~ 0L,
-    # No member numbers or possible hh_id_kc_pha contenders, but DOBs
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any == T & oldest_any_cnt == 1 ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & 
-      (oldest_any == F | (is.na(oldest_any) & oldest_any_cnt == 1)) ~ 0L,
-    # No member numbers or possible hh_id_kc_pha contenders, and tied DOB
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
-      decider_oldest == decider_oldest_max ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
-      decider_oldest != decider_oldest_max ~ 0L,
-    # No member numbers or possible hh_id_kc_pha contenders, and no DOBs
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 & 
-      decider_any == decider_any_max ~ 1L,
-    hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 &  
-      decider_any != decider_any_max ~ 0L,
-    TRUE ~ hh_flag)]
-  
-  hh_decider %>% count(hh_flag)
-  
-  # Make sure each hh_id_tmp has at least 1 hh_flag
-  if (nrow(hh_decider[is.na(hh_flag)]) > 0) {
-    stop("Check head of household decider code to see why some people were not classified")
-  }
-  
-  # Transfer name and SSN details over to HH fields
-  hh_decider[hh_flag == 1, `:=` (hh_id_kc_pha = id_kc_pha,
-                                 hh_ssn = ssn,
-                                 hh_lname = lname,
-                                 hh_fname = fname)]
-  
-  unique_hh_ids <- length(unique(hh_decider$hh_id_tmp))
-  
-  hh_decider <- hh_decider[hh_flag == 1, .(agency, act_date, hh_id_tmp,
-                                           hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
-  hh_decider <- unique(hh_decider)
-  
-  # Check all households are still present
-  if (length(unique(hh_decider$hh_id_tmp)) != unique_hh_ids) {
-    stop("Some hh_id_tmp values disappeared from hh_decider. Check why.")
-  }
-  if (nrow(hh_decider) != unique_hh_ids) {
-    stop ("The number of rows in hh_decider doesn't match the number of hh_id_values. Check why.")
-  }
-  rm(unique_hh_ids)
-  
-  
-  ## Set up data without head of household details ----
-  hh_final <- copy(hh)
-  hh_final[, `:=` (hh_id_kc_pha = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
-  hh_final <- unique(hh_final)
-  
-  
-  ## Join HH decider back to main DF ----
-  # Pull out all the head of households that didn't need to be decided
-  hh_no_decider <- hh[hh_flag == 1 & has_hh == 1, 
-                      .(agency, act_date, hh_id_tmp, id_kc_pha, ssn, lname, fname, hh_flag)]
-  setnames(hh_no_decider, c("id_kc_pha", "ssn", "lname", "fname"), c("hh_id_kc_pha", "hh_ssn", "hh_lname", "hh_fname"))
-  
-  
-  hh_final <- merge(hh_final, 
-                    bind_rows(hh_decider, hh_no_decider), 
-                    by = c("agency", "act_date", "hh_id_tmp"),
-                    all.x = T)
-  
-  
-  hh_final[, `:=` (
-    hh_flag = case_when(has_hh == 1 ~ hh_flag.x,
-                        hh_id_kc_pha == id_kc_pha & 
-                          (hh_ssn == ssn | (is.na(hh_ssn) & is.na(ssn))) & 
-                          (hh_lname == lname | (is.na(hh_lname) & is.na(lname))) & 
-                          (hh_fname == fname | (is.na(hh_fname) & is.na(fname))) ~ 1L,
-                        TRUE ~ 0L)
-  )]
-  
-  ## Check how many households don't have a HH or have multiple HHs ----
-  hh_final[, has_hh2 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
-  hh_final %>% count(agency, has_hh2)
-  
-  # Some households still have multiple HHs because of duplicate HH data
-  # Use initial HH flag and details to weed these out
-  hh_final[has_hh2 > 1 & hh_flag == 1, hh_flag := 
-             case_when(hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 1L,
-                       hh_flag.x == 0 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 0L,
-                       hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha != id_kc_pha ~ 0L,
-                       TRUE ~ hh_flag)]
-  
-  # Check how many households don't have a HH or have multiple HHs
-  hh_final[, has_hh3 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
-  hh_final %>% count(agency, has_hh2, has_hh3)
-  
-  if (max(hh_final$has_hh3) > 1) {
-    stop(" There are still some hh_id_tmp values with multiple HHs")
-  }
-  
-  # Apply hh_flag to any remaining duplicate rows and collapse
-  hh_final[, hh_flag := max(hh_flag), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
-  
-  # Select final columns for merging
-  hh_final <- hh_final[, .(agency, act_date, hh_id_tmp, 
-                           id_kc_pha, ssn, lname, fname, dob, 
-                           hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
-  hh_final <- unique(hh_final)
-  
-  # One last check for duplicate HHs
-  hh_final[, has_hh4 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
-  hh_final %>% count(agency, has_hh4)
-  
-  if (max(hh_final$has_hh4) > 1) {
-    stop(" There are still some hh_id_tmp values with multiple HHs")
-  } else {
-    hh_final[, has_hh4 := NULL]
-  }
-  
-  
+    ## Check how many households don't have a HH or have multiple HHs ----
+      hh_final[, has_hh2 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+      hh_final %>% count(agency, has_hh2)
+      
+      # Some households still have multiple HHs because of duplicate HH data
+      # Use initial HH flag and details to weed these out
+      hh_final[has_hh2 > 1 & hh_flag == 1, hh_flag := 
+                 case_when(hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 1L,
+                           hh_flag.x == 0 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 0L,
+                           hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha != id_kc_pha ~ 0L,
+                           TRUE ~ hh_flag)]
+      
+      # Check how many households don't have a HH or have multiple HHs
+      hh_final[, has_hh3 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+      hh_final %>% count(agency, has_hh2, has_hh3)
+      
+      if (max(hh_final$has_hh3) > 1) {
+        stop("\n\U0001f47f There are still some hh_id_tmp values with multiple HHs")
+      }
+      
+      # Apply hh_flag to any remaining duplicate rows and collapse
+      hh_final[, hh_flag := max(hh_flag), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
+      
+      # Select final columns for merging
+      hh_final <- hh_final[, .(agency, act_date, hh_id_tmp, 
+                               id_kc_pha, ssn, lname, fname, dob, 
+                               hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+      hh_final <- unique(hh_final)
+      
+      # One last check for duplicate HHs
+      hh_final[, has_hh4 := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
+      hh_final %>% count(agency, has_hh4)
+      
+      if (max(hh_final$has_hh4) > 1) {
+        stop("\n\U0001f47f There are still some hh_id_tmp values with multiple HHs")
+      } else {
+        hh_final[, has_hh4 := NULL]
+      }
+      
+      
   # BRING HEAD OF HOUSEHOLD AND MEMBER NUMBER INFO BACK TO MAIN DATA ----
-  # Remove the columns that will be re-added or are no longer relevant
-  pha[, `:=` (mbr_num = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
-  pha <- unique(pha)
+      # Remove the columns that will be re-added or are no longer relevant
+      pha[, `:=` (mbr_num = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
+      pha <- unique(pha)
+      
+      pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha",
+                                         "ssn", "lname", "fname", "dob"),
+                    all.x = T)
+      
+    ## Make a head of household ID to track households across time ----
+      pha[, hh_id_long := .GRP, by = c("hh_ssn", "hh_lname", "hh_fname")]
+      
+      
+      # BEGIN CONSOLIDATION ----
+      # New approach to tracking which rows are dropped
+      # Assign a different drop code for each instance and track in a list of all rows
+      # Note that a blank address has a geo_hash of 8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104
+      #   because the zip code is recorded as 0
+      
+      # Drop types:
+      # 01 = missing action dates
+      # 02 = duplicate rows due to multiple EOP types (6 and 11)
+      # 03 = duplicate rows due to varying cert IDs or income data
+      # 04 = where address data are missing
+      # 05 = when a person is in both KCHA and SHA data due to port ins/outs
+      # 06 = blank addresses when there is an address for the same date (within a given program/subtype/spec voucher etc.)
+      # 07 = different programs with the same start date within the same agency
+      # 08 = different agencies with the same or similar action date (mostly remaining ports)
+      # 09 = auto-generated recertifications that are overwriting EOPs
+      # 10 = annual reexaminations/intermediate visits within a given address and program
+      # 11 = collapse rows to have a single line per person per address per time there
+      # 12 = delete rows where from_date = to_date and also from_date = the next row's from_date (often same program)
+      # 13 = delete one row of pairs with identical start and end dates
+      # 14 = final de-duplication when id_kc_pha, from_date, to_date identical
+      
+    ## Sort data ----
+      pha_sort <- setorder(pha, id_kc_pha, act_date, agency, prog_type)
+      
+    ## Set up row numbers and a tracking ----
+      pha_sort[, row := .I]
   
-  pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha",
-                                     "ssn", "lname", "fname", "dob"),
-                all.x = T)
-  
-  ## Make a head of household ID to track households across time ----
-  pha[, hh_id_long := .GRP, by = c("hh_ssn", "hh_lname", "hh_fname")]
-  
-  
-  # BEGIN CONSOLIDATION ----
-  # New approach to tracking which rows are dropped
-  # Assign a different drop code for each instance and track in a list of all rows
-  # Note that a blank address has a geo_hash of 8926262F06508A0E264BC13D340FD8FAB9291001FC06341D2E687BD9C3AF6104
-  #   because the zip code is recorded as 0
-  
-  # Drop types:
-  # 01 = missing action dates
-  # 02 = duplicate rows due to multiple EOP types (6 and 11)
-  # 03 = duplicate rows due to varying cert IDs or income data
-  # 04 = where address data are missing
-  # 05 = when a person is in both KCHA and SHA data due to port ins/outs
-  # 06 = blank addresses when there is an address for the same date (within a given program/subtype/spec voucher etc.)
-  # 07 = different programs with the same start date within the same agency
-  # 08 = different agencies with the same or similar action date (mostly remaining ports)
-  # 09 = auto-generated recertifications that are overwriting EOPs
-  # 10 = annual reexaminations/intermediate visits within a given address and program
-  # 11 = collapse rows to have a single line per person per address per time there
-  # 12 = delete rows where from_date = to_date and also from_date = the next row's from_date (often same program)
-  # 13 = delete one row of pairs with identical start and end dates
-  
-  ## Sort data ----
-  pha_sort <- setorder(pha, id_kc_pha, act_date, agency, prog_type)
-  
-  
-  ## Set up row numbers and a tracking ----
-  pha_sort[, row := .I]
-  
-  
-  # Set up list of all rows to track
-  drop_track <- pha_sort %>% 
-    select(row, id_kc_pha, id_hash, agency_prog_concat, 
-           geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-           geo_hash_clean, geo_blank, act_date, 
-           act_type, pha_source, cost_pha)
+      # Set up list of all rows to track
+      drop_track <- pha_sort %>% 
+        select(row, id_kc_pha, id_hash, agency_prog_concat, 
+               geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
+               geo_hash_clean, geo_blank, act_date, 
+               act_type, pha_source, cost_pha)
   
   
   ## Find the latest action date for a given program (will be useful later) ----
@@ -615,7 +622,7 @@ load_stage_timevar <- function(conn = NULL,
            by = .(id_kc_pha, agency_prog_concat, geo_hash_clean, cost_pha)]
   
   
-  ## Count the number of unique address a person had  ----
+  ## Count the number of unique addresses a person had  ----
   pha_sort[, add_num := uniqueN(geo_hash_clean), by = "id_kc_pha"]
   
   
@@ -659,59 +666,59 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## Remove missing dates (droptype = 1) ----
-  time_start <- Sys.time()
-  dfsize_head <- nrow(pha_sort) # Keep track of size of data frame at each step
-  pha_sort[, drop := ifelse(is.na(act_date), 1, 0)]
-  # Pull out drop tracking and merge
-  drop_temp <- pha_sort %>% select(row, drop)
-  drop_track <- left_join(drop_track, drop_temp, by = "row")
-  # Finish dropping rows
-  pha_sort <- pha_sort[drop != 1]
-  dfsize_head - nrow(pha_sort)
-  time_end <- Sys.time()
-  print(paste0("Drop #1 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
-  
+      time_start <- Sys.time()
+      dfsize_head <- nrow(pha_sort) # Keep track of size of data frame at each step
+      pha_sort[, drop := ifelse(is.na(act_date), 1, 0)]
+      # Pull out drop tracking and merge
+      drop_temp <- pha_sort %>% select(row, drop)
+      drop_track <- left_join(drop_track, drop_temp, by = "row")
+      # Finish dropping rows
+      pha_sort <- pha_sort[drop != 1]
+      dfsize_head - nrow(pha_sort)
+      time_end <- Sys.time()
+      print(paste0("Drop #1 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
+      
   
   ## Clean up duplicate rows - multiple EOP types (droptype == 2) ----
-  # Some duplicate rows where there is both an EOP action (#6) and an
-  # expiration of voucher equivalent (#11) (same program)
-  # Keep type #6 since code below is set up for that as EOP (and better reflects
-  # when people are moving from hard to soft units)
-  # Ignore income since these are not consistently recorded, use action #6 inc
-  time_start <- Sys.time()
-  dfsize_head <- nrow(pha_sort)
-  repeat {
-    dfsize <- nrow(pha_sort)
-    setorder(pha_sort, id_kc_pha, agency_prog_concat, act_date, act_type)
-    
-    pha_sort[, drop := 
-               if_else(id_kc_pha == lag(id_kc_pha, 1) & 
-                         geo_hash_clean == lag(geo_hash_clean, 1) &
-                         agency_prog_concat == lag(agency_prog_concat, 1) &
-                         cost_pha == lag(cost_pha, 1) &
-                         act_date == lag(act_date, 1) &
-                         max_date == lag(max_date, 1) &
-                         act_type == 11 & lag(act_type, 1) == 6 &
-                         (pha_source == lag(pha_source, 1) | 
-                            (is.na(pha_source) & is.na(lag(pha_source, 1)))),
-                       2, 0)]
-    # Pull out drop tracking and merge
-    drop_temp <- pha_sort %>% select(row, drop)
-    drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
-      mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
-      select(-drop.x, -drop.y)
-    # Finish dropping rows
-    pha_sort <- pha_sort[drop == 0 | is.na(drop)]
-    
-    dfsize2 <-  nrow(pha_sort)
-    if (dfsize2 == dfsize) {
-      break
-    }
-  }
-  dfsize_head - nrow(pha_sort) # Track how many rows were dropped
-  time_end <- Sys.time()
-  print(paste0("Drop #2 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
-  
+      # Some duplicate rows where there is both an EOP action (#6) and an
+      # expiration of voucher equivalent (#11) (same program)
+      # Keep type #6 since code below is set up for that as EOP (and better reflects
+      # when people are moving from hard to soft units)
+      # Ignore income since these are not consistently recorded, use action #6 inc
+      time_start <- Sys.time()
+      dfsize_head <- nrow(pha_sort)
+      repeat {
+        dfsize <- nrow(pha_sort)
+        setorder(pha_sort, id_kc_pha, agency_prog_concat, act_date, act_type)
+        
+        pha_sort[, drop := 
+                   if_else(id_kc_pha == lag(id_kc_pha, 1) & 
+                             geo_hash_clean == lag(geo_hash_clean, 1) &
+                             agency_prog_concat == lag(agency_prog_concat, 1) &
+                             cost_pha == lag(cost_pha, 1) &
+                             act_date == lag(act_date, 1) &
+                             max_date == lag(max_date, 1) &
+                             act_type == 11 & lag(act_type, 1) == 6 &
+                             (pha_source == lag(pha_source, 1) | 
+                                (is.na(pha_source) & is.na(lag(pha_source, 1)))),
+                           2, 0)]
+        # Pull out drop tracking and merge
+        drop_temp <- pha_sort %>% select(row, drop)
+        drop_track <- left_join(drop_track, drop_temp, by = "row") %>%
+          mutate(drop = ifelse(!is.na(drop.x) & drop.x > 0, drop.x, drop.y)) %>%
+          select(-drop.x, -drop.y)
+        # Finish dropping rows
+        pha_sort <- pha_sort[drop == 0 | is.na(drop)]
+        
+        dfsize2 <-  nrow(pha_sort)
+        if (dfsize2 == dfsize) {
+          break
+        }
+      }
+      dfsize_head - nrow(pha_sort) # Track how many rows were dropped
+      time_end <- Sys.time()
+      print(paste0("Drop #2 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
+      
   
   ## Clean up duplicate rows - cert IDs etc. (droptype == 3) ----
   # Some duplicate rows are because of multiple incomes/assets information 
@@ -1357,7 +1364,6 @@ load_stage_timevar <- function(conn = NULL,
   time_end <- Sys.time()
   print(paste0("Drop #11 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
   
-  
   ## Refine port labels ----
   ### Infer ports by comparing agencies and to_dates
   # NB. Needs more inspection and checking
@@ -1565,6 +1571,16 @@ load_stage_timevar <- function(conn = NULL,
   # See how many rows were affected
   sum(pha_sort$truncated, na.rm = T)
   
+  ## De-duplicate rows where id_kc_pha, to_date, and from_date are still duplicated (droptype == 14) ----
+    # At this stage all logical de-duplications have already taken places. 
+    # The few remaining duplicates (only 2 using up through 2022) will be dropped at random. 
+      time_start <- Sys.time()
+      pha_sort[, dup := 1:.N, .(id_kc_pha, from_date, to_date)]
+      drop_track[row %in% pha_sort[dup != 1]$row, drop := 14] # keep record of what was dropped and why
+      pha_sort <- pha_sort[dup == 1]
+      pha_sort[, dup := NULL]
+      time_end <- Sys.time()
+      print(paste0("Drop #14 took ", round(difftime(time_end, time_start, units = "secs"), 2), " secs"))
   
   # FINALIZE TABLE ----
   pha_timevar <- copy(pha_sort)
@@ -1581,31 +1597,24 @@ load_stage_timevar <- function(conn = NULL,
                     from_date - lag(to_date, 1) > 62 ~ 1L,
                     TRUE ~ NA_integer_))]
   # Find the number of unique periods a person was in housing
-  # Inner cumsum finds when gap == 1 (basically the cumulative difference with previous row is 0 rather than -1), 
-  # outer cumsum starts a new group when this happens and adds 1 because the starting group is 0
-  pha_timevar[, period := cumsum(cumsum(c(-1, diff(gap))) == 0) + 1, by = "id_kc_pha"]
+  pha_timevar[, period := cumsum(gap) + 1, id_kc_pha] # when there is no gap, it is one period, so each gap adds one period to the baseline period
   
   
   ## Period start date ----
   # Can be used in conjunction with the admit_date variables in final.pha_demo
   #   to determine how long someone has been in housing
   pha_timevar[, period_start := min(from_date), by = .(id_kc_pha, period)]
+  pha_timevar[, period_end := max(to_date), by = .(id_kc_pha, period)]
   
   
   ## ZIPs ----
   # ZIPs to restrict to KC and surrounds (helps make maps that drop far-flung ports)
-  zips <- read.csv(text = httr::content(httr::GET(
-    "https://raw.githubusercontent.com/PHSKC-APDE/reference-data/main/spatial_data/zip_hca.csv")), 
-    header = TRUE) %>% 
-    select(geo_zip) %>% 
-    mutate(geo_zip = as.character(geo_zip), geo_kc_area = 1)
-  zips <- setDT(zips)
-  
-  
-  pha_timevar <- merge(pha_timevar, zips, 
-                            by.x = c("geo_zip_clean"), by.y = c("geo_zip"),
-                            all.x = TRUE, sort = F)
-  
+  zips <- copy(rads.data::spatial_zip_hca)[, .(geo_zip = as.character(geo_zip), geo_kc_area = 1 )]
+
+  pha_timevar <- merge(pha_timevar, 
+                       zips, 
+                       by.x = c("geo_zip_clean"), by.y = c("geo_zip"),
+                       all.x = TRUE, sort = F)
   rm(zips)
   
   
@@ -1640,7 +1649,7 @@ load_stage_timevar <- function(conn = NULL,
     # ID variables
     "id_kc_pha", "id_hash", "hh_id_long", "hh_id_kc_pha",
     # Date info
-    "from_date", "to_date", "cov_time", "gap_length", "gap", "period", "period_start", 
+    "from_date", "to_date", "cov_time", "gap_length", "gap", "period", "period_start", "period_end",
     # Time-varying demog variables
     "disability",
     # Program info

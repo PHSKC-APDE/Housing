@@ -1,4 +1,4 @@
-#### CODE TO COMBINE KING COUNTY HOUSING AUTHORITY AND SEATTLE HOUSING AUTHORITY IDENTITIES
+#### CODE TO COMBINE KING COUNTY HOUSING AUTHORITY AND SEATTLE HOUSING AUTHORITY IDENTITIES ----
 # Alastair Matheson, PHSKC (APDE)
 #
 # 2021-06
@@ -17,249 +17,248 @@
 # qa_table = name of the table that holds QA outcomes
 
   
-  # BRING IN DATA ----
-  # Set these up manually for now but possibly use a function later
-  qa_schema <- "pha"
-  qa_table <- "metadata_qa"
-  from_schema <- "pha"
-  from_table <- "stage_"
-  to_schema <- "pha"
-  to_table <- "stage_identities"
-  final_schema <- "pha"
-  final_table <- "final_identities"
-  
-  
-  # If an identity table already exists, bring this in too
-  if (dbExistsTable(db_hhsaw, name = DBI::Id(schema = final_schema, table = final_table))) {
-    names_existing <- dbGetQuery(db_hhsaw, 
-                                 glue_sql("SELECT * FROM {`final_schema`}.{`final_table`}",
-                                          .con = db_hhsaw))
+# SET ARGUMENTS ----
+    qa_schema <- "pha"
+    qa_table <- "metadata_qa"
+    from_schema <- "pha"
+    from_table <- "stage_"
+    to_schema <- "pha"
+    to_table <- "stage_identities"
+    final_schema <- "pha"
+    final_table <- "final_identities"
     
-    names <- dbGetQuery(
-      db_hhsaw,
-      glue_sql("SELECT c.*, d.present FROM
-               (SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash
-                        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
-                        UNION
-                        SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash
-                        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b
-               ) c
-               LEFT JOIN
-               (SELECT id_hash, 1 AS present FROM {`final_schema`}.{`final_table`}) d
-               ON c.id_hash = d.id_hash
-               WHERE present IS NULL",
-               .con = db_hhsaw))
-  } else {
-    names <- dbGetQuery(
-      db_hhsaw,
-      glue_sql("SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash 
-                        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
-                        UNION
-                        SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
-                          dob, female, id_hash 
-                        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b",
-               .con = db_hhsaw))
-  }
-  
-  
-  # FUNCTIONS ----
-  ## Adaptation of Carolina's code ----
-  # From here: https://github.com/DCHS-PME/PMEtools/blob/main/R/idm_dedup.R
-  # pairs_input = Output from a RecordLinkage getPairs function
-  # df = The data frame that was fed into the matching process. 
-  #      Must have rowid and id_hash fields
-  # iteration = What match cycle this is (affects cluster ID suffix)
-  
-  match_process <- function(pairs_input, df, iteration) {
-    ### Attach ids for each individual pairwise link found ----
-    pairs <- pairs_input %>%
-      distinct(id1, id2) %>%
-      left_join(df, ., by = c(rowid = "id1"))
-    # In case the input was a data table, convert to data frame
-    # (otherwise the recursion breaks after 1 round)
-    pairs <- data.table::setDF(pairs)
-    
-    ### Roll up pair combinations ----
-    # self-join to consolidate all pair combinations for clusters with > 2 identities linked 
-    # roll up cluster id correctly with coalesce
-    # formula for how many other_pair2 records should exist for n number of matching records: 
-    #   (n*(n-1)/2) + 1 - e.g. 3 carolina johnsons will have 4  records (3*2/2+1)
-    remaining_dupes <- sum(!is.na(pairs$id2))
-    
-    # while loop self-joining pairs until no more open pairs remain
-    recursion_level <- 0
-    recursion_df <- pairs %>% rename(id2_recur0 = id2)
-    while (remaining_dupes > 0) {
-      recursion_level <- recursion_level + 1
-      print(paste0(remaining_dupes, " remaining duplicated rows. Starting recursion iteration ", recursion_level))
-      recursion_df <- pairs %>%
-        self_join_dups(base_df = ., iterate_df = recursion_df, iteration = recursion_level)
-      remaining_dupes <- sum(!is.na(recursion_df[ , paste0("id2_recur", recursion_level)]))
-    }
-    
-    # identify full list of id columns to coalesce after recursion
-    recurcols <- tidyselect::vars_select(names(recursion_df), matches("_recur\\d")) %>%
-      sort(decreasing = T)
-    coalesce_cols <- c(recurcols, "rowid")
-    coalesce_cols <- rlang::syms(coalesce_cols)
-    
-    # coalesce recursive id columns in sequence to generate single common cluster ID
-    pairsend <- recursion_df %>%
-      mutate(clusterid = coalesce(!!!coalesce_cols)) %>%
-      rename(id2 = id2_recur0) %>%
-      select(-contains("_recur")) %>%
-      distinct()
-    
-    # identify any unclosed cluster groups (open triangle problem), resulting in duplicated cluster
-    double_dups <- pairsend %>%
-      select(rowid, clusterid) %>%
-      distinct() %>%
-      group_by(rowid) %>%
-      filter(n() > 1) %>%
-      group_by(clusterid) %>%
-      mutate(row_min = min(rowid)) %>%
-      ungroup() %>%
-      rename(back_join_id = row_min) %>%
-      select(-rowid) %>%
-      distinct()
-    
-    
-    # collapse duplicate partial clusters to one cluster
-    # error checking to make sure that correct total clusters are maintained
-    if (nrow(double_dups) > 0) {
-      pairsend <- left_join(pairsend, double_dups, by = c(clusterid = "clusterid")) %>%
-        mutate(clusterid2 = coalesce(back_join_id, clusterid))
+# IMPORT IN DATA ----
+    # Get ID columns from stage_sha and stage_KCHA and final_identifies (if it exists)
+    if (dbExistsTable(db_hhsaw, name = DBI::Id(schema = final_schema, table = final_table))) {
+      namez_existing <- dbGetQuery(db_hhsaw, 
+                                   glue_sql("SELECT * FROM {`final_schema`}.{`final_table`}",
+                                            .con = db_hhsaw))
       
-      message("There are ", sum(pairsend$clusterid != pairsend$clusterid2), 
-              " mismatched clusterid/clusterid2 combos and at least ",
-              nrow(double_dups)*2, " expected")
+      namez <- dbGetQuery(
+        db_hhsaw,
+        glue_sql("SELECT c.*, d.present FROM
+                 (SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
+                            dob, female, id_hash
+                          FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
+                          UNION
+                          SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
+                            dob, female, id_hash
+                          FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b
+                 ) c
+                 LEFT JOIN
+                 (SELECT id_hash, 1 AS present FROM {`final_schema`}.{`final_table`}) d
+                 ON c.id_hash = d.id_hash
+                 WHERE present IS NULL",
+                 .con = db_hhsaw))
+    
+      } else {
+      namez <- dbGetQuery(
+        db_hhsaw,
+        glue_sql("SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
+                            dob, female, id_hash 
+                          FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))} a
+                          UNION
+                          SELECT DISTINCT ssn, pha_id, lname, fname, mname, 
+                            dob, female, id_hash 
+                          FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))} b",
+                 .con = db_hhsaw))
+    }
+  
+  
+# FUNCTIONS (adapted from Carolina's code) ----
+    # From here: https://github.com/DCHS-PME/PMEtools/blob/main/R/idm_dedup.R
+    # pairs_input = Output from a RecordLinkage getPairs function
+    # df = The data frame that was fed into the matching process. 
+    #      Must have rowid and id_hash fields
+    # iteration = What match cycle this is (affects cluster ID suffix)
+    
+    match_process <- function(pairs_input, df, iteration) {
+      ### Attach ids for each individual pairwise link found ----
+      pairs <- pairs_input %>%
+        distinct(id1, id2) %>%
+        left_join(df, ., by = c(rowid = "id1"))
+      # In case the input was a data table, convert to data frame
+      # (otherwise the recursion breaks after 1 round)
+      pairs <- data.table::setDF(pairs)
       
-      pairsend <- pairsend %>%
-        mutate(clusterid = clusterid2) %>%
-        select(-clusterid2, -back_join_id)
+      ### Roll up pair combinations ----
+      # self-join to consolidate all pair combinations for clusters with > 2 identities linked 
+      # roll up cluster id correctly with coalesce
+      # formula for how many other_pair2 records should exist for n number of matching records: 
+      #   (n*(n-1)/2) + 1 - e.g. 3 carolina johnsons will have 4  records (3*2/2+1)
+      remaining_dupes <- sum(!is.na(pairs$id2))
+      
+      # while loop self-joining pairs until no more open pairs remain
+      recursion_level <- 0
+      recursion_df <- pairs %>% rename(id2_recur0 = id2)
+      while (remaining_dupes > 0) {
+        recursion_level <- recursion_level + 1
+        print(paste0(remaining_dupes, " remaining duplicated rows. Starting recursion iteration ", recursion_level))
+        recursion_df <- pairs %>%
+          self_join_dups(base_df = ., iterate_df = recursion_df, iteration = recursion_level)
+        remaining_dupes <- sum(!is.na(recursion_df[ , paste0("id2_recur", recursion_level)]))
+      }
+      
+      # identify full list of id columns to coalesce after recursion
+      recurcols <- tidyselect::vars_select(names(recursion_df), matches("_recur\\d")) %>%
+        sort(decreasing = T)
+      coalesce_cols <- c(recurcols, "rowid")
+      coalesce_cols <- rlang::syms(coalesce_cols)
+      
+      # coalesce recursive id columns in sequence to generate single common cluster ID
+      pairsend <- recursion_df %>%
+        mutate(clusterid = coalesce(!!!coalesce_cols)) %>%
+        rename(id2 = id2_recur0) %>%
+        select(-contains("_recur")) %>%
+        distinct()
+      
+      # identify any unclosed cluster groups (open triangle problem), resulting in duplicated cluster
+      double_dups <- pairsend %>%
+        select(rowid, clusterid) %>%
+        distinct() %>%
+        group_by(rowid) %>%
+        filter(n() > 1) %>%
+        group_by(clusterid) %>%
+        mutate(row_min = min(rowid)) %>%
+        ungroup() %>%
+        rename(back_join_id = row_min) %>%
+        select(-rowid) %>%
+        distinct()
+      
+      
+      # collapse duplicate partial clusters to one cluster
+      # error checking to make sure that correct total clusters are maintained
+      if (nrow(double_dups) > 0) {
+        pairsend <- left_join(pairsend, double_dups, by = c(clusterid = "clusterid")) %>%
+          mutate(clusterid2 = coalesce(back_join_id, clusterid))
+        
+        message("There are ", sum(pairsend$clusterid != pairsend$clusterid2), 
+                " mismatched clusterid/clusterid2 combos and at least ",
+                nrow(double_dups)*2, " expected")
+        
+        pairsend <- pairsend %>%
+          mutate(clusterid = clusterid2) %>%
+          select(-clusterid2, -back_join_id)
+      }
+      
+      ### Add identifiers/unique ids for paired records ----
+      # overwrite the original pairs with the consolidated & informed dataframe
+      pairs_final <- df %>%
+        rename_all(~ paste0(., "_b")) %>%
+        left_join(pairsend, ., by = c(id2 = "rowid_b"))
+      
+      ### Take the union of all unique ids with their cluster ids ----
+      # (swinging links from _b cols to unioned rows, and taking distinct)
+      # create cluster index
+      cluster_index <- select(pairs_final, clusterid, id_hash = id_hash_b) %>%
+        drop_na() %>%
+        bind_rows(select(pairs_final, clusterid, id_hash)) %>%
+        distinct()
+      
+      ### Check that each personal id only in one cluster ----
+      n_pi_split <- pairs_final %>% 
+        group_by(id_hash) %>% 
+        filter(n_distinct(clusterid) > 1) %>%
+        n_distinct()
+      
+      if (n_pi_split) {
+        stop(glue::glue("Deduplication processing error: {nrow(n_pi_split)} ",
+                        "clients sorted into more than one cluster. ", 
+                        "This is an internal failure in the function and will require debugging. ", 
+                        "Talk to package maintainer)"))
+      }
+      
+      ### Report results ----
+      n_orig_ids <- df %>% select(id_hash) %>% n_distinct()
+      n_cluster_ids <- n_distinct(cluster_index$clusterid)
+      
+      message("Number of unique clients prior to deduplication: ", n_orig_ids, 
+              ". Number of deduplicated clients: ", n_cluster_ids)
+      
+      
+      ### Attach cluster IDS back to base file ----
+      output <- left_join(df, 
+                          # Set up iteration name
+                          rename(cluster_index, 
+                                 !!quo_name(paste0("clusterid_", iteration)) := clusterid), 
+                          by = "id_hash")
+      output
     }
     
-    ### Add identifiers/unique ids for paired records ----
-    # overwrite the original pairs with the consolidated & informed dataframe
-    pairs_final <- df %>%
-      rename_all(~ paste0(., "_b")) %>%
-      left_join(pairsend, ., by = c(id2 = "rowid_b"))
     
-    ### Take the union of all unique ids with their cluster ids ----
-    # (swinging links from _b cols to unioned rows, and taking distinct)
-    # create cluster index
-    cluster_index <- select(pairs_final, clusterid, id_hash = id_hash_b) %>%
-      drop_na() %>%
-      bind_rows(select(pairs_final, clusterid, id_hash)) %>%
-      distinct()
-    
-    ### Check that each personal id only in one cluster ----
-    n_pi_split <- pairs_final %>% 
-      group_by(id_hash) %>% 
-      filter(n_distinct(clusterid) > 1) %>%
-      n_distinct()
-    
-    if (n_pi_split) {
-      stop(glue::glue("Deduplication processing error: {nrow(n_pi_split)} ",
-                      "clients sorted into more than one cluster. ", 
-                      "This is an internal failure in the function and will require debugging. ", 
-                      "Talk to package maintainer)"))
+    ## Helper functions specifically for client deduplication
+    #' Function for joining duplicated records to base pair, used in recursive deduplication
+    #' @param base_df The starting dataframe with initial duplicated pair ids
+    #' @param iterate_df The df with iterated rowid joins - what is continually updated during recursive pair closing
+    #' @param iteration Numeric counter indicating which recursion iteration the self-joining loop is on. Used for column name suffixes
+    self_join_dups <- function(base_df, iterate_df, iteration) {
+      joinby <- paste0("rowid_recur", iteration)
+      names(joinby) <- paste0("id2_recur", iteration-1)
+      
+      base_df %>%
+        select(rowid, id2) %>%
+        rename_all(~paste0(., "_recur", iteration)) %>%
+        left_join(iterate_df, ., by = joinby)
     }
     
-    ### Report results ----
-    n_orig_ids <- df %>% select(id_hash) %>% n_distinct()
-    n_cluster_ids <- n_distinct(cluster_index$clusterid)
     
-    message("Number of unique clients prior to deduplication: ", n_orig_ids, 
-            ". Number of deduplicated clients: ", n_cluster_ids)
-    
-    
-    ### Attach cluster IDS back to base file ----
-    output <- left_join(df, 
-                        # Set up iteration name
-                        rename(cluster_index, 
-                               !!quo_name(paste0("clusterid_", iteration)) := clusterid), 
-                        by = "id_hash")
-    output
-  }
-  
-  
-  ## Helper functions specifically for client deduplication
-  #' Function for joining duplicated records to base pair, used in recursive deduplication
-  #' @param base_df The starting dataframe with initial duplicated pair ids
-  #' @param iterate_df The df with iterated rowid joins - what is continually updated during recursive pair closing
-  #' @param iteration Numeric counter indicating which recursion iteration the self-joining loop is on. Used for column name suffixes
-  self_join_dups <- function(base_df, iterate_df, iteration) {
-    joinby <- paste0("rowid_recur", iteration)
-    names(joinby) <- paste0("id2_recur", iteration-1)
-    
-    base_df %>%
-      select(rowid, id2) %>%
-      rename_all(~paste0(., "_recur", iteration)) %>%
-      left_join(iterate_df, ., by = joinby)
-  }
-  
-  
-  # This function creates a vector of unique IDs of any length
-  # id_n = how many unique IDs you want generated
-  # id_length = how long do you want the ID to get (too short and you'll be stuck in a loop)
-  id_nodups <- function(id_n, id_length, seed = 98104) {
-    set.seed(seed)
-    id_list <- stringi::stri_rand_strings(n = id_n, length = id_length, pattern = "[a-z0-9]")
-    
-    # If any IDs were duplicated (very unlikely), overwrite them with new IDs
-    iteration <- 1
-    while(any(duplicated(id_list)) & iteration <= 50) {
-      id_list[which(duplicated(id_list))] <- stringi::stri_rand_strings(n = sum(duplicated(id_list), na.rm = TRUE),
-                                                                        length = id_length,
-                                                                        pattern = "[a-z0-9]")
-      iteration <<- iteration + 1
+    # This function creates a vector of unique IDs of any length
+    # id_n = how many unique IDs you want generated
+    # id_length = how long do you want the ID to get (too short and you'll be stuck in a loop)
+    id_nodups <- function(id_n, id_length, seed = 98104) {
+      set.seed(seed)
+      id_list <- stringi::stri_rand_strings(n = id_n, length = id_length, pattern = "[a-z0-9]")
+      
+      # If any IDs were duplicated (very unlikely), overwrite them with new IDs
+      iteration <- 1
+      while(any(duplicated(id_list)) & iteration <= 50) {
+        id_list[which(duplicated(id_list))] <- stringi::stri_rand_strings(n = sum(duplicated(id_list), na.rm = TRUE),
+                                                                          length = id_length,
+                                                                          pattern = "[a-z0-9]")
+        iteration <<- iteration + 1
+      }
+      
+      if (iteration == 50) {
+        stop("After 50 iterations there are still duplicate IDs. ",
+             "Either decrease id_n or increase id_length")
+      } else {
+        return(id_list)
+      }
     }
-    
-    if (iteration == 50) {
-      stop("After 50 iterations there are still duplicate IDs. ",
-           "Either decrease id_n or increase id_length")
-    } else {
-      return(id_list)
-    }
-  }
   
   
-  # SET UP DATA ----
+# SET UP DATA ----
   ## Clean up names ----
   # This has been moved to the stage_kcha/sha step so the id_hash remains consistent
   
   
   ## Add in variables for matching ----
-  if (exists("names_existing")) {
-    names_use <- bind_rows(mutate(names_existing, source = "final"), 
-                            mutate(names, source = "new")) %>%
-      select(-present)
-  } else {
-    names_use <- names %>% mutate(source = "new")
-  }
+    if (exists("namez_existing")) {
+      namez_use <- bind_rows(mutate(namez_existing, source = "final"), 
+                              mutate(namez, source = "new")) %>%
+        select(-present)
+    } else {
+      namez_use <- namez %>% mutate(source = "new")
+    }
+    
+    namez_use <- namez_use %>%
+      mutate(ssn_id = case_when(!is.na(ssn) ~ ssn,
+                                !is.na(pha_id) ~ pha_id,
+                                TRUE ~ NA_character_),
+             lname_phon = RecordLinkage::soundex(lname),
+             fname_phon = RecordLinkage::soundex(fname),
+             dob_y = lubridate::year(dob),
+             dob_m = lubridate::month(dob),
+             dob_d = as.numeric(lubridate::day(dob)),
+             rowid = row_number())
   
-  names_use <- names_use %>%
-    mutate(ssn_id = case_when(!is.na(ssn) ~ ssn,
-                              !is.na(pha_id) ~ pha_id,
-                              TRUE ~ NA_character_),
-           lname_phon = RecordLinkage::soundex(lname),
-           fname_phon = RecordLinkage::soundex(fname),
-           dob_y = lubridate::year(dob),
-           dob_m = lubridate::month(dob),
-           dob_d = as.numeric(lubridate::day(dob)),
-           rowid = row_number())
   
-  
-  # FIRST PASS: BLOCK ON SSN OR PHA ID ----
+# LINKAGE FIRST PASS: BLOCK ON SSN OR PHA ID ----
   ## Run deduplication ----
   # Blocking on SSN or PHA ID and string compare names
   st <- Sys.time()
   match_01 <- RecordLinkage::compare.dedup(
-    names_use, 
+    namez_use, 
     blockfld = "ssn_id", 
     strcmp = c("lname", "fname", "mname", "dob_y", "dob_m", "dob_d", "female"), 
     exclude = c("ssn", "pha_id", "lname_phon", "fname_phon", "dob", "rowid", "id_hash", "id_kc_pha", "source"))
@@ -344,7 +343,7 @@
   
   ## Collapse IDs ----
   match_01_dedup <- match_process(pairs_input = pairs_01_trunc, 
-                                  df = names_use, iteration = 1)
+                                  df = namez_use, iteration = 1)
   
   
   ## Error check ----
@@ -358,11 +357,11 @@
   
   
   
-  # SECOND PASS: BLOCK ON PHONETIC LNAME, FNAME AND DOB ----
+# LINKAGE SECOND PASS: BLOCK ON PHONETIC LNAME, FNAME AND DOB ----
   ## Run deduplication ----
   st <- Sys.time()
   match_02 <- RecordLinkage::compare.dedup(
-    names_use, 
+    namez_use, 
     blockfld = c("lname_phon", "fname_phon", "dob_y", "dob_m", "dob_d"), 
     strcmp = c("ssn_id", "lname", "fname", "mname", "female"), 
     exclude = c("ssn", "pha_id", "dob", "rowid", "id_hash"))
@@ -416,7 +415,7 @@
   
   
   ## Collapse IDs ----
-  match_02_dedup <- match_process(pairs_input = pairs_02_trunc, df = names_use, iteration = 2) %>%
+  match_02_dedup <- match_process(pairs_input = pairs_02_trunc, df = namez_use, iteration = 2) %>%
     mutate(clusterid_2 = clusterid_2 + max(match_01_dedup$clusterid_1))
   
   ## Error check ----
@@ -430,7 +429,7 @@
   
   
   
-  # BRING MATCHING ROUNDS TOGETHER ----
+# BRING MATCHING ROUNDS TOGETHER ----
   # Use clusterid_1 as the starting point, find where one clusterid_2 value
   # is associated with multiple clusterid_1 values, then take the min of the latter.
   # Repeat using clusterid_2 until there is a 1:1 match between clusterid_1 and _2
@@ -513,9 +512,9 @@
   
   ## Make an alpha-numeric ID that will be stored in a table ----
   new_ids_needed <- n_distinct(ids_dedup$cluster_final)
-  if (exists("names_existing")) {
+  if (exists("namez_existing")) {
     # Pull in existing IDs to make sure they are not repeated
-    ids_existing <- unique(names_existing$id_kc_pha)
+    ids_existing <- unique(namez_existing$id_kc_pha)
     
     # If using the same seed as was used to create other IDs, can just tack on
     # the number of new IDs needed
@@ -551,7 +550,7 @@
     bind_cols(., id_kc_pha = ids_final)
   
   # Join to make final list of names and IDs
-  names_final <- names_use %>%
+  namez_final <- namez_use %>%
     select(ssn, pha_id, lname, fname, mname, dob, female, id_hash) %>%
     left_join(., select(ids_dedup, id_hash, cluster_final), by = "id_hash") %>%
     left_join(., ids_final, by = "cluster_final") %>%
@@ -561,42 +560,42 @@
   
   
   ## Consolidate IDs ----
-  if (exists("names_existing")) {
+  if (exists("namez_existing")) {
     # Easiest to assign a number to each ID so taking the min works to consolidate groups
     # Quicker to use data table to set these up
-    names_existing <- setDT(names_existing)
-    setnames(names_existing, "id_kc_pha", "id_kc_pha_old")
-    names_existing[, `:=` (hash_cnt_old = .N, id_num_old = .GRP), by = "id_kc_pha_old"]
+    namez_existing <- setDT(namez_existing)
+    setnames(namez_existing, "id_kc_pha", "id_kc_pha_old")
+    namez_existing[, `:=` (hash_cnt_old = .N, id_num_old = .GRP), by = "id_kc_pha_old"]
     
-    names_final <- setDT(rename(names_final, id_kc_pha_new = id_kc_pha))
-    names_final[, `:=` (hash_cnt_new = .N, id_num_new = .GRP), by = "id_kc_pha_new"]
-    names_final[, id_num_new := id_num_new + length(ids_existing)]
+    namez_final <- setDT(rename(namez_final, id_kc_pha_new = id_kc_pha))
+    namez_final[, `:=` (hash_cnt_new = .N, id_num_new = .GRP), by = "id_kc_pha_new"]
+    namez_final[, id_num_new := id_num_new + length(ids_existing)]
     
     # Bring old and new together
-    names_dedup <- merge(names_existing[, .(id_hash, id_kc_pha_old, hash_cnt_old, id_num_old)],
-                         names_final[, .(id_hash, id_kc_pha_new, hash_cnt_new, id_num_new)],
+    namez_dedup <- merge(namez_existing[, .(id_hash, id_kc_pha_old, hash_cnt_old, id_num_old)],
+                         namez_final[, .(id_hash, id_kc_pha_new, hash_cnt_new, id_num_new)],
                          by = "id_hash", all = T)
     
     # Check for unclosed groups in either direction
-    names_dedup[!is.na(id_kc_pha_old), id_min_new := min(id_num_new, na.rm = T), by = "id_kc_pha_old"]
-    names_dedup[!is.na(id_kc_pha_new), id_min_old := min(id_num_old, na.rm = T), by = "id_kc_pha_new"]
+    namez_dedup[!is.na(id_kc_pha_old), id_min_new := min(id_num_new, na.rm = T), by = "id_kc_pha_old"]
+    namez_dedup[!is.na(id_kc_pha_new), id_min_old := min(id_num_old, na.rm = T), by = "id_kc_pha_new"]
     
     # Replace infinite values created above
-    names_dedup[is.infinite(id_min_old), id_min_old := NA]
-    names_dedup[is.infinite(id_min_new), id_min_new := NA]
+    namez_dedup[is.infinite(id_min_old), id_min_old := NA]
+    namez_dedup[is.infinite(id_min_new), id_min_new := NA]
     
     # Any rows with blank id_min_new and id_min_old are those that didn't match at all. Just bring over id_num_new
-    names_dedup[is.na(id_min_new) & is.na(id_min_old), id_min_new := id_num_new]
+    namez_dedup[is.na(id_min_new) & is.na(id_min_old), id_min_new := id_num_new]
     
     # Consolidate so old number is preferentially kept
-    names_dedup[, id_num_final := coalesce(id_min_old, id_min_new)]
+    namez_dedup[, id_num_final := coalesce(id_min_old, id_min_new)]
     
     # Make a reshaped list of IDs and ID numbers to get final ID
-    id_num_list <- bind_rows(distinct(names_dedup, id_kc_pha_old, id_num_old) %>% 
+    id_num_list <- bind_rows(distinct(namez_dedup, id_kc_pha_old, id_num_old) %>% 
                                filter(!is.na(id_kc_pha_old)) %>%
                                rename(id_kc_pha_final = id_kc_pha_old,
                                       id_num_final = id_num_old),
-                             distinct(names_dedup, id_kc_pha_new, id_num_new) %>% 
+                             distinct(namez_dedup, id_kc_pha_new, id_num_new) %>% 
                                rename(id_kc_pha_final = id_kc_pha_new, 
                                       id_num_final = id_num_new))
     
@@ -606,7 +605,7 @@
     }
     
     # Join to get the final ID
-    names_dedup <- left_join(select(names_dedup, id_hash, id_kc_pha_old, id_kc_pha_new, id_num_final),
+    namez_dedup <- left_join(select(namez_dedup, id_hash, id_kc_pha_old, id_kc_pha_new, id_num_final),
                              id_num_list,
                              by = "id_num_final") %>%
       select(-id_num_final)
@@ -615,8 +614,8 @@
     ## Make final names table ----
     # Set up last_run time
     run_time <- Sys.time()
-    names_final <- left_join(names_final, 
-                             select(names_dedup, id_hash, id_kc_pha_final),
+    namez_final <- left_join(namez_final, 
+                             select(namez_dedup, id_hash, id_kc_pha_final),
                              by = "id_hash") %>%
       select(ssn, pha_id, lname, fname, mname, dob, female, id_hash, id_kc_pha_final) %>%
       rename(id_kc_pha = id_kc_pha_final) %>%
@@ -638,7 +637,7 @@
     
     
     # Find IDs that changed and update their to_date
-    id_changed <- names_dedup %>% 
+    id_changed <- namez_dedup %>% 
       filter(!is.na(id_kc_pha_old) & id_kc_pha_old != id_kc_pha_final) %>%
       select(id_hash) %>%
       mutate(changed = 1L)
@@ -648,7 +647,7 @@
       select(-changed)
     
     # Add in new or changed IDs and set from date
-    id_new <- names_dedup %>% 
+    id_new <- namez_dedup %>% 
       filter(is.na(id_kc_pha_old) | id_kc_pha_old != id_kc_pha_final) %>%
       select(id_hash, id_kc_pha_final) %>%
       rename(id_kc_pha = id_kc_pha_final) %>%
@@ -662,104 +661,169 @@
     
   }
   
-  
-  # QA FINAL DATA ----
+# QA FINAL DATA ----
   # Number of id_hashes compared to the number of id_kc_phas
-  message("There are ", n_distinct(names_final$id_hash), " IDs and ", 
-          n_distinct(names_final$id_kc_pha), " id_kc_phas")
+  message("There are ", n_distinct(namez_final$id_hash), " IDs and ", 
+          n_distinct(namez_final$id_kc_pha), " id_kc_phas")
   
   
-  ## New clusters compared to last time ----
+  ## Check that the combined pha.stage_identifies table is longer than the the previous time ----
+      ident_cnt_prev <- as.integer(
+        dbGetQuery(db_hhsaw,
+                   glue_sql("SELECT qa_result
+                            FROM ", {paste0(qa_schema, '.', qa_table)}, "
+                            WHERE table_name = {paste0(to_schema, '.', to_table)} 
+                              AND qa_type = 'value' 
+                              AND qa_item = 'row_count' 
+                              AND qa_date = (
+                                SELECT MAX(qa_date) 
+                                FROM ", {paste0(qa_schema, '.', qa_table)}, " 
+                                WHERE table_name = {paste0(to_schema, '.', to_table)} 
+                                  AND qa_type = 'value' 
+                                  AND qa_item = 'row_count')", .con = db_hhsaw)
+        ))
+  
+      if (is.na(ident_cnt_prev)) {
+        qa_row_diff_result <- "PASS"
+        qa_row_diff_note <- glue("There was no existing row data to compare to last time")
+        message(paste("\U0001f642", qa_row_diff_note))
+      } else if (!is.na(ident_cnt_prev) & nrow(namez_final) >= ident_cnt_prev) {
+        qa_row_diff_result <- "PASS"
+        qa_row_diff_note <- glue("There are {format(nrow(namez_final) - ident_cnt_prev, big.mark = ',')}", 
+                                 " more rows in the latest stage_identities table")
+        message(paste("\U0001f642", qa_row_diff_note))
+      } else if (!is.na(ident_cnt_prev) & nrow(namez_final) < ident_cnt_prev) {
+        qa_row_diff_result <- "FAIL"
+        qa_row_diff_note <- glue("There were {format(ident_cnt_prev - nrow(namez_final), big.mark = ',')}", 
+                                 " fewer rows in the latest stage_identities table. See why this is.")
+        warning(paste("\U00026A0", qa_row_diff_note))
+      } 
+      
+      DBI::dbExecute(db_hhsaw,
+                     glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                                (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                                VALUES (NULL, {min(namez_final$last_run)}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                                'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
+                              .con = db_hhsaw))
+  
+  ## Check that number of unique id_kc_pha is greater than in the previous time ----
+      pha_ID_cnt_prev <- as.integer(
+        dbGetQuery(db_hhsaw,
+                   glue_sql("SELECT qa_result
+                            FROM ", {paste0(qa_schema, '.', qa_table)}, "
+                            WHERE table_name = {paste0(to_schema, '.', to_table)} 
+                              AND qa_type = 'value' 
+                              AND qa_item = 'id_count' 
+                              AND qa_date = (
+                                SELECT MAX(qa_date) 
+                                FROM ", {paste0(qa_schema, '.', qa_table)}, " 
+                                WHERE table_name = {paste0(to_schema, '.', to_table)} 
+                                  AND qa_type = 'value' 
+                                  AND qa_item = 'id_count')", .con = db_hhsaw)
+        ))
+      
+      if (is.na(pha_ID_cnt_prev)) {
+        qa_id_diff_result <- "PASS"
+        qa_id_diff_note <- glue("There was no existing count of uniue IDs in stage_identities to compare to last time")
+        message(paste("\U0001f642", qa_id_diff_note))
+      } else if (!is.na(pha_ID_cnt_prev) & uniqueN(namez_final$id_kc_pha) >= pha_ID_cnt_prev) {
+        qa_id_diff_result <- "PASS"
+        qa_id_diff_note <- glue("There are {format(uniqueN(namez_final$id_kc_pha) - pha_ID_cnt_prev, big.mark = ',')}", 
+                                 " more unique id_kc_pha in the latest stage_identities table")
+        message(paste("\U0001f642", qa_id_diff_note))
+      } else if (!is.na(pha_ID_cnt_prev) & uniqueN(namez_final$id_kc_pha) < pha_ID_cnt_prev) {
+        qa_id_diff_result <- "FAIL"
+        qa_id_diff_note <- glue("There were {format(pha_ID_cnt_prev - uniqueN(namez_final$id_kc_pha), big.mark = ',')}", 
+                                 " fewer unique id_kc_pha in the latest stage_identities table. See why this is.")
+        warning(paste("\U00026A0", qa_id_diff_note))
+      } 
+      
+      DBI::dbExecute(db_hhsaw,
+                     glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                                (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
+                                VALUES (NULL, {min(namez_final$last_run)}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
+                                'id_count_vs_previous', {qa_id_diff_result}, {Sys.time()}, {qa_id_diff_note})",
+                              .con = db_hhsaw))
+      
   
   
-  
-  ## Check combined table is longer than the original ----
-  
-  
-  ## ID history table rows compared to last time ----
-  
-  
-  
-  # ADD VALUES TO METADATA ----
-  # Row counts
-  DBI::dbExecute(db_hhsaw,
-                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                          (etl_batch_id, last_run, table_name, 
-                            qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES (NULL, {min(names_final$last_run)}, 
-                                  '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {nrow(names_final)},
-                                  {Sys.time()}, NULL)",
-                          .con = db_hhsaw))
-  
-  # Number of IDs
-  DBI::dbExecute(db_hhsaw,
-                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                          (etl_batch_id, last_run, table_name, 
-                            qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES (NULL, {min(names_final$last_run)}, 
-                                  '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'id_count', {n_distinct(names_final$id_kc_pha)},
-                                  {Sys.time()}, NULL)",
-                          .con = db_hhsaw))
-  
-  
-  # CHECK QA PASSED ----
-  # Stop processing if one or more QA check failed
-  if (min(qa_clusters_result, qa_row_diff_result) == "FAIL") {
-    stop("One or more QA checks failed on {to_schema}.{to_table}. See {qa_schema}.{qa_table} for more details.")
-  } else {
-    # Clean up QA objects if everything passed
-    rm(list = ls(pattern = "^qa_"))
-  }
-  
-  
-  # LOAD DATA TO SQL ----
-  ## Identities ----
-  # Split into smaller tables to avoid SQL db_hhsaw connection issues
-  start <- 1L
-  max_rows <- 50000L
-  cycles <- ceiling(nrow(names_final)/max_rows)
-  
-  lapply(seq(start, cycles), function(i) {
-    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
-    end_row <- min(nrow(names_final), max_rows * i)
+# ADD VALUES TO METADATA ----
+    # Row counts
+    DBI::dbExecute(db_hhsaw,
+                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                            (etl_batch_id, last_run, table_name, 
+                              qa_type, qa_item, qa_result, qa_date, note) 
+                            VALUES (NULL, {min(namez_final$last_run)}, 
+                                    '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
+                                    'value', 'row_count', {nrow(namez_final)},
+                                    {Sys.time()}, NULL)",
+                            .con = db_hhsaw))
     
-    message("Loading cycle ", i, " of ", cycles)
-    if (i == 1) {
-      dbWriteTable(db_hhsaw,
-                   name = DBI::Id(schema = to_schema, table = to_table),
-                   value = as.data.frame(names_final[start_row:end_row, ]),
-                   overwrite = T, append = F)
-    } else {
-      dbWriteTable(db_hhsaw,
-                   name = DBI::Id(schema = to_schema, table = to_table),
-                   value = as.data.frame(names_final[start_row:end_row ,]),
-                   overwrite = F, append = T)
-    }
-  })
+    # Number of IDs
+    DBI::dbExecute(db_hhsaw,
+                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
+                            (etl_batch_id, last_run, table_name, 
+                              qa_type, qa_item, qa_result, qa_date, note) 
+                            VALUES (NULL, {min(namez_final$last_run)}, 
+                                    '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
+                                    'value', 'id_count', {n_distinct(namez_final$id_kc_pha)},
+                                    {Sys.time()}, NULL)",
+                            .con = db_hhsaw))
+  
+  
+# CHECK QA PASSED ----
+  # Stop processing if one or more QA check failed
+  if (min(qa_id_diff_result, qa_row_diff_result) == "FAIL") {
+    stop(paste0("\n\U0001f47f One or more QA checks failed on ", to_schema, ".", to_table, ". Check\nSELECT * FROM ", qa_schema, ".", qa_table, " WHERE table_name = 'pha.stage_identities' ORDER BY qa_date desc \nfor more details."))
+  } else {message(paste0("\U0001f642 Basic QA checks for ", to_schema, ".", to_table, "passed! Check\nSELECT * FROM ", qa_schema, ".", qa_table, " WHERE table_name = 'pha.stage_identities' ORDER BY qa_date desc \nfor more details."))}
+  
+  
+# LOAD DATA TO SQL ----
+  ## Identities ----
+    # Split into smaller tables to avoid SQL db_hhsaw connection issues
+    start <- 1L
+    max_rows <- 50000L
+    cycles <- ceiling(nrow(namez_final)/max_rows)
+    
+    lapply(seq(start, cycles), function(i) {
+      start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+      end_row <- min(nrow(namez_final), max_rows * i)
+      
+      message("Loading cycle ", i, " of ", cycles)
+      if (i == 1) {
+        dbWriteTable(db_hhsaw,
+                     name = DBI::Id(schema = to_schema, table = to_table),
+                     value = as.data.frame(namez_final[start_row:end_row, ]),
+                     overwrite = T, append = F)
+      } else {
+        dbWriteTable(db_hhsaw,
+                     name = DBI::Id(schema = to_schema, table = to_table),
+                     value = as.data.frame(namez_final[start_row:end_row ,]),
+                     overwrite = F, append = T)
+      }
+    })
   
   ## Identity history ----
-  # Split into smaller tables to avoid SQL db_hhsaw connection issues
-  start <- 1L
-  max_rows <- 50000L
-  cycles <- ceiling(nrow(id_history_updated)/max_rows)
-  
-  lapply(seq(start, cycles), function(i) {
-    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
-    end_row <- min(nrow(id_history_updated), max_rows * i)
+    # Split into smaller tables to avoid SQL db_hhsaw connection issues
+    start <- 1L
+    max_rows <- 50000L
+    cycles <- ceiling(nrow(id_history_updated)/max_rows)
     
-    message("Loading cycle ", i, " of ", cycles)
-    if (i == 1) {
-      dbWriteTable(db_hhsaw,
-                   name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
-                   value = as.data.frame(id_history_updated[start_row:end_row, ]),
-                   overwrite = T, append = F)
-    } else {
-      dbWriteTable(db_hhsaw,
-                   name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
-                   value = as.data.frame(id_history_updated[start_row:end_row ,]),
-                   overwrite = F, append = T)
-    }
-  })
+    lapply(seq(start, cycles), function(i) {
+      start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
+      end_row <- min(nrow(id_history_updated), max_rows * i)
+      
+      message("Loading cycle ", i, " of ", cycles)
+      if (i == 1) {
+        dbWriteTable(db_hhsaw,
+                     name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
+                     value = as.data.frame(id_history_updated[start_row:end_row, ]),
+                     overwrite = T, append = F)
+      } else {
+        dbWriteTable(db_hhsaw,
+                     name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
+                     value = as.data.frame(id_history_updated[start_row:end_row ,]),
+                     overwrite = F, append = T)
+      }
+    })
   
