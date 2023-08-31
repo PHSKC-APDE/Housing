@@ -316,7 +316,7 @@
                               qa_type, qa_item, qa_result, qa_date, note) 
                             VALUES (NULL, {min(linkages$last_run)}, 
                                     '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                    'value', 'id_count', {n_distinct(linkages$KC_MASTERID)},
+                                    'value', 'id_count', {n_distinct(linkages$KCMASTER_ID)},
                                     {Sys.time()}, NULL)",
                             .con = db_hhsaw))
   
