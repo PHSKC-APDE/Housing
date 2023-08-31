@@ -4,14 +4,11 @@
 # Aim is to have a single row per contiguous time in a house per person
 #
 # COMPONENTS:
-# - Load 'raw' KCHA calendar year files (with some transformation to create a standardized file)
-# - Load 'raw' SHA CY files (with some transformation to create a standardized file)
-# - [OPTIONAL] Join exit data with KCHA and SHA admin data
-# - Combine CY files together for KCHA and SHA separately
-# - Combine PHA identities
-# - Combine PHA CY files and create demographic and time-varying analytic tables
-# - Combine PHA identities with Medicaid and Medicare
-# - Combine PHA, Medicaid, and Medicare data and create analytic tables
+# - PULL PHA linkages from IDH (integrated data hub) to create stage_identities 
+#   & stage_identities_history
+# - Create stage_demo (mostly non-time varying demographics, e.g., dob, )
+# - Create stage_timevar (time varying demographics like address and program participation)
+# - Create stage_calyear (pre-analyzed tables, per calendar year)
 #
 # This script is the main 'control tower' for all the component scripts that load combined PHA data.
 # Other scripts exist to load SHA and KCHA data.
@@ -29,7 +26,6 @@ library(glue) # Safely combine SQL code
 library(keyring) # Access stored credentials
 library(housing) # Has some functions specific to the PHA data
 # library(apde) # Handy functions for working with data in APDE
-library(RecordLinkage) # Manage identities across data sources
 library(rads) # primarily for rounding function (https://github.com/PHSKC-APDE/rads)
 
 # SET UP VARIABLES AND CONNECTIONS ----
@@ -40,7 +36,7 @@ qa_schema <- "pha"
 qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
 
-# Connect to HHSAW
+# Connect to db
 db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                            driver = "ODBC Driver 17 for SQL Server",
                            server = "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433",
@@ -51,6 +47,15 @@ db_hhsaw <- DBI::dbConnect(odbc::odbc(),
                            TrustServerCertificate = "yes",
                            Authentication = "ActiveDirectoryPassword")
 
+db_idh  <-  DBI::dbConnect(odbc::odbc(),
+                           driver = "ODBC Driver 17 for SQL Server",
+                           server = "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433",
+                           database = "inthealth_dwhealth",
+                           uid = keyring::key_list("hhsaw")[["username"]],
+                           pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
+                           Encrypt = "yes",
+                           TrustServerCertificate = "yes",
+                           Authentication = "ActiveDirectoryPassword")
 
 # RUN IDENTITY MATCHING PROCESS ----
   ## Stage ----
