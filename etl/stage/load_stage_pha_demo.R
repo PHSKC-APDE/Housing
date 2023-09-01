@@ -32,40 +32,40 @@ load_stage_demo <- function(conn = NULL,
   kcha <- dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.agency, a.act_date, a.admit_date, a.dob, a.gender, 
+      "SELECT DISTINCT b.KCMASTER_ID, a.agency, a.act_date, a.admit_date, a.dob, a.gender, 
       a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
       FROM 
       (SELECT id_hash, agency, act_date, admit_date, dob, gender,  
         r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
       LEFT JOIN
-      (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+      (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
       ON a.id_hash = b.id_hash",
       .con = conn))
   
   sha <- dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.id_kc_pha, a.agency, a.act_date, a.admit_date, 
+      "SELECT DISTINCT b.KCMASTER_ID, a.agency, a.act_date, a.admit_date, 
       a.dob, a.gender, a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
       FROM 
       (SELECT id_hash, agency, act_date, admit_date, dob, gender, 
         r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
         FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
       LEFT JOIN
-      (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+      (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
       ON a.id_hash = b.id_hash",
       .con = conn))
   
   
   pha <- setDT(bind_rows(kcha, sha) %>% distinct) 
-  # Remove the row is missing id_kc_pha since we won't be able to join on this
-  pha <- pha[!is.na(id_kc_pha)] # shoudl not exist, but just in case!
+  # Remove the rows missing KCMASTER_ID since we won't be able to join on this
+  pha <- pha[!is.na(KCMASTER_ID)] # should not exist, but just in case!
 
   
   # WORK ON DOB ----
     message("Processing DOB data")
-    elig_dob <- unique(copy(pha)[, c("id_kc_pha", "act_date", "dob", 'admit_date')][!is.na(dob)])
+    elig_dob <- unique(copy(pha)[, c("KCMASTER_ID", "act_date", "dob", 'admit_date')][!is.na(dob)])
     
     maxdob <- max(
       DBI::dbGetQuery(conn = conn, paste0('SELECT maxdate = max(act_date) FROM ', from_schema, '.', from_table, 'kcha'))[['maxdate']], 
@@ -84,8 +84,8 @@ load_stage_demo <- function(conn = NULL,
     elig_dob <- elig_dob[is.na(tempage) | tempage >= 0][, c('admit_date', 'tempage') := NULL]
 
     # keep the most recent dob only
-    setorder(elig_dob, id_kc_pha, -act_date, na.last = T)
-    elig_dob <- elig_dob[, .SD[1], id_kc_pha][, act_date := NULL]
+    setorder(elig_dob, KCMASTER_ID, -act_date, na.last = T)
+    elig_dob <- elig_dob[, .SD[1], KCMASTER_ID][, act_date := NULL]
 
     # ensure all dob are reasonable
     if(max(elig_dob$dob, na.rm = T) > maxdob){
@@ -101,7 +101,7 @@ load_stage_demo <- function(conn = NULL,
     # Also want to derive an empirical start date using the first act_date for each person
     
     message("Processing date person entered KCHA/SHA")
-    elig_admit <- copy(pha)[!is.na(admit_date)][, c("id_kc_pha", "agency", "act_date", "admit_date")]
+    elig_admit <- copy(pha)[!is.na(admit_date)][, c("KCMASTER_ID", "agency", "act_date", "admit_date")]
     
     # Take the earliest date per ID by overall and each PHA
       # There are irrational admit dates that occurred before the PHAs existed! First set those values to NA
@@ -109,9 +109,9 @@ load_stage_demo <- function(conn = NULL,
       elig_admit <- elig_admit[!(agency == 'SHA' & admit_date < '1941-01-01')] # SHA started in 1938 & opened Yesler Terrace around 1941
       elig_admit <- elig_admit[!(agency == 'KCHA' & admit_date < '1942-01-01')] # KCHA started in 1939 & opened Black Diamond site in 1942 
       
-      elig_admit_all <- elig_admit[!is.na(admit_date), .(admit_date_all = min(admit_date, na.rm = T)), by = "id_kc_pha"]
-      elig_admit_kcha <- elig_admit[!is.na(admit_date) & agency == "KCHA", .(admit_date_kcha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
-      elig_admit_sha <- elig_admit[!is.na(admit_date) & agency == "SHA", .(admit_date_sha = min(admit_date, na.rm = T)), by = "id_kc_pha"]
+      elig_admit_all <- elig_admit[!is.na(admit_date), .(admit_date_all = min(admit_date, na.rm = T)), by = "KCMASTER_ID"]
+      elig_admit_kcha <- elig_admit[!is.na(admit_date) & agency == "KCHA", .(admit_date_kcha = min(admit_date, na.rm = T)), by = "KCMASTER_ID"]
+      elig_admit_sha <- elig_admit[!is.na(admit_date) & agency == "SHA", .(admit_date_sha = min(admit_date, na.rm = T)), by = "KCMASTER_ID"]
     
     # Merge back into a single table
     elig_admit <- merge(elig_admit_sha, merge(elig_admit_kcha, elig_admit_all, all = T), all = T)
@@ -121,7 +121,7 @@ load_stage_demo <- function(conn = NULL,
   
   # WORK ON GENDER ----
     message("Processing gender data")
-    elig_gender <- pha[, c("id_kc_pha", "act_date", "gender")]
+    elig_gender <- pha[, c("KCMASTER_ID", "act_date", "gender")]
   
     ## Create alone or in combination gender variables ----
       elig_gender[!gender %in% c('F', 'Female', 'M', 'Male'), gender := NA]
@@ -140,7 +140,7 @@ load_stage_demo <- function(conn = NULL,
       ## Create gender person time vars
         elig_gender[, ':=' (gender_female_t = rads::round2(100*sum(gender_female, na.rm = T) / length(genderna[genderna == F]), 1), 
                             gender_male_t =   rads::round2(100*sum(gender_male,   na.rm = T) / length(genderna[genderna == F]), 1))
-                    , by = "id_kc_pha"]
+                    , by = "KCMASTER_ID"]
       
       # Replace NA person time variables with 0
         elig_gender[is.na(gender_female_t), gender_female_t := 0]
@@ -148,8 +148,8 @@ load_stage_demo <- function(conn = NULL,
 
       
     ## Find the most recent gender variable ----
-      elig_gender_recent <- setorder(copy(elig_gender), id_kc_pha, -act_date, na.last = T)
-      elig_gender_recent <- elig_gender_recent[, myrank := 1:.N, .(id_kc_pha)]
+      elig_gender_recent <- setorder(copy(elig_gender), KCMASTER_ID, -act_date, na.last = T)
+      elig_gender_recent <- elig_gender_recent[, myrank := 1:.N, .(KCMASTER_ID)]
       elig_gender_recent <- elig_gender_recent[myrank ==1][, myrank := NULL]  
 
       elig_gender_recent[, gender_recent := fcase(gender_female == 1 & gender_male == 1,  "Multiple",
@@ -157,10 +157,10 @@ load_stage_demo <- function(conn = NULL,
                                                   gender_male == 1,  "Male",
                                                   default = "Unknown")]
       
-      elig_gender_recent <- elig_gender_recent[, .(id_kc_pha, gender_recent)]
+      elig_gender_recent <- elig_gender_recent[, .(KCMASTER_ID, gender_recent)]
 
       # Join gender_recent back to the main data
-      elig_gender <- merge(elig_gender, elig_gender_recent, by = 'id_kc_pha', all = T)
+      elig_gender <- merge(elig_gender, elig_gender_recent, by = 'KCMASTER_ID', all = T)
       rm(elig_gender_recent)
     
     
@@ -168,14 +168,14 @@ load_stage_demo <- function(conn = NULL,
       # First make collapsed max of genders for each ID
       elig_gender_sum <- elig_gender[, .(gender_female = suppressWarnings(max(gender_female, na.rm = T)), 
                                          gender_male = suppressWarnings(max(gender_male, na.rm = T))),
-                                     by = "id_kc_pha"] # so this is functionally a gender_ever variable
+                                     by = "KCMASTER_ID"] # so this is functionally a gender_ever variable
       
       # Replace infinity values with NA (generated by max function applied to NA rows, e.g., when missing gender data for all observations of an ID)
       elig_gender_sum[is.infinite(gender_female), gender_female := NA]
       elig_gender_sum[is.infinite(gender_male), gender_male := NA]
 
       # Now join back to main data and overwrite existing female/male vars
-      elig_gender <- merge(elig_gender[, c("gender_male", "gender_female") := NULL], elig_gender_sum, by = 'id_kc_pha', all = T)
+      elig_gender <- merge(elig_gender[, c("gender_male", "gender_female") := NULL], elig_gender_sum, by = 'KCMASTER_ID', all = T)
       rm(elig_gender_sum)
   
   
@@ -190,7 +190,7 @@ load_stage_demo <- function(conn = NULL,
                                              gender_female == 1, "Female",
                                              gender_male == 1, "Male",
                                              default = "Unknown")]
-      setcolorder(elig_gender_final, c("id_kc_pha", "gender_me", "gender_recent", 
+      setcolorder(elig_gender_final, c("KCMASTER_ID", "gender_me", "gender_recent", 
                                        "gender_female", "gender_male", 
                                        "gender_female_t", "gender_male_t"))
   
@@ -198,7 +198,7 @@ load_stage_demo <- function(conn = NULL,
   # PROCESS RACE DATA ----
     ## Tidy/prep race data ----
         message("Processing race/ethnicity data")
-        elig_race <- pha[, c("act_date", "id_kc_pha", "r_aian", "r_asian", "r_black", 
+        elig_race <- pha[, c("act_date", "KCMASTER_ID", "r_aian", "r_asian", "r_black", 
                              "r_hisp", "r_nhpi", "r_white")]
         
         # Adjust names to have a race_ prefix rather than r_, to be consistent with claims
@@ -223,15 +223,15 @@ load_stage_demo <- function(conn = NULL,
                         race_nhpi_t = rads::round2(100*sum(race_nhpi, na.rm = T) / length(race_na[race_na == F]), 1), 
                         race_white_t = rads::round2(100*sum(race_white, na.rm = T) / length(race_na[race_na == F]), 1), 
                         race_latino_t = rads::round2(100*sum(race_latino, na.rm = T) / length(race_na[race_na == F]), 1))
-                  , by = "id_kc_pha"]  
+                  , by = "KCMASTER_ID"]  
         
       
       # Replace NA person time variables with 0
         for(col in grep('_t$', names(elig_race), value = T)) set(elig_race, i=which(is.na(elig_race[[col]])), j=col, value=0) 
         
     ## Find most recent race ----
-      elig_race_recent <- setorder(copy(elig_race), id_kc_pha, -act_date, na.last = T)
-      elig_race_recent <- elig_race_recent[, myrank := 1:.N, .(id_kc_pha)]
+      elig_race_recent <- setorder(copy(elig_race), KCMASTER_ID, -act_date, na.last = T)
+      elig_race_recent <- elig_race_recent[, myrank := 1:.N, .(KCMASTER_ID)]
       elig_race_recent <- elig_race_recent[myrank ==1][, myrank := NULL]
       
       elig_race_recent[, ':=' 
@@ -254,10 +254,10 @@ load_stage_demo <- function(conn = NULL,
                                                      race_white == 1, "White",
                                                      race_latino == 1, "Latino",
                                                      default = "Unknown"))]
-      elig_race_recent <- elig_race_recent[, c("id_kc_pha", "race_recent", "race_eth_recent")]
+      elig_race_recent <- elig_race_recent[, c("KCMASTER_ID", "race_recent", "race_eth_recent")]
       
       # Join race_recent and race_eth_recent back to the main data
-      elig_race <- merge(elig_race[], elig_race_recent, by = 'id_kc_pha', all = T)
+      elig_race <- merge(elig_race[], elig_race_recent, by = 'KCMASTER_ID', all = T)
       
       rm(elig_race_recent)
     
@@ -270,7 +270,7 @@ load_stage_demo <- function(conn = NULL,
                                      race_nhpi = max(race_nhpi, na.rm = T),
                                      race_white = max(race_white, na.rm = T),
                                      race_latino = max(race_latino, na.rm = T)),
-                                 by = "id_kc_pha"]
+                                 by = "KCMASTER_ID"]
       
       
       #Replace infinity values with NA (generated by max function applied to NA rows)
@@ -279,7 +279,7 @@ load_stage_demo <- function(conn = NULL,
       # Now join back to main data
       elig_race <- merge(elig_race[, c("race_aian", "race_asian", "race_black", "race_nhpi", "race_white", "race_latino") := NULL], 
                      elig_race_sum, 
-                     by = 'id_kc_pha', all = T)
+                     by = 'KCMASTER_ID', all = T)
 
       rm(elig_race_sum)
       gc()
@@ -322,7 +322,7 @@ load_stage_demo <- function(conn = NULL,
     elig_race_final[, race_unk := ifelse(race_me == "Unknown", 1L, 0L)]
     elig_race_final[, race_eth_unk := ifelse(race_eth_me == "Unknown", 1L, 0L)]
     
-    setcolorder(elig_race_final, c("id_kc_pha", "race_me", "race_eth_me",
+    setcolorder(elig_race_final, c("KCMASTER_ID", "race_me", "race_eth_me",
                                    "race_recent", "race_eth_recent",
                                    "race_aian", "race_asian", "race_black",
                                    "race_latino", "race_nhpi", "race_white", 
@@ -337,7 +337,7 @@ load_stage_demo <- function(conn = NULL,
   # JOIN ALL TABLES ----
   message("Bringing it all together")
   elig_demo_final <- Reduce(function(df1, df2) 
-                              merge(df1, df2, by = "id_kc_pha", all.x = TRUE), 
+                              merge(df1, df2, by = "KCMASTER_ID", all.x = TRUE), 
                               list(elig_gender_final, elig_race_final, elig_dob, elig_admit))
   
  
@@ -348,15 +348,39 @@ load_stage_demo <- function(conn = NULL,
   # LOAD TO SQL SERVER ----
   message("Loading to SQL")
   
-  # Set up cols
-  col_types <- c("id_kc_pha" = "char(10)")
+  # LOAD YAML file (and create it if necessary)
+  yaml_file <- paste0(here::here(), "/etl/stage/load_stage_pha_demo.yaml")
+  if(file.exists(yaml_file)){yaml_config <- yaml::read_yaml(yaml_file)}
   
+  if(!file.exists(yaml_file) || !identical( names(yaml_config$vars), names(elig_demo_final))){
+    message("Generating a new yaml file because one does not exist or the data structure has changed since the previous run.")
+    # create basic yaml
+    tempyaml <- generate_yaml(mydt = elig_demo_final,
+                  datasource = 'PHA',
+                  schema = to_schema,
+                  table = to_table)
+    # modify yaml
+    tempvars <- (gsub("NUMERIC\\(38,5\\)", "NUMERIC(4,1)", tempyaml$vars)) # want to limit to three integers and 1 decimal point for xxx_t vars
+    names(tempvars) <- names(tempyaml$vars)
+    tempyaml$vars <- as.list(tempvars)
+    # export yaml
+    yaml::write_yaml(x = tempyaml, file = paste0(here::here(), "/etl/stage/load_stage_pha_demo.yaml"))
+  } else {
+    message("\U0001f642 Your yaml file looks good!")
+  }
+
   # Write data
   odbc::dbWriteTable(conn, 
                      name = DBI::Id(schema = to_schema, table = to_table), 
                      value = as.data.frame(elig_demo_final),
-                     overwrite = T, append = F,
-                     field.types = col_types,
+                     overwrite = T, 
+                     append = F,
+                     field.types = unlist(yaml_config$vars),
                      batch_rows = 10000) 
+  
+  # Quick QA
+  sqlcount <- odbc::dbGetQuery(conn, paste0("SELECT count(*) FROM ", to_schema, ".", to_table))
+  if(sqlcount == nrow(elig_demo_final)){message("\U0001f642 It looks like all of your data loaded to SQL!")
+    }else{warning("\n\U00026A0 The number of rows in `elig_demo_final` are not the same as those in the SQL table.")}
 }
   
