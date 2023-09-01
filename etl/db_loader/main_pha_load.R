@@ -22,6 +22,7 @@ library(tidyverse) # Manipulate data
 library(lubridate) # Work with dates
 library(odbc) # Read to and write from SQL
 library(configr) # Read in YAML files
+library(yaml) # Write YAML files
 library(glue) # Safely combine SQL code
 library(keyring) # Access stored credentials
 library(housing) # Has some functions specific to the PHA data
@@ -67,10 +68,10 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
       if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities"))) {
         # First back up existing archive table
         if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities"))) {
-          dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities', 'archive_identities_bak'")
+          DBI::dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities', 'archive_identities_bak'")
         }
         # Then move final table to archive
-        dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities FROM pha.final_identities")
+        DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities FROM pha.final_identities")
         
         # Check final table is backed up properly
         rows_archive <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.archive_identities"))
@@ -81,26 +82,26 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
         } else {
           message("pha.final_identities backed up properly, deleting archive backup (if it exists)")
           if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_bak"))) {
-            dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_bak")
+            DBI::dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_bak")
           }
           rm(rows_archive, rows_final)
         }
         
         # Then truncate final in preparation for loading stage
-        dbExecute(db_hhsaw, "DROP TABLE pha.final_identities")
+        DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_identities")
       }
       # Load from stage to final
-      dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities FROM pha.stage_identities")
+      DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities FROM pha.stage_identities")
   
   
   ## Final identity history ----
       if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities_history"))) {
         # First back up existing archive table
         if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history"))) {
-          dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities_history', 'archive_identities_history_bak'")
+          DBI::dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities_history', 'archive_identities_history_bak'")
         }
         # Then move final table to archive
-        dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities_history FROM pha.final_identities_history")
+        DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities_history FROM pha.final_identities_history")
         
         # Check final table is backed up proper
         rows_archive <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.archive_identities_history"))
@@ -111,16 +112,16 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
         } else {
           message("pha.final_identities_history backed up, deleting archive backup (if it exists)")
           if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history_bak"))) {
-            dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_history_bak")
+            DBI::dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_history_bak")
           }
           rm(rows_archive, rows_final)
         }
         
         # Then truncate final in preparation for loading stage
-        dbExecute(db_hhsaw, "DROP TABLE pha.final_identities_history")
+        DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_identities_history")
       }
       # Load from stage to final
-      dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_identities_history")
+      DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_identities_history")
   
   
 # MAKE DEMO EVER TABLE ----
@@ -140,9 +141,9 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
   ## Final ----
   # Manually for now, fix later
   if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_demo"))) {
-    dbExecute(db_hhsaw, "DROP TABLE pha.final_demo")
+    DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_demo")
   }
-  dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
+  DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_demo FROM pha.stage_demo")
   
   
 # MAKE TIMEVAR TABLE ----
@@ -163,9 +164,9 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
   ## Final ----
     # Manually for now, fix later
     if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_timevar"))) {
-      dbExecute(db_hhsaw, "DROP TABLE pha.final_timevar")
+      DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_timevar")
     }
-    dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
+    DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_timevar FROM pha.stage_timevar")
     
   
 # MAKE CALYEAR TABLE ----
@@ -184,9 +185,9 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
   ## Final ----
     # Manually for now, fix later
     if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_calyear"))) {
-      dbExecute(db_hhsaw, "DROP TABLE pha.final_calyear")
+      DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_calyear")
     }
-    dbExecute(db_hhsaw, "SELECT * INTO pha.final_calyear FROM pha.stage_calyear")
+    DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_calyear FROM pha.stage_calyear")
 
 # The end!
     message("\U0001f642 \U0001f308 \U0001f973")
