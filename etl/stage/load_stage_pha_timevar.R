@@ -16,6 +16,8 @@
 # to_table = name of the table to load data to
 # from_schema = name of the schema the input data are in
 # from_table = common prefix of the table the input data are in
+# demo_schema = schema with final (stable) demographic data
+# demo_table = table with final (stable) demographic data
 # id_schema = name of the schema the identity table is in
 # id_table = name of the identity table
 
@@ -33,7 +35,7 @@ load_stage_timevar <- function(conn = NULL,
       kcha <- dbGetQuery(
         conn,
         glue_sql(
-          "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
+          "SELECT DISTINCT b.KCMASTER_ID, a.*, c.dob
           FROM 
           (SELECT agency, act_type, act_date, pha_source, 
           id_hash, ssn, lname, fname, relcode, disability, 
@@ -45,11 +47,11 @@ load_stage_timevar <- function(conn = NULL,
           geo_hash_clean, geo_blank, portfolio, portfolio_type
             FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
           LEFT JOIN
-          (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+          (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
           ON a.id_hash = b.id_hash
           LEFT JOIN
-          (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
-          ON b.id_kc_pha = c.id_kc_pha",
+          (SELECT KCMASTER_ID, dob FROM {`demo_schema`}.{`demo_table`}) c
+          ON b.KCMASTER_ID = c.KCMASTER_ID",
           .con = conn))
       
       # Once upstream stage files are changed, change the following:
@@ -58,7 +60,7 @@ load_stage_timevar <- function(conn = NULL,
       sha <- dbGetQuery(
         conn,
         glue_sql(
-          "SELECT DISTINCT b.id_kc_pha, a.*, c.dob
+          "SELECT DISTINCT b.KCMASTER_ID, a.*, c.dob
           FROM 
           (SELECT agency, act_type, act_date, pha_source, 
           id_hash, ssn, lname, fname, relcode, disability, 
@@ -71,18 +73,18 @@ load_stage_timevar <- function(conn = NULL,
           geo_hash_clean, geo_blank, portfolio, property_id
             FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
           LEFT JOIN
-          (SELECT id_hash, id_kc_pha FROM {`id_schema`}.{`id_table`}) b
+          (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
           ON a.id_hash = b.id_hash
           LEFT JOIN
-          (SELECT id_kc_pha, dob FROM {`demo_schema`}.{`demo_table`}) c
-          ON b.id_kc_pha = c.id_kc_pha",
+          (SELECT KCMASTER_ID, dob FROM {`demo_schema`}.{`demo_table`}) c
+          ON b.KCMASTER_ID = c.KCMASTER_ID",
           .con = conn))
 
       pha <- setDT(bind_rows(kcha, sha))
   
   # BASIC CRITICAL CLEANING ----
-    # Remove the rows with missing id_kc_pha since we won't be able to join on this
-    pha <- pha[!is.na(id_kc_pha)]
+    # Remove the rows with missing KCMASTER_ID since we won't be able to join on this
+    pha <- pha[!is.na(KCMASTER_ID)]
       
     # Remove Sedro-Woolley HA (no idea how Skagit County HA data got into KC data)
     pha <- pha[agency != "SWHA"]
@@ -96,7 +98,7 @@ load_stage_timevar <- function(conn = NULL,
                                       "cert_id", "vouch_num", "incasset_id")]
         
       # Also flag when there is >1 row per ID/HH_ID combo
-      pha[, hh_id_cnt := .N, by = c("id_kc_pha", "hh_id_tmp")]
+      pha[, hh_id_cnt := .N, by = c("KCMASTER_ID", "hh_id_tmp")]
   
 
     ## Subsidy type ----
@@ -237,24 +239,24 @@ load_stage_timevar <- function(conn = NULL,
   
   # HEAD OF HOUSEHOLD ----
     ## Make a new HH ID to track households over time ----
-      hh <- pha[, c("id_kc_pha", "agency", "act_date", "ssn", "lname", "fname", "dob",
+      hh <- pha[, c("KCMASTER_ID", "agency", "act_date", "ssn", "lname", "fname", "dob",
                     "hh_ssn", "hh_lname", "hh_fname", "mbr_num", "relcode", "hh_id_tmp")]
       hh <- unique(hh)
       
-      # Attach id_kc_pha to each HH to make tracking easier
-      hh_id <- hh[, c("id_kc_pha", "act_date", "ssn", "lname", "fname", "dob", "hh_ssn", "hh_lname", "hh_fname")]
+      # Attach KCMASTER_ID to each HH to make tracking easier
+      hh_id <- hh[, c("KCMASTER_ID", "act_date", "ssn", "lname", "fname", "dob", "hh_ssn", "hh_lname", "hh_fname")]
       hh_id <- unique(hh_id)
       
-      hh_id[, hh_id_kc_pha := case_when(
-        hh_ssn == ssn & !is.na(ssn) & (hh_lname == lname | hh_fname == fname) ~ id_kc_pha,
-        hh_lname == lname & hh_fname == fname & (is.na(hh_ssn) | is.na(ssn)) ~ id_kc_pha,
+      hh_id[, hh_KCMASTER_ID := case_when(
+        hh_ssn == ssn & !is.na(ssn) & (hh_lname == lname | hh_fname == fname) ~ KCMASTER_ID,
+        hh_lname == lname & hh_fname == fname & (is.na(hh_ssn) | is.na(ssn)) ~ KCMASTER_ID,
         hh_ssn != ssn & !is.na(ssn) ~ NA_character_
       )]
-      hh_id <- hh_id[!is.na(hh_id_kc_pha), c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname", "hh_id_kc_pha")]
+      hh_id <- hh_id[!is.na(hh_KCMASTER_ID), c("KCMASTER_ID", "act_date", "hh_ssn", "hh_lname", "hh_fname", "hh_KCMASTER_ID")]
       hh_id <- unique(hh_id)
       
       # Join back to HH data
-      hh <- merge(hh, hh_id, by = c("id_kc_pha", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
+      hh <- merge(hh, hh_id, by = c("KCMASTER_ID", "act_date", "hh_ssn", "hh_lname", "hh_fname"), all.x = T)
       
       hh[, hh_flag := case_when(
         mbr_num == 1 | relcode == "H" ~ 1L,
@@ -266,8 +268,8 @@ load_stage_timevar <- function(conn = NULL,
       # Check how many households don't have a HH or have multiple HHs
       # Also count how many rows have any ID on it (used for tiebreakers later)
       hh[, has_hh := sum(hh_flag, na.rm = T), by = "hh_id_tmp"]
-      hh[, hh_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = "hh_id_tmp"]
-      hh[!is.na(hh_id_kc_pha), hh_id_row_cnt := .N, by = "hh_id_tmp"]
+      hh[, hh_id_cnt := uniqueN(hh_KCMASTER_ID, na.rm = T), by = "hh_id_tmp"]
+      hh[!is.na(hh_KCMASTER_ID), hh_id_row_cnt := .N, by = "hh_id_tmp"]
       hh[, hh_id_row_cnt := max(hh_id_row_cnt, na.rm = T), by = "hh_id_tmp"]
       
       # Count by people
@@ -283,7 +285,7 @@ load_stage_timevar <- function(conn = NULL,
       hh %>% distinct(agency, hh_id_tmp, hh_id_cnt) %>% count(agency, hh_id_cnt) %>% 
         group_by(agency) %>% mutate(tot = sum(n), pct = round(n/tot * 100, 1))
       
-      # For households with no hh_id_kc_pha, add some possibilities
+      # For households with no hh_KCMASTER_ID, add some possibilities
       hh[hh_id_cnt == 0 & has_hh != 1, hh_id_poss := case_when( RecordLinkage::jarowinkler(hh_ssn, ssn) > 0.9 ~ 1L,
                                                                 (ssn == hh_ssn | (is.na(hh_ssn) | is.na(ssn))) & fname == hh_fname ~ 1L,
                                                                 hh_lname == lname & hh_fname == fname & (!is.na(hh_ssn) | !is.na(ssn)) ~ 1L,
@@ -297,27 +299,27 @@ load_stage_timevar <- function(conn = NULL,
     ## Assign head of household as needed ----
       ### Use the following to allocate HH for a given act_date/hh combo when 2+ candidates ----
       # 1) If 2+ hh_flags but only one row with a hh_id_value, take the one with a hh_id_pha_value 
-      # 2) If 1+ hh_id_kc_pha value but competing details, take mbr_num = 1/relcode == "H"
-      # 3) If no mbr_num/relcode or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
+      # 2) If 1+ hh_KCMASTER_ID value but competing details, take mbr_num = 1/relcode == "H"
+      # 3) If no mbr_num/relcode or 2+ with mbr_num = 1, take oldest of those with a hh_KCMASTER_ID value (regardless of mbr_num)
       # 4) If no DOB for #3, take the row with a hh_ssn value (regardless of mbr_num)
-      # 5) If still undecided, randomly assign one of the people with a hh_id_kc_pha value
-      # 6) If 2+ hh_id_kc_pha values, take mbr_num = 1
-      # 7) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_id_kc_pha value (regardless of mbr_num)
-      # 8) If no DOB for #7, randomly assign one of the people with a hh_id_kc_pha value
-      # 9) If no hh_id_kc_pha values and 2+ with mbr_num = 1, take the oldest person with mbr_num = 1
+      # 5) If still undecided, randomly assign one of the people with a hh_KCMASTER_ID value
+      # 6) If 2+ hh_KCMASTER_ID values, take mbr_num = 1
+      # 7) If no mbr_num or 2+ with mbr_num = 1, take oldest of those with a hh_KCMASTER_ID value (regardless of mbr_num)
+      # 8) If no DOB for #7, randomly assign one of the people with a hh_KCMASTER_ID value
+      # 9) If no hh_KCMASTER_ID values and 2+ with mbr_num = 1, take the oldest person with mbr_num = 1
       # 10) If no DOB for #9, randomly take one of the mbr_num = 1 people
-      # 11) If no hh_id_kc_pha and no mbr_num, take the possible hh_id person
+      # 11) If no hh_KCMASTER_ID and no mbr_num, take the possible hh_id person
       # 12) If multiple possible hh_id people, take the eldest
       # 13) If no DOBs for #12, take a random hh_id contender
       # 14) If no possible hh_id contenders, take the oldest person in the house
       # 15) If no DOB for #14 or oldest is a tie, randomly take one person in the house
       hh_decider <- hh[has_hh != 1]
       hh_decider[mbr_num == 1 | relcode == "H", mbr1_cnt := .N, by = c("hh_id_tmp")]
-      hh_decider[mbr_num == 1 | relcode == "H", mbr1_id_cnt := uniqueN(hh_id_kc_pha, na.rm = T), by = c("hh_id_tmp")]
-      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
-      hh_decider[!is.na(hh_id_kc_pha), has_ssn_id := !is.na(hh_ssn)]
-      hh_decider[!is.na(hh_id_kc_pha), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
-      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha), 
+      hh_decider[mbr_num == 1 | relcode == "H", mbr1_id_cnt := uniqueN(hh_KCMASTER_ID, na.rm = T), by = c("hh_id_tmp")]
+      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_KCMASTER_ID), mbr1_id_row_cnt := .N, by = c("hh_id_tmp")]
+      hh_decider[!is.na(hh_KCMASTER_ID), has_ssn_id := !is.na(hh_ssn)]
+      hh_decider[!is.na(hh_KCMASTER_ID), oldest_hh_id := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
+      hh_decider[(mbr_num == 1 | relcode == "H") & !is.na(hh_KCMASTER_ID), 
                  oldest_hh_id_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
       hh_decider[(mbr_num == 1 | relcode == "H"), oldest_mbr1 := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
       hh_decider[hh_id_poss == 1, oldest_hh_poss := dob == min(dob, na.rm = T), by = "hh_id_tmp"]
@@ -335,8 +337,8 @@ load_stage_timevar <- function(conn = NULL,
       hh_decider[, oldest_any_cnt := sum(oldest_any, na.rm = T), by = c("hh_id_tmp")]
       # Set up random numbers for each scenario
       set.seed(98104)
-      hh_decider[!is.na(hh_id_kc_pha), decider_id := runif(.N, 0, 1)]
-      hh_decider[!is.na(hh_id_kc_pha) & (mbr_num == 1 | relcode == "H"), decider_id_mbr1 := runif(.N, 0, 1)]
+      hh_decider[!is.na(hh_KCMASTER_ID), decider_id := runif(.N, 0, 1)]
+      hh_decider[!is.na(hh_KCMASTER_ID) & (mbr_num == 1 | relcode == "H"), decider_id_mbr1 := runif(.N, 0, 1)]
       hh_decider[mbr_num == 1 | relcode == "H", decider_mbr1 := runif(.N, 0, 1)]
       hh_decider[hh_id_poss == 1, decider_hh_poss := runif(.N, 0, 1)]
       hh_decider[oldest_hh_id == T, decider_oldest_hh_id := runif(.N, 0, 1)]
@@ -355,14 +357,14 @@ load_stage_timevar <- function(conn = NULL,
       ### Reset hh_flag ----
       hh_decider[, hh_flag := NA_integer_]
       
-      ### One hh_id_kc_pha value with multiple rows ----
+      ### One hh_KCMASTER_ID value with multiple rows ----
       hh_decider[, hh_flag := case_when(
         # One row with an ID
-        hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_id_kc_pha) ~ 1L,
-        hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_id_kc_pha) ~ 0L,
+        hh_id_cnt == 1 & hh_id_row_cnt == 1 & !is.na(hh_KCMASTER_ID) ~ 1L,
+        hh_id_cnt == 1 & hh_id_row_cnt == 1 & is.na(hh_KCMASTER_ID) ~ 0L,
         # One row with mbr_num/relcode = 1
-        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
-        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_KCMASTER_ID) ~ 1L,
+        hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_KCMASTER_ID) ~ 0L,
         hh_id_cnt == 1 & mbr1_cnt >= 1 & mbr1_id_row_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
           (relcode != "H" | is.na(relcode)) ~ 0L,
         # 2+ rows with mbr_num/relcode = 1 (take oldest person, most likely actually non-missing DOB)
@@ -395,21 +397,21 @@ load_stage_timevar <- function(conn = NULL,
         TRUE ~ hh_flag)]
       
       
-      ### Multiple hh_id_kc_pha values ----
+      ### Multiple hh_KCMASTER_ID values ----
       hh_decider[, hh_flag := case_when(
-        # One hh_id_kc_pha with mbr_num = 1
-        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_id_kc_pha) ~ 1L,
-        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_id_kc_pha) ~ 0L,
+        # One hh_KCMASTER_ID with mbr_num = 1
+        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & !is.na(hh_KCMASTER_ID) ~ 1L,
+        hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num == 1 | relcode == "H") & is.na(hh_KCMASTER_ID) ~ 0L,
         hh_id_cnt > 1 & mbr1_cnt >= 1 & mbr1_id_cnt == 1 & (mbr_num != 1 | is.na(mbr_num)) & 
           (relcode != "H" | is.na(relcode)) ~ 0L,
-        # 2+ hh_id_kc_pha with mbr_num = 1 (take oldest person)
+        # 2+ hh_KCMASTER_ID with mbr_num = 1 (take oldest person)
         hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
           oldest_hh_id_mbr1 == T & oldest_hh_id_mbr1_cnt == 1 ~ 1L,
         hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
           (oldest_hh_id_mbr1 == F | (is.na(oldest_hh_id_mbr1) & oldest_hh_id_mbr1_cnt == 1)) ~ 0L,
         hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num != 1 | is.na(mbr_num)) & 
           (relcode != "H" | is.na(relcode)) ~ 0L,
-        # 2+ hh_id_kc_pha with mbr_num = 1 and no DOB or tied DOB
+        # 2+ hh_KCMASTER_ID with mbr_num = 1 and no DOB or tied DOB
         hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
           oldest_hh_id_mbr1_cnt != 1 & decider_id_mbr1 == decider_id_mbr1_max ~ 1L,
         hh_id_cnt > 1 & mbr1_id_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
@@ -429,7 +431,7 @@ load_stage_timevar <- function(conn = NULL,
         TRUE ~ hh_flag)]
       
       
-      ### No hh_id_kc_pha values ----
+      ### No hh_KCMASTER_ID values ----
       hh_decider[, hh_flag := case_when(
         # 1+ mbr_num = 1 and DOBs
         hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & oldest_mbr1 == T & oldest_mbr1_cnt == 1 ~ 1L,
@@ -441,30 +443,30 @@ load_stage_timevar <- function(conn = NULL,
         hh_id_cnt == 0 & mbr1_cnt > 1 & (mbr_num == 1 | relcode == "H") & 
           oldest_mbr1_cnt != 1 & decider_mbr1 != decider_mbr1_max ~ 0L,
         hh_id_cnt == 0 & mbr1_cnt >= 1 & (mbr_num != 1 | is.na(mbr_num)) & (relcode != "H" | is.na(relcode)) ~ 0L,
-        # No member numbers, one possible hh_id_kc_pha contenders
+        # No member numbers, one possible hh_KCMASTER_ID contenders
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt == 1 ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 0 & hh_id_poss_cnt == 1 ~ 0L,
-        # No member numbers, 2+ possible hh_id_kc_pha contenders and DOBs
+        # No member numbers, 2+ possible hh_KCMASTER_ID contenders and DOBs
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & 
           oldest_hh_poss_cnt == 1 & oldest_hh_poss == T ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt > 1 & 
           (oldest_hh_poss == F | (is.na(oldest_hh_poss) & oldest_hh_poss_cnt == 1)) ~ 0L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt >= 1 & hh_id_poss == 0 ~ 0L,
-        # No member numbers, 2+ possible hh_id_kc_pha contenders and no DOB or tied DOB
+        # No member numbers, 2+ possible hh_KCMASTER_ID contenders and no DOB or tied DOB
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
           decider_hh_poss == decider_hh_poss_max ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss == 1 & hh_id_poss_cnt > 1 & oldest_hh_poss_cnt != 1 & 
           decider_hh_poss != decider_hh_poss_max ~ 0L,
-        # No member numbers or possible hh_id_kc_pha contenders, but DOBs
+        # No member numbers or possible hh_KCMASTER_ID contenders, but DOBs
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any == T & oldest_any_cnt == 1 ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & 
           (oldest_any == F | (is.na(oldest_any) & oldest_any_cnt == 1)) ~ 0L,
-        # No member numbers or possible hh_id_kc_pha contenders, and tied DOB
+        # No member numbers or possible hh_KCMASTER_ID contenders, and tied DOB
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
           decider_oldest == decider_oldest_max ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & hh_id_poss_cnt == 0 & oldest_any_cnt > 1 & 
           decider_oldest != decider_oldest_max ~ 0L,
-        # No member numbers or possible hh_id_kc_pha contenders, and no DOBs
+        # No member numbers or possible hh_KCMASTER_ID contenders, and no DOBs
         hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 & 
           decider_any == decider_any_max ~ 1L,
         hh_id_cnt == 0 & is.na(mbr1_cnt) & is.na(oldest_any) & oldest_any_cnt == 0 &  
@@ -479,7 +481,7 @@ load_stage_timevar <- function(conn = NULL,
       }
       
       # Transfer name and SSN details over to HH fields
-      hh_decider[hh_flag == 1, `:=` (hh_id_kc_pha = id_kc_pha,
+      hh_decider[hh_flag == 1, `:=` (hh_KCMASTER_ID = KCMASTER_ID,
                                      hh_ssn = ssn,
                                      hh_lname = lname,
                                      hh_fname = fname)]
@@ -487,7 +489,7 @@ load_stage_timevar <- function(conn = NULL,
       unique_hh_ids <- length(unique(hh_decider$hh_id_tmp))
       
       hh_decider <- hh_decider[hh_flag == 1, .(agency, act_date, hh_id_tmp,
-                                               hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+                                               hh_KCMASTER_ID, hh_ssn, hh_lname, hh_fname, hh_flag)]
       hh_decider <- unique(hh_decider)
       
       # Check all households are still present
@@ -502,13 +504,13 @@ load_stage_timevar <- function(conn = NULL,
       
     ## Set up data without head of household details ----
       hh_final <- copy(hh)
-      hh_final[, c('hh_id_kc_pha', 'hh_ssn', 'hh_lname', 'hh_fname') := NULL]
+      hh_final[, c('hh_KCMASTER_ID', 'hh_ssn', 'hh_lname', 'hh_fname') := NULL]
       hh_final <- unique(hh_final)
   
     ## Join HH decider back to main DF ----
       # Pull out all the head of households that didn't need to be decided
       hh_no_decider <- hh[hh_flag == 1 & has_hh == 1, 
-                          .(agency, act_date, hh_id_tmp, hh_id_kc_pha = id_kc_pha, hh_ssn = ssn, hh_lname = lname, hh_fname = fname, hh_flag)]
+                          .(agency, act_date, hh_id_tmp, hh_KCMASTER_ID = KCMASTER_ID, hh_ssn = ssn, hh_lname = lname, hh_fname = fname, hh_flag)]
 
       
       hh_final <- merge(hh_final, 
@@ -519,7 +521,7 @@ load_stage_timevar <- function(conn = NULL,
       
       hh_final[, `:=` (
         hh_flag = case_when(has_hh == 1 ~ hh_flag.x,
-                            hh_id_kc_pha == id_kc_pha & 
+                            hh_KCMASTER_ID == KCMASTER_ID & 
                               (hh_ssn == ssn | (is.na(hh_ssn) & is.na(ssn))) & 
                               (hh_lname == lname | (is.na(hh_lname) & is.na(lname))) & 
                               (hh_fname == fname | (is.na(hh_fname) & is.na(fname))) ~ 1L,
@@ -533,9 +535,9 @@ load_stage_timevar <- function(conn = NULL,
       # Some households still have multiple HHs because of duplicate HH data
       # Use initial HH flag and details to weed these out
       hh_final[has_hh2 > 1 & hh_flag == 1, hh_flag := 
-                 case_when(hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 1L,
-                           hh_flag.x == 0 & hh_flag == 1 & hh_id_kc_pha == id_kc_pha ~ 0L,
-                           hh_flag.x == 1 & hh_flag == 1 & hh_id_kc_pha != id_kc_pha ~ 0L,
+                 case_when(hh_flag.x == 1 & hh_flag == 1 & hh_KCMASTER_ID == KCMASTER_ID ~ 1L,
+                           hh_flag.x == 0 & hh_flag == 1 & hh_KCMASTER_ID == KCMASTER_ID ~ 0L,
+                           hh_flag.x == 1 & hh_flag == 1 & hh_KCMASTER_ID != KCMASTER_ID ~ 0L,
                            TRUE ~ hh_flag)]
       
       # Check how many households don't have a HH or have multiple HHs
@@ -547,12 +549,12 @@ load_stage_timevar <- function(conn = NULL,
       }
       
       # Apply hh_flag to any remaining duplicate rows and collapse
-      hh_final[, hh_flag := max(hh_flag), by = c("hh_id_tmp", "id_kc_pha", "ssn", "lname", "fname", "dob")]
+      hh_final[, hh_flag := max(hh_flag), by = c("hh_id_tmp", "KCMASTER_ID", "ssn", "lname", "fname", "dob")]
       
       # Select final columns for merging
       hh_final <- hh_final[, .(agency, act_date, hh_id_tmp, 
-                               id_kc_pha, ssn, lname, fname, dob, 
-                               hh_id_kc_pha, hh_ssn, hh_lname, hh_fname, hh_flag)]
+                               KCMASTER_ID, ssn, lname, fname, dob, 
+                               hh_KCMASTER_ID, hh_ssn, hh_lname, hh_fname, hh_flag)]
       hh_final <- unique(hh_final)
       
       # One last check for duplicate HHs
@@ -571,7 +573,7 @@ load_stage_timevar <- function(conn = NULL,
       pha[, `:=` (mbr_num = NULL, hh_ssn = NULL, hh_lname = NULL, hh_fname = NULL)]
       pha <- unique(pha)
       
-      pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "id_kc_pha",
+      pha <- merge(pha, hh_final, by = c("agency", "act_date", "hh_id_tmp", "KCMASTER_ID",
                                          "ssn", "lname", "fname", "dob"),
                     all.x = T)
       
@@ -599,17 +601,17 @@ load_stage_timevar <- function(conn = NULL,
       # 11 = collapse rows to have a single line per person per address per time there
       # 12 = delete rows where from_date = to_date and also from_date = the next row's from_date (often same program)
       # 13 = delete one row of pairs with identical start and end dates
-      # 14 = final de-duplication when id_kc_pha, from_date, to_date identical
+      # 14 = final de-duplication when KCMASTER_ID, from_date, to_date identical
       
     ## Sort data ----
-      pha_sort <- setorder(pha, id_kc_pha, act_date, agency, prog_type)
+      pha_sort <- setorder(pha, KCMASTER_ID, act_date, agency, prog_type)
       
     ## Set up row numbers and a tracking ----
       pha_sort[, row := .I]
   
       # Set up list of all rows to track
       drop_track <- pha_sort %>% 
-        select(row, id_kc_pha, id_hash, agency_prog_concat, 
+        select(row, KCMASTER_ID, id_hash, agency_prog_concat, 
                geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
                geo_hash_clean, geo_blank, act_date, 
                act_type, pha_source, cost_pha)
@@ -619,24 +621,24 @@ load_stage_timevar <- function(conn = NULL,
   # Group by cost_pha too because some port outs move between agencies
   # Ignore the warning produced, this will be addressed when rows with no action date are dropped
   pha_sort[, max_date := max(act_date, na.rm = T),
-           by = .(id_kc_pha, agency_prog_concat, geo_hash_clean, cost_pha)]
+           by = .(KCMASTER_ID, agency_prog_concat, geo_hash_clean, cost_pha)]
   
   
   ## Count the number of unique addresses a person had  ----
-  pha_sort[, add_num := uniqueN(geo_hash_clean), by = "id_kc_pha"]
+  pha_sort[, add_num := uniqueN(geo_hash_clean), by = "KCMASTER_ID"]
   
   
   ## Make port in and out variables ----
   ### Port out
   pha_sort[, port_out_kcha := 
              case_when(
-               id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & 
+               KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & 
                  abs(act_date - lead(act_date, 1)) <= 31 & 
                  agency == "SHA" & lead(agency, 1) == "KCHA" & 
                  (lead(port_out_kcha, 1) == 1 | port_in == 1) &
                  !lead(act_type, 1) %in% c(1, 4) & 
                  cost_pha %in% c("", "WA002") & act_type != 16 ~ 1L, 
-               id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) & 
+               KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) & 
                  abs(act_date - lag(act_date, 1)) < 31 & 
                  agency == "SHA" & lag(agency, 1) == "KCHA" & 
                  (lag(port_out_kcha, 1) == 1 | port_in == 1) &
@@ -646,12 +648,12 @@ load_stage_timevar <- function(conn = NULL,
   
   pha_sort[, port_out_sha := 
              case_when(
-               id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+               KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) &
                  abs(act_date - lead(act_date, 1)) < 31 & 
                  agency == "KCHA" & lead(agency, 1) == "SHA" & 
                  (lead(port_out_sha, 1) == 1 | port_in == 1) &
                  lead(act_type, 1) != 4 & cost_pha %in% c("", "WA001") ~ 1,
-               id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+               KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
                  abs(act_date - lag(act_date, 1)) < 31 & 
                  agency == "KCHA" & lag(agency, 1) == "SHA" & 
                  (lag(port_out_sha, 1) == 1 | port_in == 1) &
@@ -689,10 +691,10 @@ load_stage_timevar <- function(conn = NULL,
       dfsize_head <- nrow(pha_sort)
       repeat {
         dfsize <- nrow(pha_sort)
-        setorder(pha_sort, id_kc_pha, agency_prog_concat, act_date, act_type)
+        setorder(pha_sort, KCMASTER_ID, agency_prog_concat, act_date, act_type)
         
         pha_sort[, drop := 
-                   if_else(id_kc_pha == lag(id_kc_pha, 1) & 
+                   if_else(KCMASTER_ID == lag(KCMASTER_ID, 1) & 
                              geo_hash_clean == lag(geo_hash_clean, 1) &
                              agency_prog_concat == lag(agency_prog_concat, 1) &
                              cost_pha == lag(cost_pha, 1) &
@@ -728,9 +730,9 @@ load_stage_timevar <- function(conn = NULL,
   # and a random income level
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, agency_prog_concat, act_date, cost_pha)
+  setorder(pha_sort, KCMASTER_ID, agency_prog_concat, act_date, cost_pha)
   pha_sort[, drop := 
-             if_else(id_kc_pha == lead(id_kc_pha, 1) & 
+             if_else(KCMASTER_ID == lead(KCMASTER_ID, 1) & 
                        geo_hash_clean == lead(geo_hash_clean, 1) &
                        agency_prog_concat == lead(agency_prog_concat, 1) &
                        act_date == lead(act_date, 1) &
@@ -778,8 +780,8 @@ load_stage_timevar <- function(conn = NULL,
   # cost_pha field (makes the steps below work better)
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat, geo_hash_clean, cost_pha)
-  pha_sort[, drop := if_else(id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & 
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat, geo_hash_clean, cost_pha)
+  pha_sort[, drop := if_else(KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & 
                                act_date == lead(act_date, 1) &
                                agency_prog_concat == lead(agency_prog_concat, 1) & 
                                geo_hash_clean == lead(geo_hash_clean, 1) &
@@ -797,28 +799,28 @@ load_stage_timevar <- function(conn = NULL,
   # However, cost_pha is not consistently used so do not rely on solely that (also use action types and port flags)
   repeat {
     dfsize <-  nrow(pha_sort)
-    setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat, geo_hash_clean)
+    setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat, geo_hash_clean)
     # Need to check to pairs in both directions because sometimes the SHA date is just before the KCHA one and
     # relying on an alphabetical sort will fail
     # NB. There are some differences between the agencies that require slightly different code
     pha_sort[, drop := case_when(
-      id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & 
+      KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & 
         abs(act_date - lead(act_date, 1)) <= 31 &
         agency == "KCHA" & lead(agency, 1) == "SHA" &
         lead(port_out_kcha, 1) == 1 &
         !act_type %in% c(5, 6) ~ 5,
-      id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+      KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
         abs(act_date - lag(act_date, 1)) <= 31 &
         agency == "KCHA" & lag(agency, 1) == "SHA" &
         (geo_hash_clean == lag(geo_hash_clean, 1) | geo_blank == 1 | lag(port_out_kcha, 1) == 1) &
         ((act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4)) | 
            !act_type %in% c(1, 4, 5, 6)) ~ 5,
-      id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+      KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) &
         abs(act_date - lead(act_date, 1)) <= 31 &
         agency == "SHA" & lead(agency, 1) == "KCHA" &
         (geo_hash_clean == lead(geo_hash_clean, 1) | geo_blank == 1 | lead(port_out_sha, 1) == 1) & 
         !act_type %in% c(5, 6) ~ 5,
-      id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+      KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
         abs(act_date - lag(act_date, 1)) <= 31 &
         agency == "SHA" & lag(agency, 1) == "KCHA" &
         (geo_hash_clean == lag(geo_hash_clean, 1) | geo_blank == 1 | lag(port_out_sha, 1) == 1) &
@@ -853,8 +855,8 @@ load_stage_timevar <- function(conn = NULL,
   repeat {
     dfsize <-  nrow(pha_sort)
     pha_sort[, drop := if_else(
-      (id_kc_pha == lead(id_kc_pha, 1) & act_date == lead(act_date, 1) & geo_blank == 1 & lead(geo_blank, 1) != 1) |
-        (id_kc_pha == lag(id_kc_pha, 1) & act_date == lag(act_date, 1) & geo_blank == 1 & lag(geo_blank, 1) != 1),
+      (KCMASTER_ID == lead(KCMASTER_ID, 1) & act_date == lead(act_date, 1) & geo_blank == 1 & lead(geo_blank, 1) != 1) |
+        (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date == lag(act_date, 1) & geo_blank == 1 & lag(geo_blank, 1) != 1),
       6, 0)]
     # Pull out drop tracking and merge
     drop_temp <- pha_sort %>% select(row, drop)
@@ -896,10 +898,10 @@ load_stage_timevar <- function(conn = NULL,
   dfsize_head <- nrow(pha_sort)
   repeat {
     dfsize <-  nrow(pha_sort)
-    setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+    setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
     pha_sort[, drop := case_when(
       # SHA
-      (id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 31 &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 31 &
          # The act_type restriction avoids dropping rows that are genuine prog 
          # switches but may miss some that should be dropped
          !((act_type %in% c(1, 4) & !lag(act_type, 1) %in% c(1, 4)) | 
@@ -907,21 +909,21 @@ load_stage_timevar <- function(conn = NULL,
          agency_prog_concat != lag(agency_prog_concat, 1) &
          agency == "SHA" & lag(agency, 1) == "SHA" &
          str_detect(pha_source, "ph") & str_detect(lag(pha_source, 1), "hcv")) |
-        (id_kc_pha == lead(id_kc_pha, 1) & act_date - lead(act_date, 1) >= -31 &
+        (KCMASTER_ID == lead(KCMASTER_ID, 1) & act_date - lead(act_date, 1) >= -31 &
            !((act_type %in% c(1, 4) & !lead(act_type, 1) %in% c(1, 4)) |
                (act_type %in% c(5, 6) & !lead(act_type, 1) %in% c(5, 6))) &
            agency_prog_concat != lead(agency_prog_concat, 1) &
            agency == "SHA" & lead(agency, 1) == "SHA" &
            str_detect(pha_source, "ph") < str_detect(lead(pha_source, 1), "hcv")) ~ 7,
       # KCHA (generally prioritizing HCV)
-      (id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 62 &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 62 &
          !((act_type %in% c(1, 4) & !lag(act_type, 1) %in% c(1, 4)) |
              (!act_type %in% c(5, 6) & lag(act_type, 1) %in% c(5, 6))) &
          agency_prog_concat != lag(agency_prog_concat, 1) &
          agency == "KCHA" & lag(agency, 1) == "KCHA" &
          prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") &
          max_date - lag(max_date, 1) <= 62) |
-        (id_kc_pha == lead(id_kc_pha, 1) & act_date - lead(act_date, 1) >= -62 &
+        (KCMASTER_ID == lead(KCMASTER_ID, 1) & act_date - lead(act_date, 1) >= -62 &
            !((act_type %in% c(1, 4) & !lead(act_type, 1) %in% c(1, 4)) |
                (act_type %in% c(5, 6) & !lead(act_type, 1) %in% c(5, 6))) &
            agency_prog_concat != lead(agency_prog_concat, 1) &
@@ -951,27 +953,27 @@ load_stage_timevar <- function(conn = NULL,
   #  always record the same exit date for the same actual exit
   repeat {
     dfsize <-  nrow(pha_sort)
-    setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat, max_date)
+    setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat, max_date)
     pha_sort[, drop := case_when(
-      (id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 30 &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 30 &
          !((act_type %in% c(1, 4) & !lag(act_type, 1) %in% c(1, 4)) |
              (!act_type %in% c(5, 6) & lag(act_type, 1) %in% c(5, 6))) &
          agency_prog_concat != lag(agency_prog_concat, 1) &
          agency == "SHA" & lag(agency, 1) == "SHA" &
          max_date - lag(max_date, 1) <= 0) |
-        (id_kc_pha == lead(id_kc_pha, 1) & act_date == lead(act_date, 1) &
+        (KCMASTER_ID == lead(KCMASTER_ID, 1) & act_date == lead(act_date, 1) &
            !((act_type %in% c(1, 4) & !lead(act_type, 1) %in% c(1, 4)) |
                (act_type %in% c(5, 6) & !lead(act_type, 1) %in% c(5, 6))) &
            agency_prog_concat != lead(agency_prog_concat, 1) &
            agency == "SHA" & lead(agency, 1) == "SHA" &
            max_date - lead(max_date, 1) < 0) ~ 7,
-      (id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 62 &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 62 &
          !((act_type %in% c(1, 4) & !lag(act_type, 1) %in% c(1, 4)) |
              (!act_type %in% c(5, 6) & lag(act_type, 1) %in% c(5, 6))) &
          agency_prog_concat != lag(agency_prog_concat, 1) &
          agency == "KCHA" & lag(agency, 1) == "KCHA" &
          max_date - lag(max_date, 1) <= 0) |
-        (id_kc_pha == lead(id_kc_pha, 1) & act_date == lead(act_date, 1) &
+        (KCMASTER_ID == lead(KCMASTER_ID, 1) & act_date == lead(act_date, 1) &
            !((act_type %in% c(1, 4) & !lead(act_type, 1) %in% c(1, 4)) |
                (act_type %in% c(5, 61) & !lead(act_type, 1) %in% c(5, 6))) &
            agency_prog_concat != lead(agency_prog_concat, 1) &
@@ -1006,10 +1008,10 @@ load_stage_timevar <- function(conn = NULL,
   # the next household action date.
   # Existing max_date is made from agency_prog_concat, geo_hash_clean, and cost_pha.
   # Need to just use agency_prog_concat here to avoid missing move outs
-  pha_sort[, max_date2 := max(act_date, na.rm = T), by = .(id_kc_pha, agency_prog_concat)]
+  pha_sort[, max_date2 := max(act_date, na.rm = T), by = .(KCMASTER_ID, agency_prog_concat)]
   
   # Pull out the maximum data for each person
-  max_date <- pha_sort %>% distinct(id_kc_pha, hh_id_long, agency_prog_concat, max_date2)
+  max_date <- pha_sort %>% distinct(KCMASTER_ID, hh_id_long, agency_prog_concat, max_date2)
   # ID which set of data is for the H-H
   hh_act_dates <- pha_sort %>%
     filter(ssn == hh_ssn | (is.na(hh_ssn) & lname == hh_lname & fname == hh_fname)) %>%
@@ -1018,19 +1020,19 @@ load_stage_timevar <- function(conn = NULL,
   # Join together and do some filtering
   act_dates_merge <- left_join(max_date, hh_act_dates, 
                                by = c("hh_id_long", "agency_prog_concat")) %>%
-    arrange(hh_id_long, id_kc_pha, act_date) %>%
+    arrange(hh_id_long, KCMASTER_ID, act_date) %>%
     filter(act_date > max_date2)
   # The first row in each group is the next date for a household after this 
   # individual's last date. If missing, the individual was still in the household.
   act_dates_merge <- act_dates_merge %>% 
-    group_by(id_kc_pha, hh_id_long, agency_prog_concat) %>% 
+    group_by(KCMASTER_ID, hh_id_long, agency_prog_concat) %>% 
     slice(., 1) %>%
     ungroup() %>%
     rename(next_hh_act = act_date)
   act_dates_merge <- setDT(act_dates_merge)
   # Join back with original data
   pha_sort <- merge(pha_sort, act_dates_merge,
-                    by = c("hh_id_long", "id_kc_pha", "agency_prog_concat", "max_date2"), all.x = T)
+                    by = c("hh_id_long", "KCMASTER_ID", "agency_prog_concat", "max_date2"), all.x = T)
   
   # Remove temp files
   rm(max_date)
@@ -1045,18 +1047,18 @@ load_stage_timevar <- function(conn = NULL,
   dfsize_head <- nrow(pha_sort)
   repeat {
     dfsize <-  nrow(pha_sort)
-    setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+    setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
     
     pha_sort[, drop := case_when(
-      (id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 62 &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 62 &
          agency != lag(agency, 1) & !act_type %in% c(1, 4) &
          ((agency == "SHA" & port_out_sha == 1 & lag(port_out_sha, 1) == 1) |
             (agency == "KCHA" & port_out_kcha == 1 &  lag(port_out_kcha, 1) == 1))) |
-        (id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & act_date - lead(act_date, 1) >= -62 &
+        (KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & act_date - lead(act_date, 1) >= -62 &
            agency != lead(agency, 1) & !lead(act_type, 1) %in% c(1, 4) &
            ((agency == "SHA" & port_out_sha == 1 & lead(port_out_sha, 1) == 1) |
               (agency == "KCHA" & port_out_kcha == 1 & lead(port_out_kcha, 1) == 1))) ~ 8,
-      (id_kc_pha == lag(id_kc_pha, 1) & id_kc_pha == lead(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) & !is.na(lead(id_kc_pha, 1)) &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) & !is.na(lead(KCMASTER_ID, 1)) &
          agency != lag(agency, 1) & agency != lead(agency, 1) &
          !act_type %in% c(1, 4) & 
          ((agency == "SHA" & port_out_sha == 1 & 
@@ -1080,9 +1082,9 @@ load_stage_timevar <- function(conn = NULL,
   }
   
   # There are also some non-port agency switches that need fixing
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   pha_sort[, drop := ifelse(
-    id_kc_pha == lag(id_kc_pha, 1) & act_date - lag(act_date, 1) <= 62 &
+    KCMASTER_ID == lag(KCMASTER_ID, 1) & act_date - lag(act_date, 1) <= 62 &
       agency != lag(agency, 1) &
       act_type %in% c(5, 6) & lag(act_type, 1) %in% c(1, 4),
     8, 0)]
@@ -1111,9 +1113,9 @@ load_stage_timevar <- function(conn = NULL,
   # (these look like the person re-entered housing/moved)
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   pha_sort[, drop := case_when(
-    id_kc_pha == lag(id_kc_pha, 1) & (id_kc_pha != lead(id_kc_pha, 1) | is.na(lead(id_kc_pha, 1))) &
+    KCMASTER_ID == lag(KCMASTER_ID, 1) & (KCMASTER_ID != lead(KCMASTER_ID, 1) | is.na(lead(KCMASTER_ID, 1))) &
       agency == lag(agency, 1) & 
       lag(act_type, 1) == 6 & !act_type %in% c(1, 4) &
       # Slightly separate rules for SHA and KCHA
@@ -1123,7 +1125,7 @@ load_stage_timevar <- function(conn = NULL,
                 (geo_blank == 1 | geo_hash_clean == lag(geo_hash_clean, 1))))) |
          (agency == "SHA" & geo_blank == 1)) ~ 9,
     # For erroneous EOPs in SHA data, drop the row with the EOP in it
-    id_kc_pha == lead(id_kc_pha, 1) & act_type == 6 & agency == "SHA" &
+    KCMASTER_ID == lead(KCMASTER_ID, 1) & act_type == 6 & agency == "SHA" &
       geo_blank != 1 &
       geo_hash_clean == lead(geo_hash_clean, 1) & 
       lead(geo_blank, 1) != 1 ~ 9,
@@ -1148,10 +1150,10 @@ load_stage_timevar <- function(conn = NULL,
   # erroneously treating two separate periods at an address as one
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   # Set up a flag to save repeating code
-  pha_sort[, middle := id_kc_pha == lag(id_kc_pha, 1) & id_kc_pha == lead(id_kc_pha, 1) & 
-             !is.na(lag(id_kc_pha, 1)) & !is.na(lead(id_kc_pha, 1)) &
+  pha_sort[, middle := KCMASTER_ID == lag(KCMASTER_ID, 1) & KCMASTER_ID == lead(KCMASTER_ID, 1) & 
+             !is.na(lag(KCMASTER_ID, 1)) & !is.na(lead(KCMASTER_ID, 1)) &
              geo_hash_clean == lag(geo_hash_clean, 1) & geo_hash_clean == lead(geo_hash_clean, 1) &
              geo_blank != 1 &
              agency_prog_concat == lag(agency_prog_concat, 1) & agency_prog_concat == lead(agency_prog_concat, 1) & 
@@ -1167,7 +1169,7 @@ load_stage_timevar <- function(conn = NULL,
     middle == T & is.na(lag(cost_pha, 1)) & cost_pha == lead(cost_pha, 1) ~ 10,
     middle == T & is.na(cost_pha) & lag(cost_pha, 1) == lead(cost_pha, 1) ~ 10,
     middle == T & cost_pha == lag(cost_pha, 1) & is.na(lead(cost_pha, 1)) & cost_pha == lead(cost_pha, 2) & 
-      id_kc_pha == lead(id_kc_pha, 2) & geo_hash_clean == lead(geo_hash_clean, 2) &
+      KCMASTER_ID == lead(KCMASTER_ID, 2) & geo_hash_clean == lead(geo_hash_clean, 2) &
       agency_prog_concat == lead(agency_prog_concat, 2) ~ 10,
     TRUE ~ 0
   )]
@@ -1290,12 +1292,12 @@ load_stage_timevar <- function(conn = NULL,
   
   
   ## Create start and end dates for a person at that address/progam/agency ----
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   pha_sort[, ':=' (
     # First row for a person = act_date (admit_dates stretch back too far for port ins)
     # Any change in agency/program/address/PHA billed = act date
     # If addresses are both blank, check for a gap larger than the time between reexams
-    from_date = as.Date(ifelse(id_kc_pha != lag(id_kc_pha, 1) | is.na(lag(id_kc_pha, 1)) | 
+    from_date = as.Date(ifelse(KCMASTER_ID != lag(KCMASTER_ID, 1) | is.na(lag(KCMASTER_ID, 1)) | 
                                  agency_prog_concat != lag(agency_prog_concat, 1) |
                                  geo_hash_clean != lag(geo_hash_clean, 1) | cost_pha != lag(cost_pha, 1) |
                                  (geo_blank == 1 & lag(geo_blank == 1) & 
@@ -1311,7 +1313,7 @@ load_stage_timevar <- function(conn = NULL,
     to_date = as.Date(
       case_when(
         act_type == 5 | act_type == 6 | act_type == 11 ~  act_date,
-        id_kc_pha != lead(id_kc_pha, 1) | is.na(lead(id_kc_pha, 1 )) |
+        KCMASTER_ID != lead(KCMASTER_ID, 1) | is.na(lead(KCMASTER_ID, 1 )) |
           agency_prog_concat != lead(agency_prog_concat, 1) |
           cost_pha != lead(cost_pha, 1) | 
           (geo_blank == 1 & lead(geo_blank == 1) & 
@@ -1333,7 +1335,7 @@ load_stage_timevar <- function(conn = NULL,
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
   
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   # Bring start and end dates onto a single line per address/program
   pha_sort[, drop := ifelse(is.na(from_date) & is.na(to_date), 11, 0)]
   
@@ -1348,7 +1350,7 @@ load_stage_timevar <- function(conn = NULL,
   
   # Then get start and end dates onto a single line
   # NB. Important to retain the order from the code above
-  setorder(pha_sort, id_kc_pha, act_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, act_date, agency_prog_concat)
   pha_sort[, to_date := as.Date(ifelse(is.na(to_date), lead(to_date, 1), to_date), 
                                 origin = "1970-01-01")]
   pha_sort[, drop := ifelse(is.na(from_date) | is.na(to_date), 11, 0)]
@@ -1368,11 +1370,11 @@ load_stage_timevar <- function(conn = NULL,
   ### Infer ports by comparing agencies and to_dates
   # NB. Needs more inspection and checking
   # pha_sort <- pha_sort %>%
-  #   arrange(id_kc_pha, from_date, to_date, agency_prog_concat) %>%
+  #   arrange(KCMASTER_ID, from_date, to_date, agency_prog_concat) %>%
   #   mutate(
-  #     port_out_sha = ifelse(id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & agency == "SHA" & lead(agency, 1) == "KCHA" &
+  #     port_out_sha = ifelse(KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & agency == "SHA" & lead(agency, 1) == "KCHA" &
   #                             to_date >= lead(from_date, 1) & lead(act_type, 1) != 6, 1, port_out_sha),
-  #     port_out_kcha = ifelse(id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & agency == "KCHA" & lead(agency, 1) == "SHA" &
+  #     port_out_kcha = ifelse(KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & agency == "KCHA" & lead(agency, 1) == "SHA" &
   #                             to_date >= lead(from_date, 1) & lead(act_type, 1) != 6, 1, port_out_kcha)
   #   )
   
@@ -1387,25 +1389,25 @@ load_stage_timevar <- function(conn = NULL,
   # Use the same logic as droptype 6 to decide which row to keep
   time_start <- Sys.time()
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, from_date, to_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, from_date, to_date, agency_prog_concat)
   # First capture pairs where only one row has the same start and end date
-  pha_sort[, drop := ifelse(id_kc_pha == lead(id_kc_pha, 1) & from_date == to_date &
+  pha_sort[, drop := ifelse(KCMASTER_ID == lead(KCMASTER_ID, 1) & from_date == to_date &
                               from_date == lead(from_date, 1) &
                               from_date != lead(to_date, 1), 12, 0)]
-  pha_sort[, drop := ifelse(id_kc_pha == lag(id_kc_pha, 1) & from_date == to_date &
+  pha_sort[, drop := ifelse(KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date == to_date &
                               from_date == lag(from_date, 1) &
                               from_date != lag(to_date, 1), 12, drop)]
   # Then find pairs where both rows have the same start and end dates 
   # (use logic from droptype 05 to decide)
   # SHA
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & 
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & 
        from_date == to_date & from_date == lead(from_date, 1) &
        from_date == lead(to_date, 1) &
        agency == "SHA" & lead(agency, 1) == "SHA" &
        ((pha_source < lead(pha_source, 1) & abs(max_date - lead(max_date, 1)) <= 31) | 
           (pha_source == lead(pha_source, 1) & max_date - lead(max_date, 1) < -31))) |
-      (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) &
+      (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) &
          from_date == to_date & from_date == lag(from_date, 1) &
          from_date == lag(to_date, 1) &
          agency == "SHA" & lag(agency, 1) == "SHA" & 
@@ -1414,13 +1416,13 @@ load_stage_timevar <- function(conn = NULL,
     12, drop)]
   # KCHA
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & 
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & 
        from_date == to_date & from_date == lead(from_date, 1) &
        from_date == lead(to_date, 1) &
        agency == "KCHA" & lead(agency, 1) == "KCHA" & 
        ((prog_type == "PH" & lead(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
            abs(max_date - lead(max_date, 1)) <= 62) |
-          max_date - lead(max_date, 1) > 62)) | (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & 
+          max_date - lead(max_date, 1) > 62)) | (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & 
                                                    from_date == to_date & from_date == lag(from_date, 1) & from_date == lag(to_date, 1) &
                                                    agency == "KCHA" & lag(agency, 1) == "KCHA" & 
                                                    ((prog_type == "PH" & lag(prog_type, 1) %in% c("PBS8", "TBS8", "PORT") & 
@@ -1429,22 +1431,22 @@ load_stage_timevar <- function(conn = NULL,
   # If there are still pairs within a PHA, keep the program that immediately preceded this pair
   # SHA
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & 
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & 
        from_date == to_date & from_date == lead(from_date, 1) & from_date == lead(to_date, 1) &
        agency == "SHA" & lead(agency, 1) == "SHA" & pha_source == lead(pha_source, 1) &
        abs(max_date - lead(max_date, 1)) <= 31 & agency_prog_concat != lag(agency_prog_concat, 1)) |
-      (drop == 0 & id_kc_pha == lag(id_kc_pha, 1) & from_date == to_date & 
+      (drop == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date == to_date & 
          from_date == lag(from_date, 1) & from_date == lag(to_date, 1) &
          agency == "SHA" & lag(agency, 1) == "SHA" & pha_source == lag(pha_source, 1) &
          abs(max_date - lead(max_date, 1)) <= 31 & agency_prog_concat != lag(agency_prog_concat, 2)),
     12, drop)]
   # KCHA
   pha_sort[, drop := ifelse(
-    (drop == 0 & id_kc_pha == lead(id_kc_pha, 1) & from_date == to_date &
+    (drop == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & from_date == to_date &
        from_date == lead(from_date, 1) & from_date == lead(to_date, 1) &
        agency == "KCHA" & lead(agency, 1) == "KCHA" & subsidy_type == lead(subsidy_type, 1) &
        abs(max_date - lead(max_date, 1)) <= 62 & agency_prog_concat != lag(agency_prog_concat, 1)) |
-      (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & 
+      (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & 
          from_date == to_date & from_date == lag(from_date, 1) & from_date == lag(to_date, 1) & 
          agency == "KCHA" & lag(agency, 1) == "KCHA" &
          subsidy_type == lag(subsidy_type, 1) & abs(max_date - lead(max_date, 1)) <= 62 &
@@ -1453,16 +1455,16 @@ load_stage_timevar <- function(conn = NULL,
   # If the pairs come from different agencies, keep the PHA that immediately 
   #   preceded this pair or the one with the latest max date
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & 
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & 
        from_date == to_date & from_date == lead(from_date, 1) & from_date == lead(to_date, 1) &
        agency != lead(agency, 1) & agency != lag(agency, 1)) |
-      (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) &
+      (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) &
          from_date == to_date & from_date == lag(from_date, 1) & from_date == lag(to_date, 1) &
          agency != lag(agency, 1) & agency != lag(agency, 2)),
     12, drop)]
   # There are ~50 pairs left that don't fit anything else, drop the second row
   pha_sort[, drop := ifelse(
-    drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & 
+    drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & 
       from_date == to_date & from_date == lag(from_date, 1) & from_date == lag(to_date, 1),
     12, drop)]
   
@@ -1482,39 +1484,39 @@ load_stage_timevar <- function(conn = NULL,
   time_start <- Sys.time()
   ### First find rows with identical start and end dates
   dfsize_head <- nrow(pha_sort)
-  setorder(pha_sort, id_kc_pha, from_date, to_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, from_date, to_date, agency_prog_concat)
   # Keep port in row
   pha_sort[, drop := ifelse(
-    (id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+    (KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) &
        from_date == lead(from_date, 1) & to_date == lead(to_date, 1) &
        port_in == 0 & lead(port_in, 1) == 1) |
-      (id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+      (KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
          from_date == lag(from_date, 1) & to_date == lag(to_date, 1) &
          port_in == 0 & lag(port_in, 1) == 1),
     13, 0)]
   # If both or neither rows are port in, keep the max date
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) &
        from_date == lead(from_date, 1) & to_date == lead(to_date, 1) &
        max_date < lead(max_date, 1)) |
-      (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+      (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
          from_date == lag(from_date, 1) & to_date == lag(to_date, 1) &
          max_date < lag(max_date, 1)),
     13, drop)]
   # If max_dates and ports are the same, keep any special type programs
   pha_sort[, drop := ifelse(
-    (drop == 0 & lead(drop, 1) == 0 & id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) &
+    (drop == 0 & lead(drop, 1) == 0 & KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) &
        from_date == lead(from_date, 1) & to_date == lead(to_date, 1) &
        vouch_type_final != "" & !is.na(vouch_type_final) &
        (lead(vouch_type_final, 1) == "" | is.na(lead(vouch_type_final, 1)))) |
-      (drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+      (drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
          from_date == lag(from_date, 1) & to_date == lag(to_date, 1) &
          vouch_type_final != "" & !is.na(vouch_type_final) &
          (lag(vouch_type_final, 1) == "" | is.na(lag(vouch_type_final, 1)))),
     13, drop)]
   # For the remaining ~84 pairs, drop the second row
   pha_sort[, drop := ifelse(
-    drop == 0 & lag(drop, 1) == 0 & id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+    drop == 0 & lag(drop, 1) == 0 & KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
       from_date == lag(from_date, 1) & to_date == lag(to_date, 1), 13, drop)]
   
   
@@ -1523,9 +1525,9 @@ load_stage_timevar <- function(conn = NULL,
   # Be sure not to capture legitimate exits where the program is the same but the address was missing in the exit row
   # NB. Sometimes the addresses are the same and the programs are slightly different
   # Can check up two rows to see
-  setorder(pha_sort, id_kc_pha, from_date, to_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, from_date, to_date, agency_prog_concat)
   pha_sort[, drop := ifelse(
-    id_kc_pha == lag(id_kc_pha, 1) & !is.na(lag(id_kc_pha, 1)) &
+    KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) &
       lag(to_date, 1) >= from_date & from_date == to_date & act_type %in% c(5, 6) &
       !((agency_prog_concat == lag(agency_prog_concat, 1) & geo_blank == 1) | 
           geo_hash_clean == lag(geo_hash_clean, 1) |
@@ -1550,19 +1552,19 @@ load_stage_timevar <- function(conn = NULL,
   ### Truncate overlapping dates
   # Assume that most recent program/agency is the one to count 
   # (will be biased to the second one alphabetically when start dates are the same, if any remain)
-  setorder(pha_sort, id_kc_pha, from_date, to_date, agency_prog_concat)
+  setorder(pha_sort, KCMASTER_ID, from_date, to_date, agency_prog_concat)
   # Make a note of which rows were truncated
   pha_sort[, truncated := ifelse(
-    id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & to_date >= lead(from_date, 1), 1, 0)]
+    KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & to_date >= lead(from_date, 1), 1, 0)]
   # Now truncate
   pha_sort[, to_date := as.Date(
     case_when(
       # If the start dates aren't the same, use next start date - 1 day
-      id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & to_date >= lead(from_date, 1) & 
+      KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & to_date >= lead(from_date, 1) & 
         from_date != lead(from_date, 1) ~ lead(from_date, 1) - 1,
       #  If the start dates are the same, set the first end date equal to the start date 
       # (avoids having negative time in housing but does lead to duplicate rows for a person on a given date)
-      id_kc_pha == lead(id_kc_pha, 1) & !is.na(lead(id_kc_pha, 1)) & to_date >= lead(from_date, 1) & 
+      KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & to_date >= lead(from_date, 1) & 
         from_date == lead(from_date, 1) ~ from_date,
       TRUE ~ to_date
     ), origin = "1970-01-01")]
@@ -1571,11 +1573,11 @@ load_stage_timevar <- function(conn = NULL,
   # See how many rows were affected
   sum(pha_sort$truncated, na.rm = T)
   
-  ## De-duplicate rows where id_kc_pha, to_date, and from_date are still duplicated (droptype == 14) ----
+  ## De-duplicate rows where KCMASTER_ID, to_date, and from_date are still duplicated (droptype == 14) ----
     # At this stage all logical de-duplications have already taken places. 
     # The few remaining duplicates (only 2 using up through 2022) will be dropped at random. 
       time_start <- Sys.time()
-      pha_sort[, dup := 1:.N, .(id_kc_pha, from_date, to_date)]
+      pha_sort[, dup := 1:.N, .(KCMASTER_ID, from_date, to_date)]
       drop_track[row %in% pha_sort[dup != 1]$row, drop := 14] # keep record of what was dropped and why
       pha_sort <- pha_sort[dup == 1]
       pha_sort[, dup := NULL]
@@ -1588,23 +1590,23 @@ load_stage_timevar <- function(conn = NULL,
   ## Coverage time ----
   # Define a gap as 2+ months between from_date and previous to_date
   # Also record actual gap length for use in deciding which period start date to use
-  setorder(pha_timevar, id_kc_pha, from_date, to_date)
+  setorder(pha_timevar, KCMASTER_ID, from_date, to_date)
   pha_timevar[, ':=' (
     cov_time = interval(start = from_date, end = to_date) / ddays(1) + 1,
-    gap_length = ifelse(id_kc_pha == lag(id_kc_pha, 1), from_date - lag(to_date, 1), NA_integer_),
-    gap = case_when(is.na(lag(id_kc_pha, 1)) | id_kc_pha != lag(id_kc_pha, 1) ~ 0L,
-                    id_kc_pha == lag(id_kc_pha, 1) & from_date - lag(to_date, 1) <= 62 ~ 0L,
+    gap_length = ifelse(KCMASTER_ID == lag(KCMASTER_ID, 1), from_date - lag(to_date, 1), NA_integer_),
+    gap = case_when(is.na(lag(KCMASTER_ID, 1)) | KCMASTER_ID != lag(KCMASTER_ID, 1) ~ 0L,
+                    KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date - lag(to_date, 1) <= 62 ~ 0L,
                     from_date - lag(to_date, 1) > 62 ~ 1L,
                     TRUE ~ NA_integer_))]
   # Find the number of unique periods a person was in housing
-  pha_timevar[, period := cumsum(gap) + 1, id_kc_pha] # when there is no gap, it is one period, so each gap adds one period to the baseline period
+  pha_timevar[, period := cumsum(gap) + 1, KCMASTER_ID] # when there is no gap, it is one period, so each gap adds one period to the baseline period
   
   
   ## Period start date ----
   # Can be used in conjunction with the admit_date variables in final.pha_demo
   #   to determine how long someone has been in housing
-  pha_timevar[, period_start := min(from_date), by = .(id_kc_pha, period)]
-  pha_timevar[, period_end := max(to_date), by = .(id_kc_pha, period)]
+  pha_timevar[, period_start := min(from_date), by = .(KCMASTER_ID, period)]
+  pha_timevar[, period_end := max(to_date), by = .(KCMASTER_ID, period)]
   
   
   ## ZIPs ----
@@ -1622,7 +1624,7 @@ load_stage_timevar <- function(conn = NULL,
   # Often an exit or other event is missing an address in the original data
   # If the from/to_date length = 1 day AND the previous from_date is the current to_date - 1 day
   #   assume we can fill in the address details with the previous row
-  pha_timevar[id_kc_pha == lag(id_kc_pha, 1) & from_date == to_date & 
+  pha_timevar[KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date == to_date & 
         from_date - lag(to_date, 1) == 1 & is.na(geo_add1_clean) & 
         is.na(geo_add2_clean), move_add := 1L]
   
@@ -1647,7 +1649,7 @@ load_stage_timevar <- function(conn = NULL,
   ## Select and arrange columns
   cols_select <- c(
     # ID variables
-    "id_kc_pha", "id_hash", "hh_id_long", "hh_id_kc_pha",
+    "KCMASTER_ID", "id_hash", "hh_id_long", "hh_KCMASTER_ID",
     # Date info
     "from_date", "to_date", "cov_time", "gap_length", "gap", "period", "period_start", "period_end",
     # Time-varying demog variables
@@ -1669,14 +1671,33 @@ load_stage_timevar <- function(conn = NULL,
   # LOAD TO SQL SERVER ----
   message("Loading to SQL")
   
-  # Set up cols
-  col_types <- c("id_kc_pha" = "char(10)")
+  # LOAD YAML file (and create it if necessary)
+    yaml_file <- paste0(here::here(), "/etl/stage/load_stage_pha_timevar.yaml")
+    if(file.exists(yaml_file)){yaml_config <- yaml::read_yaml(yaml_file)}
+    
+    if(!file.exists(yaml_file) || !identical( names(yaml_config$vars), names(pha_timevar))){
+      message("Generating a new yaml file because one does not exist or the data structure has changed since the previous run.")
+      # create basic yaml
+      generate_yaml(mydt = pha_timevar,
+                    outfile = yaml_file,
+                    datasource = 'PHA',
+                    schema = to_schema,
+                    table = to_table)
+      yaml_config <- yaml::read_yaml(yaml_file)
+    } else {
+      message("\U0001f642 Your yaml file looks good!")
+    }
   
   # Write data
   odbc::dbWriteTable(conn, 
                      name = DBI::Id(schema = to_schema, table = to_table), 
                      value = as.data.frame(pha_timevar),
                      overwrite = T, append = F,
-                     field.types = col_types,
+                     field.types = unlist(yaml_config$vars),
                      batch_rows = 10000)
+  
+  # Quick QA
+  sqlcount <- odbc::dbGetQuery(conn, paste0("SELECT count(*) FROM ", to_schema, ".", to_table))
+  if(sqlcount == nrow(pha_timevar)){message("\U0001f642 It looks like all of your timevar data loaded to SQL!")
+  }else{warning("\n\U00026A0 The number of rows in `pha_timevar` are not the same as those in the SQL table.")}
 }

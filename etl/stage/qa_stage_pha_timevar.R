@@ -27,9 +27,15 @@ qa_stage_pha_timevar <- function(conn = NULL,
   
   # If this is the first time ever loading data, skip some checks.
   #   Otherwise, check against existing QA values
-  
   message("Running QA on ", to_schema, ".", to_table)
   
+  # small function to update QA table 
+  update_qa <- function(myupdate = NULL, mytable = qa_table){
+    odbc::dbWriteTable(conn = conn, 
+                       name = DBI::Id(schema = qa_schema, table = mytable), 
+                       value = as.data.frame(myupdate), 
+                       append = T, 
+                       overwrite = F)}
   
   # PULL OUT VALUES NEEDED MULTIPLE TIMES ----
   # Rows in current table
@@ -66,83 +72,71 @@ qa_stage_pha_timevar <- function(conn = NULL,
     
     if (row_diff < 0) {
       row_qa_fail <- 1
-      DBI::dbExecute(
-        conn = conn,
-        glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                   (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                   VALUES ({last_run}, 
-                   '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                   'Number new rows compared to most recent run', 
-                   'FAIL', 
-                   {Sys.time()}, 
-                   'There were {row_diff} fewer rows in the most recent table 
-                       ({row_count} vs. {previous_rows})')",
-                       .con = conn))
+      
+      refresh <- data.table(last_run = last_run, 
+                            table_name = paste0(to_schema, '.', to_table), 
+                            qa_item = 'Number new rows compared to most recent run', 
+                            qa_result = 'FAIL', 
+                            qa_date = Sys.time(), 
+                            note = paste0('There were ', abs(row_diff), ' fewer rows in the most recent table (', 
+                                          row_count, ' vs. ', previous_rows, ')'))
+      update_qa(myupdate = refresh)
       
       message(glue::glue("\U00026A0 Fewer rows than found last time.  
                   Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
     } else {
       row_qa_fail <- 0
-      DBI::dbExecute(
-        conn = conn,
-        glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                   (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                   VALUES ({last_run}, 
-                   '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                   'Number new rows compared to most recent run', 
-                   'PASS', 
-                   {Sys.time()}, 
-                   'There were {row_diff} more rows in the most recent table 
-                       ({row_count} vs. {previous_rows})')",
-                       .con = conn))
+      
+      refresh <- data.table(last_run = last_run, 
+                            table_name = paste0(to_schema, '.', to_table), 
+                            qa_item = 'Number new rows compared to most recent run', 
+                            qa_result = 'PASS', 
+                            qa_date = Sys.time(), 
+                            note = paste0('There were ', row_diff, ' more rows in the most recent table (', 
+                                          row_count, ' vs. ', previous_rows, ')'))
+      update_qa(myupdate = refresh)
+      
       message(glue::glue("\U0001f642 The new number of rows is the same or greater than the number loaded last time.  
                   Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
     }
   }
   
   
-  # CHECK DISTINCT IDS = DISTINCT IN STAGE_DEMO ----
+  # CHECK TIMEVAR DISTINCT IDS <= DISTINCT IN STAGE_DEMO ----
   # Expect that demo will have more because some rows are dropped where the person 
   # only had a single entry etc.
   id_count_timevar <- as.numeric(odbc::dbGetQuery(
-    conn, glue::glue_sql("SELECT COUNT (DISTINCT id_kc_pha) AS count FROM {`to_schema`}.{`to_table`}",
+    conn, glue::glue_sql("SELECT COUNT (DISTINCT KCMASTER_ID) AS count FROM {`to_schema`}.{`to_table`}",
                          .con = conn)))
   
   id_count_demo <- as.numeric(odbc::dbGetQuery(
-    conn, glue::glue_sql("SELECT COUNT (DISTINCT id_kc_pha) as count FROM {`demo_schema`}.{`demo_table`}",
+    conn, glue::glue_sql("SELECT COUNT (DISTINCT KCMASTER_ID) as count FROM {`demo_schema`}.{`demo_table`}",
                          .con = conn)))
   
   if (id_count_timevar > id_count_demo) {
     id_distinct_qa_fail <- 1
-    DBI::dbExecute(
-      conn = conn,
-      glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                       'Number distinct IDs', 
-                       'FAIL', 
-                       {Sys.time()}, 
-                       'There were {id_count_timevar} distinct IDs but {id_count_elig} in the demo table \\
-                        (latter should be the same or higher)')",
-                     .con = conn))
+    
+    refresh <- data.table(last_run = last_run, 
+                          table_name = paste0(to_schema, '.', to_table), 
+                          qa_item = 'Number distinct IDs', 
+                          qa_result = 'FAIL', 
+                          qa_date = Sys.time(), 
+                          note = paste0('There were more timevar IDs (', id_count_timevar, ') than demo table IDs (', id_count_demo, ')'))
+    update_qa(myupdate = refresh)
     
     warning(glue::glue("\U00026A0 Number of distinct IDs doesn't match the number of rows. 
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
   } else {
     id_distinct_qa_fail <- 0
-    DBI::dbExecute(
-      conn = conn,
-      glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                       'Number distinct IDs', 
-                       'PASS', 
-                       {Sys.time()}, 
-                       'The number of distinct IDs ({id_count_timevar}) was the same or 
-                     less than in the demo table ({id_count_demo})')",
-                     .con = conn))
+    
+    refresh <- data.table(last_run = last_run, 
+                          table_name = paste0(to_schema, '.', to_table), 
+                          qa_item = 'Number distinct IDs', 
+                          qa_result = 'PASS', 
+                          qa_date = Sys.time(), 
+                          note = paste0('The number of distinct IDs (', id_count_timevar, ') was the same or less than in the demo table (', id_count_demo, ')'))
+    update_qa(myupdate = refresh)
+    
     message(glue::glue("\U0001f642 The number of distinct IDs ({id_count_timevar}) was the same or 
                      less than in the demo table ({id_count_demo})"))
   }
@@ -152,39 +146,35 @@ qa_stage_pha_timevar <- function(conn = NULL,
   dup_row_count <- as.numeric(odbc::dbGetQuery(
     conn, 
     glue::glue_sql("SELECT COUNT (*) AS count FROM 
-                   (SELECT DISTINCT id_kc_pha, from_date, to_date 
+                   (SELECT DISTINCT KCMASTER_ID, from_date, to_date 
                    FROM {`to_schema`}.{`to_table`}) a",
                    .con = conn)))
   
   
   if (dup_row_count != row_count) {
     dup_row_qa_fail <- 1
-    DBI::dbExecute(conn = conn,
-                   glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                       'Duplicate rows', 
-                       'FAIL', 
-                       {Sys.time()}, 
-                       'There were {dup_row_count} distinct rows but {row_count} rows overall (should be the same)')",
-                                  .con = conn))
+    
+    refresh <- data.table(last_run = last_run, 
+                          table_name = paste0(to_schema, '.', to_table), 
+                          qa_item = 'Duplicate rows', 
+                          qa_result = 'FAIL', 
+                          qa_date = Sys.time(), 
+                          note = paste0('There were ', dup_row_count, ' distinct rows but ', row_count, ' rows overall (should be the same)'))
+    update_qa(myupdate = refresh)
     
     warning(glue::glue("\U00026A0 There appear to be duplicate rows. 
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
   } else {
     dup_row_qa_fail <- 0
-    DBI::dbExecute(
-      conn = conn,
-      glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                       'Duplicate rows', 
-                       'PASS', 
-                       {Sys.time()}, 
-                       'The number of distinct rows matched number total rows ({row_count})')",
-                     .con = conn))
+    
+    refresh <- data.table(last_run = last_run, 
+                          table_name = paste0(to_schema, '.', to_table), 
+                          qa_item = 'Duplicate rows', 
+                          qa_result = 'PASS', 
+                          qa_date = Sys.time(), 
+                          note = paste0('The number of distinct rows matched number total rows (', row_count, ')'))
+    update_qa(myupdate = refresh)
+    
     message(glue::glue("\U0001f642 The number of distinct rows matched number total rows ({row_count})"))
   }
   
@@ -193,16 +183,13 @@ qa_stage_pha_timevar <- function(conn = NULL,
   # LOAD VALUES TO QA_VALUES TABLE ----
   message("Loading values to ", qa_schema, ".", qa_values)
   
-  load_sql <- glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_values`}
-                             (table_name, qa_item, qa_value, qa_date, note) 
-                             VALUES ('{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                     'row_count', 
-                                     {row_count}, 
-                                     {Sys.time()}, 
-                                     'Count after refresh')",
-                             .con = conn)
+  refresh <- data.table(table_name = paste0(to_schema, '.', to_table), 
+                        qa_item = 'row_count', 
+                        qa_value = as.integer(row_count), 
+                        qa_date = Sys.time(), 
+                        note = 'Count after refresh')
+  update_qa(myupdate = refresh, mytable = qa_values)
   
-  DBI::dbExecute(conn = conn, load_sql)
   
   message("QA complete, see above for any error messages")
   
