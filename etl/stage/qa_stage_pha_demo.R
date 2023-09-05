@@ -137,7 +137,7 @@ qa_stage_pha_demo <- function(conn = NULL,
   
   refresh <- data.table(table_name = paste0(to_schema, '.', to_table), 
                         qa_item = 'row_count', 
-                        qa_value = row_count, 
+                        qa_value = as.integer(row_count), 
                         qa_date = Sys.time(), 
                         note = 'Count after refresh')
   update_qa(myupdate = refresh, mytable = qa_values)
