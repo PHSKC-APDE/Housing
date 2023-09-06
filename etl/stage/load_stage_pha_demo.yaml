@@ -1,0 +1,34 @@
+datasource: PHA
+schema: pha
+table: stage_demo
+vars:
+  KCMASTER_ID: NVARCHAR(24)
+  gender_me: NVARCHAR(18)
+  gender_recent: NVARCHAR(16)
+  gender_female: BIT
+  gender_male: BIT
+  gender_female_t: NUMERIC(4,1)
+  gender_male_t: NUMERIC(4,1)
+  race_me: NVARCHAR(18)
+  race_eth_me: NVARCHAR(18)
+  race_recent: NVARCHAR(18)
+  race_eth_recent: NVARCHAR(18)
+  race_aian: BIT
+  race_asian: BIT
+  race_black: BIT
+  race_latino: BIT
+  race_nhpi: BIT
+  race_white: BIT
+  race_unk: BIT
+  race_eth_unk: BIT
+  race_aian_t: NUMERIC(4,1)
+  race_asian_t: NUMERIC(4,1)
+  race_black_t: NUMERIC(4,1)
+  race_nhpi_t: NUMERIC(4,1)
+  race_white_t: NUMERIC(4,1)
+  race_latino_t: NUMERIC(4,1)
+  dob: DATE
+  admit_date_sha: DATE
+  admit_date_kcha: DATE
+  admit_date_all: DATE
+  last_run: DATETIME

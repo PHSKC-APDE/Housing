@@ -59,20 +59,20 @@ load_stage_pha_calyear <- function(conn = NULL,
     
     ## Find the row with the most person-time in each agency and group ----
     # (ties will be broken by whatever other ordering exists)
-    pt <- df[, .(pt = sum(overlap_amount)), by = c('agency', 'id_kc_pha', by_vars)]
+    pt <- df[, .(pt = sum(overlap_amount)), by = c('agency', 'KCMASTER_ID', by_vars)]
 
     # Join back to a single df and sort so largest time is first in the group
     pop <- merge(df, 
                  pt, 
-                 by = c("agency", "id_kc_pha", by_vars), 
+                 by = c("agency", "KCMASTER_ID", by_vars), 
                  all.x = T, all.y = F)
-    setorder(pop, id_kc_pha, agency, -pt, -overlap_amount)
+    setorder(pop, KCMASTER_ID, agency, -pt, -overlap_amount)
 
     # Take first row in group
-    pop <- pop[, .SD[1], .(agency, id_kc_pha)]
+    pop <- pop[, .SD[1], .(agency, KCMASTER_ID)]
 
     # Remove junk columns or columns with no meaning
-    pop <- pop[, c('id_kc_pha', 'agency', by_vars, 'pt'), with = FALSE]
+    pop <- pop[, c('KCMASTER_ID', 'agency', by_vars, 'pt'), with = FALSE]
 
     return(pop)
   }
@@ -83,7 +83,7 @@ load_stage_pha_calyear <- function(conn = NULL,
   years <- seq(2012, max_year)
   
   # Set up each grouping variable
-  categories <- c("hh_id_kc_pha", "disability", "major_prog", "subsidy_type", "prog_type",
+  categories <- c("hh_KCMASTER_ID", "disability", "major_prog", "subsidy_type", "prog_type",
                   "operator_type", "vouch_type_final", "property_id", "portfolio_final",
                   "geo_zip_clean", "geo_id20_tract")
   
@@ -110,26 +110,26 @@ load_stage_pha_calyear <- function(conn = NULL,
     }))
     output <- merge(total, 
                     cats, 
-                    by = c("id_kc_pha", "agency"), 
+                    by = c("KCMASTER_ID", "agency"), 
                     all.x = T, all.y = F) 
     output[, year := x]
-    output <- output[, .(year, id_kc_pha, agency, pt_total, category, group, pt)]
+    output <- output[, .(year, KCMASTER_ID, agency, pt_total, category, group, pt)]
   }))
   
   
   # Reshape to get wide output and reorder
   # Also truncate the few (~145) rows with pt > 365/6
-  allocated[year %in% seq(2012, 2100, 4) & pt > 366, pt := 366]
+  allocated[year %in% seq(2012, 2100, 4) & pt > 366, pt := 366] # leap years legitimately have 366 days
   allocated[!year %in% seq(2012, 2100, 4) & pt > 365, pt := 365]
 
-  allocated[year %in% seq(2012, 2100, 4) & pt_total > 366, pt_total := 366]
+  allocated[year %in% seq(2012, 2100, 4) & pt_total > 366, pt_total := 366] # leap years legitimately have 366 days
   allocated[!year %in% seq(2012, 2100, 4) & pt_total > 365, pt_total := 365]
   
   allocated_wide <- dcast(allocated, 
-                          formula = year + id_kc_pha + agency + pt_total ~ category, 
+                          formula = year + KCMASTER_ID + agency + pt_total ~ category, 
                           value.var = c('pt', 'group'))
   setnames(allocated_wide, gsub("group_", "", names(allocated_wide)))
-  setnames(allocated_wide, grep('^pt_', names(allocated_wide), value = T), paste0(gsub("pt_", "", grep('^pt_', names(allocated_wide), value = T)), '_pt'))
+  setnames(allocated_wide, grep('^pt_', names(allocated_wide), value = T), paste0(gsub("pt_", "", grep('^pt_', names(allocated_wide), value = T)), '_pt')) # change prefix to suffix
   setnames(allocated_wide, 'total_pt', 'pt_total') # switch this one back because it was not made by the reshaping to wide process
 
   # ID AN ADMIT DATE FOR EACH YEAR ----
@@ -143,11 +143,11 @@ load_stage_pha_calyear <- function(conn = NULL,
   admit_date_setup[, use_new_date := fcase(is.na(gap_length), 0L, 
                                            gap_length >= 365, 1L, 
                                            default = 0L)]
-  admit_date_setup <- unique(admit_date_setup[, .(id_kc_pha, period_start, use_new_date)])
+  admit_date_setup <- unique(admit_date_setup[, .(KCMASTER_ID, period_start, use_new_date)])
   
   pha_timevar <- merge(pha_timevar, 
                        admit_date_setup, 
-                       by = c("id_kc_pha", "period_start"), 
+                       by = c("KCMASTER_ID", "period_start"), 
                        all.x = T, all.y = F)
   
   
@@ -166,8 +166,8 @@ load_stage_pha_calyear <- function(conn = NULL,
     output <- output[!is.na(overlap_amount)]
     
     output <- merge(output, 
-                    pha_demo[, c('id_kc_pha', grep('^admit_date', names(pha_demo), value = T))], 
-                    by = 'id_kc_pha', 
+                    pha_demo[, c('KCMASTER_ID', grep('^admit_date', names(pha_demo), value = T))], 
+                    by = 'KCMASTER_ID', 
                     all.x = T, 
                     all.y = F)
 
@@ -178,8 +178,8 @@ load_stage_pha_calyear <- function(conn = NULL,
                                         agency == "SHA" & !is.na(admit_date_sha) ~ admit_date_sha,
                                         TRUE ~ period_start)]
     
-    output <- unique(output[, .(id_kc_pha, agency, admit_date_yr)])
-    output <- output[, .(admit_date_yr = max(admit_date_yr, na.rm = T)), id_kc_pha][, year := x]
+    output <- unique(output[, .(KCMASTER_ID, agency, admit_date_yr)])
+    output <- output[, .(admit_date_yr = max(admit_date_yr, na.rm = T)), KCMASTER_ID][, year := x]
     
     return(output)
   }))
@@ -188,14 +188,14 @@ load_stage_pha_calyear <- function(conn = NULL,
   # Join back to other year table
   allocated_wide <- merge(allocated_wide, 
                           admit_dates, 
-                          by = c("id_kc_pha", "year"), 
+                          by = c("KCMASTER_ID", "year"), 
                           all.x = T, all.y = F)
   
   
   # JOIN TO DEMO TABLE AND ADD CALCULATED FIELDS ----
   calyear <- merge(allocated_wide,
                    pha_demo[, grep('_t$|last_run', names(pha_demo), invert = T)],
-                   by = "id_kc_pha", 
+                   by = "KCMASTER_ID", 
                    all.x = T, all.y = F)
     
   
@@ -234,10 +234,10 @@ load_stage_pha_calyear <- function(conn = NULL,
   ## Select and arrange columns ----
   cols_select <- c(
     # Core variables
-    "year", "id_kc_pha", "agency", "pt_total", 
+    "year", "KCMASTER_ID", "agency", "pt_total", 
     "admit_date_all", "admit_date_kcha", "admit_date_sha", "time_housing_yr", "time_housing", 
     # Head of household variables
-    "hh_id_kc_pha", "hh_id_kc_pha_pt",
+    "hh_KCMASTER_ID", "hh_KCMASTER_ID_pt",
     # Demog variables
     "dob", "age_yr", "agegrp", "agegrp_expanded", "adult", "senior",
     "gender_me", "gender_recent", "gender_female", "gender_male",
@@ -258,6 +258,9 @@ load_stage_pha_calyear <- function(conn = NULL,
     "last_run")
   
   calyear <- calyear[, ..cols_select]
+  
+  ## Order/sort rows ----
+  setorder(calyear, KCMASTER_ID, year)
   
   ## Load to SQL ----
   # Split into smaller tables to avoid SQL connection issues

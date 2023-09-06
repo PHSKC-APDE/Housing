@@ -30,6 +30,14 @@ qa_stage_pha_calyear <- function(conn = NULL,
   #   Otherwise, check against existing QA values
   message("Running QA on ", from_schema, ".", from_table)
 
+  # small function to update QA table 
+  update_qa <- function(myupdate = NULL, mytable = qa_table){
+    odbc::dbWriteTable(conn = conn, 
+                       name = DBI::Id(schema = qa_schema, table = mytable), 
+                       value = as.data.frame(myupdate), 
+                       append = T, 
+                       overwrite = F)}
+  
   # PULL OUT VALUES NEEDED MULTIPLE TIMES ----
   # Rows in current table
   row_count <- as.numeric(
@@ -65,35 +73,30 @@ qa_stage_pha_calyear <- function(conn = NULL,
         
         if (row_diff < 0) {
           row_qa_fail <- 1
-          DBI::dbExecute(
-            conn = conn,
-            glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                       'Number of new rows', 
-                       'FAIL', 
-                       {Sys.time()}, 
-                       'There were {row_diff} fewer rows in the most recent table 
-                           ({row_count} vs. {previous_rows})')",
-                           .con = conn))
+          
+          refresh <- data.table(last_run = last_run, 
+                                table_name = paste0(from_schema, '.', from_table), 
+                                qa_item = 'Number of new rows', 
+                                qa_result = 'FAIL', 
+                                qa_date = Sys.time(), 
+                                note = paste0('There were ', abs(row_diff), ' fewer rows in the most recent table (', 
+                                              row_count, ' vs. ', previous_rows, ') ... likely due to problems flagged in IDH'))
+          update_qa(myupdate = refresh)
           
           message(glue::glue("\U00026A0 Fewer rows than found last time.  
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
         } else {
           row_qa_fail <- 0
-          DBI::dbExecute(
-            conn = conn,
-            glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                       (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                       VALUES ({last_run}, 
-                       '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                       'Number of new rows', 
-                       'PASS', 
-                       {Sys.time()}, 
-                       'There were {row_diff} more rows in the most recent table 
-                           ({row_count} vs. {previous_rows})')",
-                           .con = conn))
+          
+          refresh <- data.table(last_run = last_run, 
+                                table_name = paste0(from_schema, '.', from_table), 
+                                qa_item = 'Number of new rows', 
+                                qa_result = 'PASS', 
+                                qa_date = Sys.time(), 
+                                note = paste0('There were ', row_diff, ' more rows in the most recent table (', 
+                                          row_count, ' vs. ', previous_rows, ')'))
+          update_qa(myupdate = refresh)
+          
           message(glue::glue("\U0001f642 The new number of rows is the same or greater than the number loaded last time.  
                       Check {qa_schema}.{qa_table} for details (last_run = {last_run})"))
         }
@@ -101,43 +104,38 @@ qa_stage_pha_calyear <- function(conn = NULL,
   
   # COMPARE NUMBER OF DISTINCT IDS to number of distinct IDs in stage_timevar ----
     id_count_calyear <- as.numeric(odbc::dbGetQuery(
-      conn, glue::glue_sql("SELECT COUNT (DISTINCT id_kc_pha) AS count FROM {`from_schema`}.{`from_table`}",
+      conn, glue::glue_sql("SELECT COUNT (DISTINCT KCMASTER_ID) AS count FROM {`from_schema`}.{`from_table`}",
                            .con = conn)))
   
     if (load_only == F) {
         id_count_timevar <- as.numeric(odbc::dbGetQuery(
-          conn, glue::glue_sql("SELECT COUNT (DISTINCT id_kc_pha) as count FROM {`timevar_schema`}.{`timevar_table`} WHERE to_date >= '2012-01-01'",
+          conn, glue::glue_sql("SELECT COUNT (DISTINCT KCMASTER_ID) as count FROM {`timevar_schema`}.{`timevar_table`} WHERE to_date >= '2012-01-01'",
                                .con = conn))) # >= 2012 because prep of calyear is only for years 2012+
         
         if (id_count_calyear != id_count_timevar) {
           id_distinct_qa_fail <- 1
-          DBI::dbExecute(
-            conn = conn,
-            glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                             (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                             VALUES ({last_run}, 
-                             '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                             'Number of distinct IDs', 
-                             'FAIL', 
-                             {Sys.time()}, 
-                             'There were {id_count_calyear} distinct IDs but {id_count_timevar} in the timevar table (>=2012). They should be the same.')",
-                           .con = conn))
           
+          refresh <- data.table(last_run = last_run, 
+                                table_name = paste0(from_schema, '.', from_table), 
+                                qa_item = 'Number of distinct IDs', 
+                                qa_result = 'FAIL', 
+                                qa_date = Sys.time(), 
+                                note = paste0('There were ', id_count_calyear, ' distinct IDs but ', id_count_timevar, ' in the timevar table (>=2012). They should be the same.'))
+          update_qa(myupdate = refresh)
+
           warning(glue::glue("\U00026A0 Number of distinct IDs in calyear doesn't match the number of distinct IDs in timevar (>= 2012). 
                             Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
         } else {
           id_distinct_qa_fail <- 0
-          DBI::dbExecute(
-            conn = conn,
-            glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                             (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                             VALUES ({last_run}, 
-                             '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                             'Number of distinct IDs', 
-                             'PASS', 
-                             {Sys.time()}, 
-                             'The number of distinct IDs ({id_count_calyear}) was the same as the number ({id_count_timevar}) in the timevar table (>=2012)')",
-                           .con = conn))
+          
+          refresh <- data.table(last_run = last_run, 
+                                table_name = paste0(from_schema, '.', from_table), 
+                                qa_item = 'Number of distinct IDs', 
+                                qa_result = 'PASS', 
+                                qa_date = Sys.time(), 
+                                note = paste0('The number of distinct IDs (', id_count_calyear, ') was the same as the number (', id_count_timevar, ') in the timevar table (>=2012)'))
+          update_qa(myupdate = refresh)
+          
           message(glue::glue("\U0001f642 The number of distinct IDs ({id_count_calyear}) was the same as the number ({id_count_timevar}) in the timevar table (>=2012)"))
         }
     }
@@ -166,32 +164,28 @@ qa_stage_pha_calyear <- function(conn = NULL,
 
       if (distinct_years < previous_years) {
         years_qa_fail <- 1
-        DBI::dbExecute(conn = conn,
-                       glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                           (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                           VALUES ({last_run}, 
-                           '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                           'Number of distinct years', 
-                           'FAIL', 
-                           {Sys.time()}, 
-                           'There were {distinct_years} distinct years but {previous_years} distinct years the last time. The number of years should be >= the previous number')",
-                                      .con = conn))
+        
+        refresh <- data.table(last_run = last_run, 
+                              table_name = paste0(from_schema, '.', from_table), 
+                              qa_item = 'Number of distinct years', 
+                              qa_result = 'FAIL', 
+                              qa_date = Sys.time(), 
+                              note = paste0('There were ', distinct_years, ' distinct years but ', previous_years, ' distinct years the last time. The number of years should be >= the previous number'))
+        update_qa(myupdate = refresh)
         
         warning(glue::glue("\U00026A0 There were {distinct_years} distinct years but {previous_years} distinct years the last time. The number of years should be >= the previous number') 
                           Check {qa_schema}.{qa_table} for details (last_run = {last_run}"))
       } else {
         years_qa_fail <- 0
-        DBI::dbExecute(
-          conn = conn,
-          glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`}
-                           (last_run, table_name, qa_item, qa_result, qa_date, note) 
-                           VALUES ({last_run}, 
-                           '{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                           'Number of distinct years', 
-                           'PASS', 
-                           {Sys.time()}, 
-                           'The number of distinct years ({distinct_years}) is >= the number of distinct years ({previous_years}) previously loaded.')",
-                         .con = conn))
+        
+        refresh <- data.table(last_run = last_run, 
+                              table_name = paste0(from_schema, '.', from_table), 
+                              qa_item = 'Number of distinct years', 
+                              qa_result = 'PASS', 
+                              qa_date = Sys.time(), 
+                              note = paste0('The number of distinct years (', distinct_years, ') is >= the number of distinct years (', previous_years, ') previously loaded.'))
+        update_qa(myupdate = refresh)
+        
         message(glue::glue("\U0001f642 The number of distinct years ({distinct_years}) is >= the number of distinct years ({previous_years}) previously loaded."))
       }
     }
@@ -200,41 +194,27 @@ qa_stage_pha_calyear <- function(conn = NULL,
   # LOAD VALUES TO QA_VALUES TABLE ----
   message("Loading values to ", qa_schema, ".", qa_values)
   
-  load_sql <- glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_values`}
-                             (table_name, qa_item, qa_value, qa_date, note) 
-                             VALUES ('{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                                     'row_count', 
-                                     {row_count}, 
-                                     {Sys.time()}, 
-                                     'Count after refresh')",
-                             .con = conn)
+  refresh <- data.table(table_name = paste0(from_schema, '.', from_table), 
+                        qa_item = 'row_count', 
+                        qa_value = as.integer(row_count), 
+                        qa_date = Sys.time(), 
+                        note = 'Count after refresh')
+  update_qa(myupdate = refresh, mytable = qa_values)
   
-  DBI::dbExecute(conn = conn, load_sql)
-  rm(load_sql)
+  refresh <- data.table(table_name = paste0(from_schema, '.', from_table), 
+                        qa_item = 'id_count', 
+                        qa_value = as.integer(id_count_calyear), 
+                        qa_date = Sys.time(), 
+                        note = 'Count after refresh')
+  update_qa(myupdate = refresh, mytable = qa_values)
 
-  load_sql <- glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_values`}
-                             (table_name, qa_item, qa_value, qa_date, note) 
-                             VALUES ('{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                                     'id_count', 
-                                     {id_count_calyear}, 
-                                     {Sys.time()}, 
-                                     'Count after refresh')",
-                             .con = conn)
-  
-  DBI::dbExecute(conn = conn, load_sql)
-  rm(load_sql)
-  
-  load_sql <- glue::glue_sql("INSERT INTO {`qa_schema`}.{`qa_values`}
-                             (table_name, qa_item, qa_value, qa_date, note) 
-                             VALUES ('{DBI::SQL(from_schema)}.{DBI::SQL(from_table)}',
-                                     'year_count', 
-                                     {distinct_years}, 
-                                     {Sys.time()}, 
-                                     'Count after refresh')",
-                             .con = conn)
-  
-  DBI::dbExecute(conn = conn, load_sql)
-  
+  refresh <- data.table(table_name = paste0(from_schema, '.', from_table), 
+                        qa_item = 'year_count', 
+                        qa_value = as.integer(distinct_years), 
+                        qa_date = Sys.time(), 
+                        note = 'Count after refresh')
+  update_qa(myupdate = refresh, mytable = qa_values)
+
   message("QA complete, see above for any error messages")
   
   if (load_only == F) {
