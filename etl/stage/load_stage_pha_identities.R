@@ -40,6 +40,7 @@
                                       WHERE SOURCE_SYSTEM = 'PHA_CLIENT'"))
       idh.ids[, female := fcase(GENDER == 'F', 1, 
                                 GENDER == 'M', 0)][, GENDER := NULL]
+      idh.ids[, dob := as.Date(dob, format = '%m/%d/%Y')]
     
     # Pull IDs from KCHA & SHA stage tables ----
         kcha.ids <- setDT(
