@@ -28,6 +28,15 @@
     final_schema <- "pha"
     final_table <- "final_identities"
     
+
+# small function to update QA table ----
+    update_qa <- function(myupdate = NULL, mytable = qa_table){
+      odbc::dbWriteTable(conn = db_hhsaw, 
+                         name = DBI::Id(schema = qa_schema, table = mytable), 
+                         value = as.data.frame(myupdate), 
+                         append = T, 
+                         overwrite = F)}    
+    
 # IMPORT IN DATA ----
     # Pull ID list from IDH so we do not have to replicate the matches----
       idh.ids <- setDT(
@@ -40,6 +49,7 @@
                                       WHERE SOURCE_SYSTEM = 'PHA_CLIENT'"))
       idh.ids[, female := fcase(GENDER == 'F', 1, 
                                 GENDER == 'M', 0)][, GENDER := NULL]
+      idh.ids[, dob := as.Date(dob, format = '%m/%d/%Y')]
     
     # Pull IDs from KCHA & SHA stage tables ----
         kcha.ids <- setDT(
@@ -251,13 +261,18 @@
           warning(paste("\U00026A0", qa_row_diff_note))
         } 
         
-        DBI::dbExecute(db_hhsaw,
-                       glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                                    (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                                    VALUES (NULL, {min(linkages$last_run)}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                                    'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
-                                .con = db_hhsaw))
     
+        refresh <- data.table(etl_batch_id = NA, 
+                              last_run = min(linkages$last_run), 
+                              table_name = paste0(to_schema, '.', to_table), 
+                              qa_type = 'result', 
+                              qa_item = 'row_count_vs_previous', 
+                              qa_result = qa_row_diff_result, 
+                              qa_date = Sys.time(),
+                              note = qa_row_diff_note)
+        update_qa(myupdate = refresh)
+    
+
     # Check that number of unique KCMASTER_ID is greater than in the previous time ----
         pha_ID_cnt_prev <- as.integer(
           dbGetQuery(db_hhsaw,
@@ -290,36 +305,40 @@
           warning(paste("\U00026A0", qa_id_diff_note))
         } 
         
-        DBI::dbExecute(db_hhsaw,
-                       glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                                    (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                                    VALUES (NULL, {min(linkages$last_run)}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                                    'id_count_vs_previous', {qa_id_diff_result}, {Sys.time()}, {qa_id_diff_note})",
-                                .con = db_hhsaw))
+        refresh <- data.table(etl_batch_id = NA, 
+                              last_run = min(linkages$last_run), 
+                              table_name = paste0(to_schema, '.', to_table), 
+                              qa_type = 'result', 
+                              qa_item = 'id_count_vs_previous', 
+                              qa_result = qa_id_diff_result, 
+                              qa_date = Sys.time(),
+                              note = qa_id_diff_note)
+        update_qa(myupdate = refresh)
       
 # ADD VALUES TO METADATA ----
     # Row counts
-    DBI::dbExecute(db_hhsaw,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, 
-                              qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES (NULL, {min(linkages$last_run)}, 
-                                    '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                    'value', 'row_count', {nrow(linkages)},
-                                    {Sys.time()}, NULL)",
-                            .con = db_hhsaw))
-    
+        refresh <- data.table(etl_batch_id = NA, 
+                              last_run = min(linkages$last_run), 
+                              table_name = paste0(to_schema, '.', to_table), 
+                              qa_type = 'value', 
+                              qa_item = 'row_count', 
+                              qa_result = as.integer(nrow(linkages)), 
+                              qa_date = Sys.time(),
+                              note = NA)
+        update_qa(myupdate = refresh)
+        
+
     # Number of IDs
-    DBI::dbExecute(db_hhsaw,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, 
-                              qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES (NULL, {min(linkages$last_run)}, 
-                                    '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                    'value', 'id_count', {n_distinct(linkages$KCMASTER_ID)},
-                                    {Sys.time()}, NULL)",
-                            .con = db_hhsaw))
-  
+        refresh <- data.table(etl_batch_id = NA, 
+                              last_run = min(linkages$last_run), 
+                              table_name = paste0(to_schema, '.', to_table), 
+                              qa_type = 'value', 
+                              qa_item = 'id_count', 
+                              qa_result = as.integer(n_distinct(linkages$KCMASTER_ID)), 
+                              qa_date = Sys.time(),
+                              note = NA)
+        update_qa(myupdate = refresh)
+
   
 # CHECK QA PASSED ----
   # Stop processing if one or more QA check failed
