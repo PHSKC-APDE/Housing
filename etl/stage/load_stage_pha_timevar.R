@@ -206,9 +206,8 @@ load_stage_timevar <- function(conn = NULL,
       pha[is.na(prog_type) & major_prog == 'HCV' & 
             grepl('Partner Project-Based Voucher|PHA OPERATED VOUCHER', vouch_type, ignore.case = T), 
           prog_type := 'PBV']
-      pha[is.na(prog_type) & major_prog == 'HCV' & 
-            grepl('GENERAL TENANT-BASED VOUCHER', vouch_type, ignore.case = T), 
-          prog_type := 'TBV']
+      pha[is.na(prog_type) & major_prog == 'HCV' & subs_type == "HCV" & is.na(vouch_type), prog_type := 'TBV']
+      
       
       if(length(setdiff(unique(pha[is.na(prog_type)]$vouch_type), NA)) > 0){
         warning('\U00026A0 There are rows where there is a missing prog_type but vouch_type is not missing. Check with PHAs if can use this information to identify the missing prog_type.')
