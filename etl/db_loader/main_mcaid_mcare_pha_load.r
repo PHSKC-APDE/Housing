@@ -1033,7 +1033,7 @@
         if (dbExistsTable(db_hhsaw, DBI::Id(schema = "claims", table = "final_mcaid_mcare_pha_elig_demo"))) {DBI::dbExecute(db_hhsaw, "DROP TABLE [claims].[final_mcaid_mcare_pha_elig_demo]")}
         DBI::dbExecute(conn = db_hhsaw, "SELECT * INTO [claims].[final_mcaid_mcare_pha_elig_demo] FROM [claims].[stage_mcaid_mcare_pha_elig_demo]")
         
-        if (dbExistsTable(db_hhsaw, DBI::Id(schema = "claims", table = "final_mcaid_mcare_pha_elig_timevar"))) {DBI::dbExecute(db_hhsaw, "DROP TABLE [claims].[mcaid_mcare_pha_elig_timevar]")}
+        if (dbExistsTable(db_hhsaw, DBI::Id(schema = "claims", table = "final_mcaid_mcare_pha_elig_timevar"))) {DBI::dbExecute(db_hhsaw, "DROP TABLE [claims].[final_mcaid_mcare_pha_elig_timevar]")}
         DBI::dbExecute(conn = db_hhsaw, "SELECT * INTO [claims].[final_mcaid_mcare_pha_elig_timevar] FROM [claims].[stage_mcaid_mcare_pha_elig_timevar]")
       
       ## Add index ----
