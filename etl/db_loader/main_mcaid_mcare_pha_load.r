@@ -93,7 +93,7 @@
 
   ## xwalk: Medicaid-Medicare <> KCMASTER_ID crosswalk ----
       xwalk <- setDT(odbc::dbGetQuery(db_idh, "SELECT DISTINCT KCMASTER_ID, id_mcaid = MEDICAID_ID, updated = [SOURCE_LAST_UPDATED] 
-                                      FROM [IDMatch].[IM_HISTORY_TABLE] WHERE MEDICAID_ID IS NOT NULL"))
+                                      FROM [IDMatch].[IM_HISTORY_TABLE] WHERE MEDICAID_ID IS NOT NULL AND SOURCE_SYSTEM = 'MEDICAID'"))
 
   ## demo.mm: Joint Medicaid-Medicare Demographics ----
       demo.mm <- setDT(odbc::dbGetQuery(db_hhsaw, "SELECT * FROM [claims].[final_mcaid_elig_demo]"))
@@ -1056,8 +1056,8 @@
 # CREATE CALYEAR TABLE ----
   ## Stage ----
     # Bring in and run function (will take a long time)
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/analyses/load_stage.mcaid_mcare_pha_elig_calyear.R")
-    
+    paste0(here::here(), "/etl/stage/load_stage_mcaid_mcare_pha_elig_calyear.R") 
+
     # QA stage table
     # Needs work, but look at counts overall, by year, and then for mcaid/mcare/pha in a given year (e.g., 2017)
 
