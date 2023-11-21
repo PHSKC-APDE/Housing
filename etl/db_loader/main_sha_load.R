@@ -49,7 +49,7 @@ options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 
 qa_schema <- "pha"
 qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
-file_path_sha <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/"
+file_path_sha <- '//dphcifs/APDE-CDIP/Housing/SHA/Original_data' # formerly "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/"
 
 # Connect to HHSAW
 db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
@@ -308,7 +308,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                date_min = "2019-01-01",
                                                date_max = "2019-12-31",
                                                date_delivery = "2023-02-24",
-                                               note = "Refresh/replace 2019 raw data, 2nd try")
+                                               note = "Refresh/replace 2019 raw data with additional addresses")
     # Run function
     load_raw_sha_2019(conn = db_hhsaw,
                       to_schema = "pha",
@@ -344,7 +344,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                   date_min = "2020-01-01",
                                                   date_max = "2020-12-31",
                                                   date_delivery = "2023-02-24",
-                                                  note = "Refresh/replace 2020 raw data, 2nd try")
+                                                  note = "Refresh/replace 2020 raw data, with additional addresses")
     # Run function
     load_raw_sha_2020(conn = db_hhsaw,
                          to_schema = "pha",
@@ -379,7 +379,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                   date_min = "2021-01-01",
                                                   date_max = "2021-12-31",
                                                   date_delivery = "2023-02-24",
-                                                  note = "Refresh/replace 2021 raw data, 2nd try")
+                                                  note = "Refresh/replace 2021 raw data, with additional addresses")
     # Run function
     load_raw_sha_2021(conn = db_hhsaw,
                          to_schema = "pha",
