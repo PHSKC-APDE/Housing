@@ -1063,8 +1063,12 @@
 
 
   ## Final ----
-    # Need to manually run SQL script because of permissions issue, can't alter schema
-    # Decide whether to archive first or not (currently not)
-
-
-
+    # Drop final table if it exists and copy data from stage into final ----
+    if (dbExistsTable(db_hhsaw, DBI::Id(schema = "claims", table = "final_mcaid_mcare_pha_elig_calyear"))) {
+      DBI::dbExecute(db_hhsaw, "DROP TABLE [claims].[final_mcaid_mcare_pha_elig_calyear]")}
+    
+    DBI::dbExecute(conn = db_hhsaw, "SELECT * INTO [claims].[final_mcaid_mcare_pha_elig_calyear] FROM [claims].[stage_mcaid_mcare_pha_elig_calyear]")
+    
+    ## Add index ----
+    DBI::dbExecute(conn = db_hhsaw, "CREATE CLUSTERED COLUMNSTORE INDEX idx_ccs_final_mcaid_mcare_pha_elig_calyear ON [claims].[stage_mcaid_mcare_pha_elig_calyear]")
+    
