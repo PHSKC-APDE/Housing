@@ -13,45 +13,28 @@
 #
 ###############################################################################
 
-# Set up global parameter and call in libraries #####
-  options(max.print = 350, tibble.print_max = 30, scipen = 999)
-  
-  library(odbc) # Used to connect to SQL server
-  library(openxlsx) # Used to import/export Excel files
-  library(housing) # contains many useful functions for analyzing housing/Medicaid data
-  library(lubridate) # Used to manipulate dates
-  library(tidyverse) # Used to manipulate data
-  library(glue)
-  library(data.table) # Used to manipulate data
-  
-  maxyear = 2022
-
-
-# Connect to the SQL servers #####
-  db_hhsaw <- rads::validate_hhsaw_key() # connects to Azure 16 HHSAW
-  
 # BRING IN DATA ####
   ### Main merged data
-    mcaid_mcare_pha_elig_demo <- setDT(dbGetQuery(db_hhsaw, "SELECT * FROM claims.final_mcaid_mcare_pha_elig_demo"))
-    mcaid_mcare_pha_elig_timevar <- setDT(dbGetQuery(
+    demo <- setDT(dbGetQuery(db_hhsaw, "SELECT * FROM claims.final_mcaid_mcare_pha_elig_demo"))
+    timevar <- setDT(dbGetQuery(
       db_hhsaw, 
       "SELECT * FROM claims.final_mcaid_mcare_pha_elig_timevar
       WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)"))
   
   
   ### Fix up formats
-    mcaid_mcare_pha_elig_demo[, c('dob', 'death_dt', 'start_housing') := lapply(.SD, as.Date), 
+    demo[, c('dob', 'death_dt', 'start_housing') := lapply(.SD, as.Date), 
                               .SDcols = c('dob', 'death_dt', 'start_housing')]
     
-    mcaid_mcare_pha_elig_timevar[, c('from_date', 'to_date') := lapply(.SD, as.Date), 
+    timevar[, c('from_date', 'to_date') := lapply(.SD, as.Date), 
                               .SDcols = c('from_date', 'to_date')]
     
     mcare_vars <- c("part_a", "part_b", "part_c", "partial", "buy_in", "full_benefit", "full_criteria")
-    mcaid_mcare_pha_elig_timevar[, (mcare_vars) := lapply(.SD, function(x) ifelse(mcaid == 0 & mcare == 0, 0L, x)), .SDcols = mcare_vars]
+    timevar[, (mcare_vars) := lapply(.SD, function(x) ifelse(mcaid == 0 & mcare == 0, 0L, x)), .SDcols = mcare_vars]
   
   
   ### Make enrollment field
-    mcaid_mcare_pha_elig_timevar <- mcaid_mcare_pha_elig_timevar[, enroll_type := fcase(
+    timevar <- timevar[, enroll_type := fcase(
       mcaid == 0 & mcare == 0 & pha == 1, "h",
       mcaid == 1 & mcare == 0 & pha == 1, "hmd",
       mcaid == 0 & mcare == 1 & pha == 1, "hme",
@@ -60,17 +43,21 @@
       mcaid == 1 & mcare == 1 & pha == 0, "mm",
       mcaid == 1 & mcare == 1 & pha == 1, "a"
     )]
-
-# ALLOCATION of PERSON TIME TO SPECIFIC AGENCY/GROUP FOR EACH CALENDAR YEAR (for chronic disease denominator) ####
+    
+# LOAD YAML ----
+    yaml_calyear <- paste0(here::here(), "/etl/stage/create_stage_mcaid_mcare_pha_elig_calyear.yaml") 
+    table_config_calyear <- yaml::read_yaml(yaml_calyear)
+    
+# ALLOCATION of PERSON TIME TO SPECIFIC AGENCY & ENROLLMENT TYPE (md, hmd, h, etc.) FOR EACH CALENDAR YEAR (for chronic disease denominator) ####
   # Used for chronic disease denominator and enrollment analyses
   # Set up calendar years
     years <- seq(2012, maxyear)
 
     allocated <- rbindlist(lapply(seq_along(years), function(x) {
       
-      message(glue("Working on {years[x]}"))
+      message(glue("Working on allocation for {years[x]}"))
       
-      tempy <- allocate(df = mcaid_mcare_pha_elig_timevar, 
+      tempy <- allocate(df = timevar, 
                        starttime = as.Date(paste0(years[x], "-01-01")), 
                        endtime = as.Date(paste0(years[x], "-12-31")), 
                        agency = pha_agency, 
@@ -92,13 +79,13 @@
     # at multiple addresses during the same time period.
     # For now, just truncate to 365/6
     # First check that it is only a handful of rows
-    if (uniqueN(allocated$id_apde[allocated$pt_tot > 366]) > 200) {
+    if (uniqueN(allocated$KCMASTER_ID[allocated$pt_tot > 366]) > 200) {
       stop("More people than expected had pt_tot > 366 days")
     }
     
     allocated <- allocated %>%
       mutate(pt_tot = case_when(
-        year %in% c(2012, 2016, 2020, 2024) & pt_tot > 366 ~ 366, 
+        year %in% seq(2012, 2100, 4) & pt_tot > 366 ~ 366, 
         pt_tot >= 365 ~ 365, 
         TRUE ~ pt_tot))
 
@@ -109,9 +96,9 @@
   # Want to keep a row for any combination of groups vars that appeared
     pt_rows <- rbindlist(lapply(seq_along(years), function(x) {
       
-      message(glue("Working on {years[x]}"))
+      message(glue("Working on patient time for {years[x]}"))
       
-      output <- setDT(mcaid_mcare_pha_elig_timevar)
+      output <- setDT(timevar)
       
       output[, overlap_amount:= as.numeric(lubridate::intersect( # lubridate::intersect provide the overlap in seconds
         lubridate::interval(from_date, to_date),
@@ -149,107 +136,480 @@
     full_criteria <- full_criteria[, .(full_criteria_12 = max(full_criteria_12)), by = .(KCMASTER_ID, year)]
   
   # Join back to main data
-    allocated <- allocated %>% left_join(., full_criteria, by = c("year", "KCMASTER_ID"))
+    allocated <- merge(allocated, full_criteria, by = c("year", "KCMASTER_ID"), all.x = T, all.y = F)
 
 
 # BRING INTO A SINGLE DATA FRAME () ####
-  mcaid_mcare_pha_elig_calyear <- bind_rows(allocated, pt_rows)
+  calyear <- rbindlist(list(allocated, pt_rows), fill = T)
 
 
 # JOIN TO ELIG_DEMO AND ADD CALCULATED FIELDS ####
-  mcaid_mcare_pha_elig_calyear <- left_join(mcaid_mcare_pha_elig_calyear, 
-                                            select(mcaid_mcare_pha_elig_demo, -mcaid_mcare_pha, -apde_dual, -last_run), 
-                                            by = "KCMASTER_ID")
-  
-  mcaid_mcare_pha_elig_calyear <- setDT(mcaid_mcare_pha_elig_calyear)
-  mcaid_mcare_pha_elig_calyear[, age_yr := floor(interval(start = dob, end = paste0(year, "-12-31")) / years(1))]
-  mcaid_mcare_pha_elig_calyear[, adult := fcase(
-    age_yr >= 18, 1L,
-    age_yr < 18, 0L
-  )]
-  
-  mcaid_mcare_pha_elig_calyear[, senior := fcase(
-    age_yr >= 62, 1L,
-    age_yr < 62, 0L
-  )]
-  
-  mcaid_mcare_pha_elig_calyear[, agegrp := fcase(
-    age_yr < 18, "<18",
-    data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
-    data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
-    data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
-    age_yr >= 65, "65+",
-    is.na(age_yr), NA_character_
-  )]
-  
-  mcaid_mcare_pha_elig_calyear[, agegrp_expanded := fcase(
-    age_yr < 10, "<10",
-    data.table::between(age_yr, 10, 17.99, NAbounds = NA), "10-17",
-    data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
-    data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
-    data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
-    data.table::between(age_yr, 65, 74.99, NAbounds = NA), "65-74",
-    age_yr >= 75, "75+",
-    is.na(age_yr), NA_character_
-  )]
-  
-  mcaid_mcare_pha_elig_calyear[, age_wc := fifelse(
-    between(age_yr, 0, 6.99, NAbounds = NA), 
-    "Children aged 0-6",
-    NA_character_)]
+    calyear <- merge(calyear, 
+                      demo[, !c("mcaid_mcare_pha", "apde_dual", "last_run"), with = FALSE], 
+                      by = 'KCMASTER_ID', 
+                      all.x = T, all.y = F)
 
-  mcaid_mcare_pha_elig_calyear[, time_housing_yr := 
-                                 rads::round2(interval(start = start_housing, end = paste0(year, "-12-31")) / years(1), 1)]
-  
-  mcaid_mcare_pha_elig_calyear[, time_housing := case_when( # keep case_when rather than fcase because want default 'Unknown' and unsure how to do that with fcase 
-    is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
-    time_housing_yr < 3 ~ "<3 years",
-    data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA) ~ "3 to <6 years",
-    time_housing_yr >= 6 ~ "6+ years",
-    TRUE ~ "Unknown")]
-  
-  mcaid_mcare_pha_elig_calyear[, last_run := Sys.time()]
+    
+    calyear[, age_yr := floor(interval(start = dob, end = paste0(year, "-12-31")) / years(1))]
+    calyear[, adult := fcase(
+      age_yr >= 18, 1L,
+      age_yr < 18, 0L
+    )]
+    
+    calyear[, senior := fcase(
+      age_yr >= 62, 1L,
+      age_yr < 62, 0L
+    )]
+    
+    calyear[, agegrp := fcase(
+      age_yr < 18, "<18",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+      age_yr >= 65, "65+",
+      is.na(age_yr), NA_character_
+    )]
+    
+    calyear[, agegrp_expanded := fcase(
+      age_yr < 10, "<10",
+      data.table::between(age_yr, 10, 17.99, NAbounds = NA), "10-17",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+      data.table::between(age_yr, 65, 74.99, NAbounds = NA), "65-74",
+      age_yr >= 75, "75+",
+      is.na(age_yr), NA_character_
+    )]
+    
+    calyear[, age_wc := fifelse(
+      between(age_yr, 0, 6.99, NAbounds = NA), 
+      "Children aged 0-6",
+      NA_character_)]
+    
+    calyear[, time_housing_yr := rads::round2(interval(start = start_housing, end = paste0(year, "-12-31")) / years(1), 1)]
+    
+    calyear[, time_housing := fcase(
+      is.na(pha_agency) | pha_agency == "Non-PHA", "Non-PHA",
+      time_housing_yr < 3, "<3 years",
+      between(time_housing_yr, 3, 5.99, NAbounds = NA), "3 to <6 years",
+      time_housing_yr >= 6, "6+ years",
+      default = 'Unknown'
+    )]
+
+    calyear[, last_run := Sys.time()]
 
 
 #### WRITE DATA TO SQL SERVER ####
-  table_config_stage <- yaml::read_yaml(paste0(here::here(), "/etl/stage/create_stage_mcaid_mcare_pha_elig_calyear.yaml"))
   source("https://raw.githubusercontent.com/PHSKC-APDE/claims_data/main/claims_db/db_loader/scripts_general/add_index.R")
 
 
   # Ensure columns are in the correct order
     # First see which columns aren't in either source (should be pt_allocate in local that will be dropped)
-      setdiff(names(mcaid_mcare_pha_elig_calyear), names(table_config_stage$vars))
-      setdiff(names(table_config_stage$vars), names(mcaid_mcare_pha_elig_calyear))
+      setdiff(names(calyear), names(table_config_calyear $vars))
+      setdiff(names(table_config_calyear $vars), names(calyear))
 
   # restrict to columns only in YAML
-      mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear[, names(table_config_stage$vars), with = F]
+      calyear <- calyear[, names(table_config_calyear $vars), with = F]
       
 
-# Load to SQL
+  # Load to SQL
     message("Loading elig_calyear data to SQL")
-    chunk_loader(DTx = mcaid_mcare_pha_elig_calyear, # R data.frame/data.table
+    chunk_loader(DTx = calyear, # R data.frame/data.table
                  connx = db_hhsaw, # connection name
                  chunk.size = 10000, 
-                 schemax = table_config_stage$schema, # schema name
-                 tablex =  table_config_stage$table, # table name
+                 schemax = table_config_calyear $schema, # schema name
+                 tablex =  table_config_calyear $table, # table name
                  overwritex = T, # overwrite?
                  appendx = F, # append?
-                 field.typesx = unlist(table_config_stage$vars))  
+                 field.typesx = unlist(table_config_calyear $vars))  
 
 
 #### QA TABLE AND MOVE TO FINAL ####
-# Needs a separate SQL script, also part of main_mcaid_mcare_pha_load.R script
+    ### confirm that all rows were loaded to SQL ----
+    stage.count <- as.numeric(odbc::dbGetQuery(db_hhsaw, "SELECT COUNT (*) FROM claims.stage_mcaid_mcare_pha_elig_calyear"))
+    if(stage.count != nrow(calyear)) {
+      stop("Mismatching row count, error writing data")  
+    }else{message("\U0001f642 All elig_calyear rows were loaded to SQL")}
+    
+    
+    ### check that rows in stage are not less than the last time that it was created ----
+      ## Overall ----
+        last_run <- as.POSIXct(odbc::dbGetQuery(db_hhsaw, "SELECT MAX (last_run) FROM claims.stage_mcaid_mcare_pha_elig_calyear")[[1]]) # data for the run that was just uploaded
+        
+        # count number of rows
+        previous_rows <- as.numeric(
+          odbc::dbGetQuery(db_hhsaw, 
+                           "SELECT c.qa_value from
+                                           (SELECT a.* FROM
+                                           (SELECT * FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                           WHERE table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear' AND
+                                           qa_item = 'row_count') a
+                                           INNER JOIN
+                                           (SELECT MAX(qa_date) AS max_date 
+                                           FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                           WHERE table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear' AND
+                                           qa_item = 'row_count') b
+                                           ON a.qa_date = b.max_date)c"))
+        
+        if(is.na(previous_rows)){previous_rows = 0}
+        
+        row_diff <- stage.count - previous_rows
+        
+        if (row_diff < 0) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', row_diff, ' fewer rows in the most recent table (', 
+                                                 stage.count, ' vs. ', previous_rows, ')'))
+          
+          problem.calyear.row_diff <- glue::glue("Fewer rows than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', row_diff, ' more rows in the most recent table (', 
+                                                 stage.count, ' vs. ', previous_rows, ')'))
+          
+          problem.calyear.row_diff <- glue::glue(" ") # no problem, so empty error message
+          
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)
+        
+      ## By YEAR ----
+        # current rows
+        current_year_rows <- setDT(dbGetQuery(conn = db_hhsaw, "select year, qa_value = count(*)  FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] group by year order by year desc"))
+        current_year_rows <- current_year_rows[, .(qa_item = paste0('row_count_', year), qa_value)]
 
+        # count number of rows
+          previous_year_rows <- setDT(
+            odbc::dbGetQuery(db_hhsaw, 
+                             "WITH RankedData AS (
+                                  SELECT *, ROW_NUMBER() OVER (PARTITION BY qa_item ORDER BY qa_date DESC) AS RowNum
+                                  FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                  WHERE qa_item LIKE 'row_count_[0-9]%'
+                              )
+                              SELECT table_name, qa_item, qa_value, qa_date
+                              FROM RankedData
+                              WHERE RowNum = 1;"))
+        print(previous_year_rows)
+        previous_year_rows <- previous_year_rows[, .(qa_item, qa_value = as.integer(qa_value))]
+        
+        if(nrow(previous_year_rows) == 0){previous_year_rows <- copy(current_year_rows)[, qa_value := 0]}
+        
+        row_diff <- merge(current_year_rows, previous_year_rows, by = 'qa_item')[, .(qa_item, qa_value = qa_value.x - qa_value.y)]
 
+        if (any(row_diff$qa_value < 0) ) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows BY YEAR compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(row_diff[qa_value < 0]), ' years with fewer rows in the most recent table (', 
+                                                 paste0(row_diff[qa_value < 0][, problems := paste0(gsub('row_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.row_diff_year <- glue::glue("Fewer rows BY YEAR than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows BY YEAR compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(row_diff[qa_value > 0]), ' YEARS with more rows in the most recent table (', 
+                                                 paste0(row_diff[qa_value > 0][, problems := paste0(gsub('row_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.row_diff_year <- glue::glue(" ") # no problem, so empty error message
+          
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)
+    
+      ## By SOURCE ----
+        # current rows
+        current_source_rows <- setDT(dbGetQuery(conn = db_hhsaw, "select qa_item = 'row_count_mcaid', qa_value = count(*) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcaid = 1
+                                              UNION ALL
+                                              select qa_item = 'row_count_mcare', qa_value = count(*) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcare = 1
+                                              UNION ALL
+                                              select qa_item = 'row_count_pha', qa_value = count(*) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where pha = 1"))
 
+        # count number of rows
+        previous_source_rows <- setDT(
+          odbc::dbGetQuery(db_hhsaw, 
+                           "WITH RankedData AS (
+                                  SELECT *, ROW_NUMBER() OVER (PARTITION BY qa_item ORDER BY qa_date DESC) AS RowNum
+                                  FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                  WHERE qa_item LIKE 'row_count_[a-zA-Z]%'
+                              )
+                              SELECT table_name, qa_item, qa_value, qa_date
+                              FROM RankedData
+                              WHERE RowNum = 1;"))
+        print(previous_source_rows)
+        previous_source_rows <- previous_source_rows[, .(qa_item, qa_value = as.integer(qa_value))]
+        
+        if(nrow(previous_source_rows) == 0){previous_source_rows <- copy(current_source_rows)[, qa_value := 0]}
+        
+        row_diff <- merge(current_source_rows, previous_source_rows, by = 'qa_item')[, .(qa_item, qa_value = qa_value.x - qa_value.y)]
+        
+        if (any(row_diff$qa_value < 0) ) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows BY SOURCE compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(row_diff[qa_value < 0]), ' sources with fewer rows in the most recent table (', 
+                                                 paste0(row_diff[qa_value < 0][, problems := paste0(gsub('row_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.row_diff_source <- glue::glue("Fewer rows BY SOURCE than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new rows BY SOURCE compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(row_diff[qa_value > 0]), ' sources with more rows in the most recent table (', 
+                                                 paste0(row_diff[qa_value > 0][, problems := paste0(gsub('row_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.row_diff_source <- glue::glue(" ") # no problem, so empty error message
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)    
+        
+    ### check that the number of distinct IDs not less than the last time that it was created ----
+      ## OVERALL ----
+        # get count of unique id 
+        current.unique.id <- as.numeric(odbc::dbGetQuery(
+          db_hhsaw, "SELECT COUNT (DISTINCT KCMASTER_ID) 
+                          FROM claims.stage_mcaid_mcare_pha_elig_calyear"))
+        
+        previous.unique.id <- as.numeric(
+          odbc::dbGetQuery(db_hhsaw, 
+                           "SELECT c.qa_value from
+                                           (SELECT a.* FROM
+                                           (SELECT * FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                           WHERE table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear' AND
+                                           qa_item = 'id_count') a
+                                           INNER JOIN
+                                           (SELECT MAX(qa_date) AS max_date 
+                                           FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                           WHERE table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear' AND
+                                           qa_item = 'id_count') b
+                                           ON a.qa_date = b.max_date)c"))
+        
+        if(is.na(previous.unique.id)){previous.unique.id = 0}
+        
+        id_diff <- current.unique.id - previous.unique.id
+        
+        if (id_diff < 0) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number distinct IDs compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', id_diff, ' fewer IDs in the most recent table (', 
+                                                 current.unique.id, ' vs. ', previous.unique.id, ')'))
+          
+          problem.calyear.id_diff <- glue::glue("Fewer unique IDs than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number distinct IDs compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', id_diff, ' more IDs in the most recent table (', 
+                                                 current.unique.id, ' vs. ', previous.unique.id, ')'))
+          
+          problem.calyear.id_diff <- glue::glue(" ") # no problem, so empty error message
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name =DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)
+        
+      ## BY YEAR ----
+        # current rows
+        current_year_ids <- setDT(dbGetQuery(conn = db_hhsaw, "select year, qa_value = COUNT (DISTINCT KCMASTER_ID)  FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] group by year order by year desc"))
+        current_year_ids <- current_year_ids[, .(qa_item = paste0('id_count_', year), qa_value)]
+        
+        # count number of rows
+        previous_year_ids <- setDT(
+          odbc::dbGetQuery(db_hhsaw, 
+                           "WITH RankedData AS (
+                                  SELECT *, ROW_NUMBER() OVER (PARTITION BY qa_item ORDER BY qa_date DESC) AS RowNum
+                                  FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                  WHERE qa_item LIKE 'id_count_[0-9]%'
+                              )
+                              SELECT table_name, qa_item, qa_value, qa_date
+                              FROM RankedData
+                              WHERE RowNum = 1;"))
+        print(previous_year_ids)
+        previous_year_ids <- previous_year_ids[, .(qa_item, qa_value = as.integer(qa_value))]
+        
+        if(nrow(previous_year_ids) == 0){previous_year_ids <- copy(current_year_ids)[, qa_value := 0]}
+        
+        id_diff <- merge(current_year_ids, previous_year_ids, by = 'qa_item')[, .(qa_item, qa_value = qa_value.x - qa_value.y)]
+        
+        if (any(id_diff$qa_value < 0) ) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new IDs BY YEAR compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(id_diff[qa_value < 0]), ' years with fewer IDs in the most recent table (', 
+                                                 paste0(id_diff[qa_value < 0][, problems := paste0(gsub('id_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.id_diff_year <- glue::glue("Fewer rows BY YEAR than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new IDs BY YEAR compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(id_diff[qa_value > 0]), ' YEARS with more IDs in the most recent table (', 
+                                                 paste0(id_diff[qa_value > 0][, problems := paste0(gsub('id_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.id_diff_year <- glue::glue(" ") # no problem, so empty error message
+          
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)
+        
+      ## BY SOURCE ----
+        # current rows
+        current_source_ids <- setDT(dbGetQuery(conn = db_hhsaw,                                         
+                                               "select qa_item = 'id_count_mcaid', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcaid = 1
+                                              UNION ALL
+                                              select qa_item = 'id_count_mcare', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcare = 1
+                                              UNION ALL
+                                              select qa_item = 'id_count_pha', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where pha = 1"))
+        
+        # count number of rows
+        previous_source_ids <- setDT(
+          odbc::dbGetQuery(db_hhsaw, 
+                           "WITH RankedData AS (
+                                  SELECT *, ROW_NUMBER() OVER (PARTITION BY qa_item ORDER BY qa_date DESC) AS RowNum
+                                  FROM claims.metadata_qa_mcaid_mcare_pha_values
+                                  WHERE qa_item LIKE 'id_count_[a-zA-Z]%'
+                              )
+                              SELECT table_name, qa_item, qa_value, qa_date
+                              FROM RankedData
+                              WHERE RowNum = 1;"))
+        print(previous_source_ids)
+        previous_source_ids <- previous_source_ids[, .(qa_item, qa_value = as.integer(qa_value))]
+        
+        if(nrow(previous_source_ids) == 0){previous_source_ids <- copy(current_source_ids)[, qa_value := 0]}
+        
+        id_diff <- merge(current_source_ids, previous_source_ids, by = 'qa_item')[, .(qa_item, qa_value = qa_value.x - qa_value.y)]
+        
+        if (any(id_diff$qa_value < 0) ) {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new IDs BY SOURCE compared to most recent run', 
+                                   qa_result = 'FAIL', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(id_diff[qa_value < 0]), ' sources with fewer IDs in the most recent table (', 
+                                                 paste0(id_diff[qa_value < 0][, problems := paste0(gsub('id_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.id_diff_source <- glue::glue("Fewer IDs BY SOURCE than found last time in elig_calyear.  
+                                                         Check metadata.qa_mcaid_mcare_pha for details (last_run = {last_run})
+                                                         \n")
+        } else {
+          temp_qa_dt <- data.table(last_run = last_run, 
+                                   table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                   qa_item = 'Number new IDs BY SOURCE compared to most recent run', 
+                                   qa_result = 'PASS', 
+                                   qa_date = Sys.time(), 
+                                   note = paste0('There were ', nrow(id_diff[qa_value > 0]), ' SOURCES with more IDs in the most recent table (', 
+                                                 paste0(id_diff[qa_value > 0][, problems := paste0(gsub('id_count_', '', qa_item), ": ", qa_value)]$problems, collapse = ', '), ')'))
+          
+          problem.calyear.id_diff_source <- glue::glue(" ") # no problem, so empty error message
+        }
+        
+        odbc::dbWriteTable(conn = db_hhsaw, 
+                           name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha'), 
+                           value = as.data.frame(temp_qa_dt), 
+                           append = T, 
+                           overwrite = F)
 
+    ### Fill qa_mcare_values table ----
+      # rows
+        temp_qa_values1 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                     qa_item = 'row_count', 
+                                     qa_value = as.integer(stage.count), 
+                                     qa_date = Sys.time(), 
+                                     note = '')
+        
+      # rows by YEAR
+        temp_qa_values2 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                      qa_item = current_year_rows$qa_item, 
+                                      qa_value = current_year_rows$qa_value, 
+                                      qa_date = Sys.time(), 
+                                      note = '')
+        
+      # rows by SOURCE
+        temp_qa_values3 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                      qa_item = current_source_rows$qa_item, 
+                                      qa_value = current_source_rows$qa_value, 
+                                      qa_date = Sys.time(), 
+                                      note = '')
+        
+      # IDs
+        temp_qa_values4 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                      qa_item = 'id_count', 
+                                      qa_value = as.integer(current.unique.id), 
+                                      qa_date = Sys.time(), 
+                                      note = '')
+      # IDs by YEAR
+        temp_qa_values5 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                      qa_item = current_year_ids$qa_item, 
+                                      qa_value = current_year_ids$qa_value, 
+                                      qa_date = Sys.time(), 
+                                      note = '')
+      
+      # IDs by SOURCE
+        temp_qa_values6 <- data.table(table_name = 'claims.stage_mcaid_mcare_pha_elig_calyear', 
+                                      qa_item = current_source_ids$qa_item, 
+                                      qa_value = current_source_ids$qa_value, 
+                                      qa_date = Sys.time(), 
+                                      note = '')
+        for(i in 1:6){
+          odbc::dbWriteTable(conn = db_hhsaw, 
+                       name = DBI::Id(schema = 'claims', table = 'metadata_qa_mcaid_mcare_pha_values'), 
+                       value = as.data.frame(get(paste0('temp_qa_values', i))), 
+                       append = T, 
+                       overwrite = F)
+        }
 
-
-#### CLEAN UP ####
-# Remove stage table
-rm(housing_path, years)
-rm(table_config_stage)
-rm(mcaid_mcare_pha_elig_demo, mcaid_mcare_pha_elig_timevar)
-rm(mcaid_mcare_pha_elig_calyear, allocated, pt_rows)
-rm(full_criteria)
-rm(cycles, max_rows, start)
+    
+#### THE END! ----
