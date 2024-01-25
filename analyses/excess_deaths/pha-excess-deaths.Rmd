@@ -1,0 +1,780 @@
+---
+title: "Excess mortality among recipients of housing assistance, 2017-2021"
+author: "Precious Esie"
+date: "2023-05-05"
+output:
+  rmdformats::robobook:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    highlight: default
+    code_folding: hide
+
+---
+<!--
+# date created: 12-20-2022
+# last modified: 05-31-2023
+# purpose: estimate excess mortality among public housing recipients
+# dependencies: pha-matching.R
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load packages
+pacman::p_load(
+  data.table, rads, rads.data, DBI, keyring,
+  tidyverse, beepr, lubridate, zoo,
+  kableExtra, RecordLinkage, mgcv, ggeffects, 
+  scales, Metrics, fmsb
+)
+
+# Create SQL connection to hhs_analytics_workspace on Azure server 16 ('prod' server)
+devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/apde/main/R/create_db_connection.R") 
+hhsaw16 <- create_db_connection(server = "hhsaw", prod = T, interactive = F)
+
+# TROUBLESHOOTING get_data_death() 
+# you may need to reset hhsaw keyring if get_data_death() does not run:
+# keyring::key_set('hhsaw', username = '[USERNAME]@kingcounty.gov')
+# use your Microsoft applications password when prompted
+
+```
+
+## Introduction
+
+Public Health – Seattle & King County (PHSKC), King County Housing Authority (KCHA), and Seattle Housing Authority (SHA) have collaborated extensively in recent years to better understand the health and well-being of those receiving federally subsidized housing support. KCHA and SHA have expressed in interest in pursuing additional targeted analyses. Since deaths comprise a large proportion of the reasons for exiting either of the public housing authority (PHA) programs and due to an apparent increase in the number of annual deaths in recent years that might be attributable to the COVID-19 pandemic, a death analysis was identified as a priority. The objective of this analysis was to formally assess and quantify excess deaths associated with the period during the COVID-19 pandemic. 
+
+To perform this analysis, first, we linked KCHA and SHA (collectively, PHA) data to King County death certificate data by using personal identifiers (e.g., name, social security number, etc.) using data collected from 2017 through 2021. And second, we estimated excess deaths per month during the COVID-19 period -- defined as March 2020 to December 2021 for the purposes of this analysis -- by utilizing historical data from 2017 to February 2020 as a baseline. The study period covers March 2020 to December 2021, capturing a period of considerable COVID-19 transmission and associated public health measures.
+
+## Data Sources
+
+### Public Housing Data
+<!---
+
+To link public housing data with King County death certificate data, I first imported SQL server tables on public housing enrollees into R. These tables were:
+
+* `[pha.final_timevar]`: Tracks time-varying elements for people in the PHA data, including exit data. This table has a new row each time something about a person changes (e.g., address, subsidy type, exiting housing). It does not explicitly specify death as a reason someone may have exited public housing. We limited observations to those who were in PHA records during 2017-2021 (i.e., those who have an exit date listed as on or after January 1, 2017)
+* ` [pha.final_identities]`: Contains personal identifying information on PHA enrollees, to use for linking with death certificate data
+
+--->
+```{r get PHA data, include=FALSE}
+
+# [pha.final_timevar]: 
+final_timevar <- setDT(
+  DBI::dbGetQuery(
+    conn = hhsaw16, 
+    "SELECT KCMASTER_ID, hh_KCMASTER_ID, prog_type, 
+    from_date, to_date, period_start, cov_time, agency,  
+    subsidy_type, operator_type, vouch_type_final, agency_prog_concat
+    FROM [pha].[final_timevar]
+    WHERE to_date >= '2017-01-01' 
+    AND cov_time >= 15" # keep only those with coverage times of at least 15 days
+  )
+) 
+
+# [pha.final_identities]
+final_identities <- setDT(
+  DBI::dbGetQuery(
+    conn = hhsaw16, 
+    "SELECT KCMASTER_ID, dob, ssn, lname, fname, mname
+     FROM [pha].[final_identities]"
+  )
+) %>%
+  # remove duplicate rows
+  unique() 
+
+```
+
+The following figure shows the number of recipients of housing assistance by month during 2017-2021, separately for KCHA and SHA. Colors indicate age group. 
+
+```{r PHA monthly counts, message=FALSE, warning=FALSE, fig.width=9}
+# data frame for population by month
+obs_by_month <- final_timevar %>% 
+  # the following grouping assumes continuous enrollment from period_start for those with multiple rows
+  group_by(KCMASTER_ID, period_start, agency) %>% 
+  # collapse rows to min start and max end for each ID
+  summarise(start = min(from_date), end = max(to_date))  %>%
+  # list out months within start and end times for each observation 
+  # consider a full month if observed during 15th of a given month
+  ## floor_date([date], "month") = first of the current month
+  ## ceiling_date([date], "month") = first of the next month
+  ## floor_date([date], "month") %m-% months(1) = first of the previous month
+  rowwise() %>% 
+  mutate(
+    # reformat start and end dates as month (sets day to first of month, as specified above)
+    start_v2 = ifelse(day(start) <= 15, floor_date(start, "month"), ceiling_date(start, "month")) %>% as.Date(.,origin="1970-01-01"),
+    end_v2 =  ifelse(day(end) < 15, floor_date(end, "month") %m-% months(1), floor_date(end, "month")) %>% as.Date(.,origin="1970-01-01")
+  ) %>% 
+  # keep only rows where end month is greater than or equal to start month
+  # deletes 10 rows where time covered two calendar months but was less than 15 days for both months 
+  filter(end_v2 >= start_v2) %>%
+  # specify months
+  mutate(month_year = list(format(seq(start_v2, end_v2, by = "month"), "%Y-%m")))
+
+# append dob to get monthly population by age
+## for several observations, there is more than one row for each unique KCMASTER_ID 
+## the following removes NA dob values and selects a random dob for each unique observation
+pha_dob <- final_identities %>% select(KCMASTER_ID, dob) %>% 
+  filter(!is.na(dob)) %>%
+  group_by(KCMASTER_ID) %>%
+  sample_n(1)
+
+obs_by_month <- obs_by_month %>% left_join(pha_dob, by = "KCMASTER_ID")
+
+# data frame for denominators, aggregated by month 
+pop_by_month <- obs_by_month %>%
+  # one row per month for all observations
+  unnest(month_year) %>%
+  filter(month_year >= "2017-01" & month_year <= "2021-12") %>%
+  ungroup() %>%
+  mutate(
+    first_month = ymd(paste0(month_year,"-01")),
+    age = rads::calc_age(from = dob, to = first_month), # as.numeric(round((first_month - dob)/365.25)),
+    age5 = case_when(
+      age < 25 ~ "<25",
+      age < 45 ~ "25-44",
+      age < 65 ~ "45-64",
+      age < 75 ~ "65-74",
+      TRUE ~ "75+"
+    ),
+    age3 = case_when(
+      age < 45 ~ "<45",
+      age < 65 ~ "45-64",
+      TRUE ~ "65+"
+    ),
+    month_year = as.yearmon(month_year)
+  ) %>%
+  group_by(month_year, agency, age3) %>%
+  summarise(pop = n()) 
+
+# plot
+ggplot(data = pop_by_month, aes(x = month_year, y = pop, fill = age3)) + 
+  geom_col() + 
+  facet_grid(~agency) + 
+  labs(
+    x="", y = "Residents",
+    title = "Number of Public Housing Residents by age group, 2017-2021",
+    fill = "Age group") +
+  theme_bw()
+
+# # data frame for denominators, aggregated by month and excluding age
+# pop_by_month0 <- pop_by_month %>%
+#   group_by(month_year, agency) %>%
+#   summarise(pop_tot = sum(pop)) 
+# 
+# # plot, excluding age
+# ggplot(data = pop_by_month0, aes(x = month_year, y = pop_tot)) + 
+#   geom_col() + 
+#   facet_grid(~agency) + 
+#   labs(
+#     x="", y = "Residents",
+#     title = "Number of Public Housing Residents, 2017-2021"
+#   ) +
+#   theme_bw()
+
+```
+
+### Deaths Data
+
+Then, I imported death events data in King County using the APDE `rads` package. Since these data do not contain personally identifiable information (e.g., social security number, name), I additionally imported death certificate data from Washington State that do include this information, then merged these two data files by a unique state death ID. 
+
+```{r get deaths data}
+# 2017-2021 King County death data 
+# selecting a subset of variables to speed processing
+kc_deaths0 <- get_data_death(
+  year = c(2017:2021),
+  cols = c(
+    "state_file_number","chi_sex","chi_age","age6","chi_race_7","chi_race_eth8",
+    "date_of_birth", "date_of_birth_month", "date_of_birth_day","date_of_birth_year",
+    "date_of_death", "date_of_death_month", "date_of_death_day","date_of_death_year",
+    "death_county","death_city"
+  )
+)
+
+# define vector of candidate linkage variables
+decedent_vars <- c(
+  "state_file_number", 
+  "decedent_last_name", 
+  "decedent_first_name", 
+  "decedent_middle_name", 
+  "decedent_suffix",
+  "date_of_birth",
+  "date_of_death",
+  "social_security_number",
+  "residence_street",
+  "residence_city",
+  "residence_state",
+  "residence_zip_code"
+)
+# read in txt files (WA state) containing personally identifiable decedent information
+xnames <- function(x){
+  read.table(
+    x,
+    sep = "\t",
+    header = TRUE, 
+    fill = TRUE,
+    ## disable quoting 
+    quote = "",
+  ) %>% 
+    ## keep candidate linkage variables and selected death variables
+    dplyr::select(all_of(c(decedent_vars))) %>%
+    ## set state file number as character for consistency
+    mutate(
+      state_file_number = as.character(state_file_number),
+      
+    )
+}
+# decedent info from 2015-2019
+x1 <- xnames("//dphcifs/APDE-CDIP/Deaths-Named/stage/death.stage_names_2015-2019_20220921.txt")
+# decedent info from 2020-2021
+x2 <- xnames("//dphcifs/APDE-CDIP/Deaths-Named/stage/death.stage_names_2020-2021_20220921.txt")
+# row bind x1 and x2
+x3 <- bind_rows(x1, x2) %>%
+  # rename & reformat for consistency with housing authority data
+  rename(
+    lname = decedent_last_name,
+    fname = decedent_first_name,
+    ssn = social_security_number,
+    dob = date_of_birth
+  ) %>%
+  mutate(
+    mname = substr(decedent_middle_name,1,1),
+    ssn = as.character(ssn),
+    dob = as.Date(dob),
+    date_of_death = as.Date(date_of_death)
+  )
+
+# merge deaths data
+kc_deaths <- inner_join(kc_deaths0, x3, by = c("state_file_number","date_of_death"))
+# note that I additionally merge by date of death
+# not including this variable yielded two identical versions
+# it is unclear to me why this happened
+
+```
+
+## Record linkage
+
+To perform record linkage, I used the following personal identifiers:
+
+* social security number, 
+* first name, 
+* last name, and 
+* date of birth.
+
+```{r link data, message=FALSE, warning=FALSE, echo = FALSE}
+# run data linkage script
+source("pha-matching.R") 
+# source("C:/code/pers_pe/PHA_Excess_Deaths/pha-matching.R")
+
+# Danny's addition (unclear why this is needed) --
+# write data to HHSAW for COD analysis
+if(Sys.getenv("USERNAME") == 'dcolombara'){
+    mylinkage <- setDT(copy(match))[, .(KCMASTER_ID, state_file_number, linkage_date = Sys.Date())]
+    db_hhsaw <- rads::validate_hhsaw_key()
+    DBI::dbWriteTable(conn = db_hhsaw, name = Id(schema = "dcolombara", table = "pha_death_masterid_sfn"), value = mylinkage, overwrite = T)
+    DBI::dbWriteTable(conn = db_hhsaw, name = Id(schema = "dcolombara", table = "pha_death_final_timevar"), value = final_timevar, overwrite = T)
+    DBI::dbWriteTable(conn = db_hhsaw, name = Id(schema = "dcolombara", table = "pha_death_kc_deaths0"), value = copy(kc_deaths0)[, .(state_file_number, chi_sex, chi_age, age6, date_of_death, date_of_death2 = date_of_death)], overwrite = T)
+}
+```
+
+First, I linked records based on perfect matches to the above identifiers. This yielded *`r nrow(block0)` matches*. Next, I used the `RecordLinkage` package to probabilistically link additional records. Further information on the record linkage process may be found in [Appendix A](#appendix-a-record-linkage-process). Probabilistic linkage identified *`r nrow(match[match$match_type == 0,])` additional matches*, resulting in a total of *`r nrow(match)` matches* between PHA data and deaths data.  
+
+
+
+## Estimating excess deaths
+
+Excess deaths reflect the difference between the actual mortality and the expected mortality based on historical trends. To estimate the expected number of deaths during the COVID-19 period (March 2020 to December 2021), we built six Poisson regression models, stratified by PHA (KCHA, SHA) and three age groups (<45, 45-64, 65+). Models were fitted using baseline data from January 2017 to February 2020, and predictions were made for each month from March 2020 to December 2021. We included the following variables in the models:
+
+* year, continuous
+* month, categorical 
+
+Models also included a population offset term, the natural log of the monthly number of public housing residents. This term allows us to account for variations in population size over time. This also allows for valid comparisons of rates across different months and agencies (KCHA and SHA). In addition, we defined the threshold of excess deaths as those monthly counts that exceeded the 95% confidence interval of the predicted value, a value used by the CDC as illustrated in the [COVID-19 excess deaths dashboard](https://www.cdc.gov/nchs/nvss/vsrr/covid19/excess_deaths.htm).
+
+All analyses were performed using R version 4.2.3 in RStudio version 2022.07.2+576.
+
+```{r fit model, warning=FALSE, message=FALSE}
+# data mgmt ----
+# include the PHA associated with the last time period for decedents
+## find decedents in obs_by_month df
+decedent_pha <- obs_by_month %>% 
+  ungroup() %>%
+  select(KCMASTER_ID,agency,end) %>%
+  # keep most recent date
+  group_by(KCMASTER_ID) %>% 
+  slice(which.max(as.Date(end, '%m/%d/%Y'))) %>%
+  select(-end)
+## append agency to matches
+match <- match %>% left_join(decedent_pha, by = "KCMASTER_ID") %>%
+    # format death date as month and year
+  mutate(
+    month_year = as.yearmon(date_of_death, "%Y-%m"),
+    year = lubridate::year(date_of_death)
+  )
+
+# summarize into monthly death counts - separately by PHA
+deaths_by_month <- match %>% 
+  mutate(age3 = case_when(
+      chi_age < 45 ~ "<45",
+      chi_age < 65 ~ "45-64",
+      TRUE ~ "65+")
+    ) %>%
+  group_by(month_year, agency, age3) %>%
+  summarise(
+    # number of deaths per month
+    deaths = n()
+  ) %>%
+  # add denominator data
+  right_join(pop_by_month, by = c("month_year", "agency", "age3")) %>%
+  mutate(
+    # set NA values of deaths to 0
+    deaths = ifelse(is.na(deaths), 0, deaths),
+    # set date of death to first of the month
+    date_mo_01 = as.Date(month_year),
+    # year of death (based on month)
+    year = lubridate::year(month_year) %>% as.numeric(),
+    # year centered at 2017 
+    year_num = year - 2017,
+    # month of death
+    month = lubridate::month(month_year) %>% as.numeric(),
+    month_f = as.factor(month),
+    # add before/during covid indicator
+    covid = ifelse(month_year < "Mar 2020", 0, 1),
+    # rate per 10,000
+    rate = deaths/pop * 10000,
+    # create logpop b/c ggpredict warns that predictions may-not be correct if using a transformed offset term (that is not fixed prior to fitting)
+    logpop = log(pop)
+  ) %>% ungroup()
+
+# population counts by PHA per month (ages aggregated)
+pop_by_month0 <- deaths_by_month %>% 
+  group_by(month_year, agency) %>%
+  summarise(pop = sum(pop))
+# death counts by PHA per month (ages aggregated)
+deaths_by_month0 <- deaths_by_month %>% 
+  group_by(month_year, agency) %>%
+  summarise(deaths = sum(deaths)) %>%
+  left_join(pop_by_month0, by = c("month_year", "agency")) %>% 
+  mutate(
+    # set NA values of deaths to 0
+    deaths = ifelse(is.na(deaths), 0, deaths),
+    # set date of death to first of the month
+    date_mo_01 = as.Date(month_year),
+    # year of death (based on month)
+    year = lubridate::year(month_year) %>% as.numeric(),
+    # year centered at 2017 
+    year_num = year - 2017,
+    # month of death
+    month = lubridate::month(month_year) %>% as.numeric(),
+    month_f = as.factor(month),
+    # add before/during covid indicator
+    covid = ifelse(month_year < "Mar 2020", 0, 1),
+    # rate per 10,000
+    rate = deaths/pop * 10000
+  )
+
+# population counts by PHA per year, separately by PHA and age
+pop_by_year <- deaths_by_month %>% 
+  group_by(year, agency, age3) %>%
+  summarise(pop = sum(pop))
+# death counts by PHA per year, separately by PHA and age
+deaths_by_year <- deaths_by_month %>% 
+  group_by(year, agency, age3) %>%
+  summarise(deaths = sum(deaths)) %>%
+  left_join(pop_by_year, by = c("year", "agency", "age3")) %>% 
+  mutate(
+    # add before/during covid indicator
+    covid = ifelse(year < 2020, 0, 1),
+    # rate per 10,000
+    rate = deaths/pop * 10000
+  )
+
+# poisson models stratified by age ----
+model0_fx <- function(x, PHA){
+  # input ----
+  # x = age category
+  
+  # fit model ----
+  fm <- deaths_by_month %>%
+  # baseline data only
+  filter(covid == 0, age3 == x, agency == PHA) %>%
+  glm(
+    deaths ~ year_num + month_f + offset(logpop), 
+    data = ., 
+    family= 'poisson'
+  )
+  
+  # calculate mean of log(offset) for predictions
+  logpop <- deaths_by_month %>%
+  filter(covid == 0, age3 == x, agency == PHA) %>%
+    pull(pop) %>%
+    log(.)
+  
+  # get model predictions ----
+  fm_out <- ggpredict(fm, terms = list(
+  year_num = c(0:4), 
+  month_f = c(1:12)),
+  condition = list(logpop = mean(logpop))
+  ) %>%
+  as.data.frame() %>%
+  left_join(
+    deaths_by_month %>% filter(age3 == x, agency == PHA),
+    by = c("x" = "year_num", "group" = "month_f"),
+    multiple = "all"
+  ) %>%
+  mutate(
+    # difference between observed deaths and predicted deaths
+    age3 = !!x,
+    # predicted rates per 10,000
+    pred_rate = predicted/pop * 10000,
+    pred_rate_lwr = conf.low/pop * 10000,
+    pred_rate_upr = conf.high/pop * 10000,
+    # difference between observed deaths and predicted deaths (avg excess)
+    excess = deaths - predicted,
+    excess_lwr = deaths - conf.high, # also refers to excess at 95 threshold
+    excess_upr = deaths - conf.low,
+    # difference between observed rate and predicted rate
+    excess_rate = excess/pop * 10000,
+    excess_lwr_rate = excess_lwr/pop * 10000,
+    excess_upr_rate = excess_upr/pop * 10000,
+    # above 95% threshold indicator
+    alarm = ifelse(deaths - conf.high > 0, "alarm", "none"),
+    alarm = factor(alarm, levels = c("alarm","none"), ordered = T),
+    # categorical var to distinguish excess sig above 0, above 0 (non sig) and below 0
+    legend = case_when(
+      excess_lwr > 0 ~ "2",
+      excess > 0 ~ "1",
+      excess <= 0 ~ "0") %>% factor(levels = c("2","1","0"), ordered = TRUE)
+  ) %>%
+  rename(year_num = x, month_f = group)
+  
+  # output ----
+  return(list(fm, fm_out))
+  
+}
+
+# extract model predictions
+preds_by_age_KCHA <- lapply(
+  c("<45","45-64","65+"), 
+  function(x) model0_fx(x,"KCHA")[[2]]) %>% 
+  do.call("rbind",.)
+
+preds_by_age_SHA <- lapply(
+  c("<45","45-64","65+"), 
+  function(x) model0_fx(x,"SHA")[[2]]) %>% 
+  do.call("rbind",.)
+
+# bind
+preds_by_age <- rbind(preds_by_age_KCHA, preds_by_age_SHA)
+
+
+# model collapsing age groups ----
+model1_fx <- function(PHA){
+    # input ----
+  # PHA = agency
+  
+  # fit model ----
+  fm <- deaths_by_month0 %>%
+  # baseline data only
+  filter(covid == 0, agency == PHA) %>%
+  glm(
+    deaths ~ year_num + month_f + offset(log(pop)),
+    data = .,
+    family= 'poisson'
+  )
+
+  # get model predictions ----
+  fm_out <- ggemmeans(fm, terms = list(
+  year_num = c(0:4), 
+  month_f = c(1:12)
+  )) %>%
+  as.data.frame() %>%
+  left_join(
+    deaths_by_month0 %>% filter(agency == PHA),
+    by = c("x" = "year_num", "group" = "month_f"),
+    multiple = "all"
+  ) %>%
+  mutate(
+    # predicted rates per 10,000
+    pred_rate = predicted/pop * 10000,
+    pred_rate_lwr = conf.low/pop * 10000,
+    pred_rate_upr = conf.high/pop * 10000,
+    # difference between observed deaths and predicted deaths (avg excess)
+    excess = deaths - predicted,
+    excess_lwr = deaths - conf.high, # also refers to excess at 95 threshold
+    excess_upr = deaths - conf.low,
+    # difference between observed rate and predicted rate
+    excess_rate = excess/pop * 10000,
+    excess_lwr_rate = excess_lwr/pop * 10000,
+    excess_upr_rate = excess_upr/pop * 10000,
+    # above 95% threshold indicator
+    alarm = ifelse(deaths - conf.high > 0, "alarm", "none"),
+    alarm = factor(alarm, levels = c("alarm","none"), ordered = T),
+    # categorical var to distinguish excess sig above 0, above 0 (non sig) and below 0
+    legend = case_when(
+      excess_lwr > 0 ~ "2",
+      excess > 0 ~ "1",
+      excess <= 0 ~ "0") %>% factor(levels = c("2","1","0"), ordered = TRUE)
+  ) %>%
+  rename(year_num = x, month_f = group)
+  
+  # output ----
+  return(list(fm, fm_out))
+  
+}
+
+# extract model predictions
+preds_KCHA <- model1_fx("KCHA")[[2]]
+preds_SHA <- model1_fx("SHA")[[2]]
+
+# bind
+preds <- rbind(preds_KCHA, preds_SHA)
+
+
+```
+
+
+
+## Results
+
+We provide results separately for KCHA and SHA. In the first plot (below), we see monthly observed deaths illustrated as orange bars and predicted deaths as points with 95% confidence intervals. Between Jan 2017 and Feb 2020, observed deaths are largely within 95% confidence intervals of predictions. The plot does show some evidence of excess deaths between Mar 2020 and Dec 2021, as observed deaths for several months exceed the 95% confidence interval of these predictions.
+
+
+```{r raw number of observed deaths, warning=FALSE, message=FALSE, fig.height=9}
+
+# vector of date labels
+date_seq <- seq(from = ymd("2020-03-01"), to = ymd("2021-12-01"), by = "3 months")
+
+# KCHA ----
+preds_by_age_KCHA %>% 
+  filter(covid==0) %>%
+  ggplot(data = ., aes(x = date_mo_01, y = pred_rate)) +
+  #geom_vline(xintercept = ymd("2020-02-15"),  lty=2, linewidth=.5) + 
+  geom_col(
+    inherit.aes = FALSE,
+    aes(x = date_mo_01, y = rate, fill = "Observed deaths"), alpha = 0.8
+  ) +
+  geom_point(size = 3, aes(color = "Predicted deaths")) +
+  geom_errorbar(aes(ymin=pred_rate_lwr,ymax = pred_rate_upr), color= "black", linewidth = 0.8, width = 10) +
+  labs(
+    y = "Deaths per 10,000 PHA residents", 
+    x = "", 
+    title = "Observed and predicted (with 95% CIs) deaths among PHA residents, all causes",
+    subtitle = paste0("King County Housing Authority"),
+    caption = "CI = confidence interval\nModel was fit using data from Jan 2017 to Dec 2019.\nValues to the left of the dashed line are from Jan 2017 to Feb 2020, and values to the right are from Mar 2020 to Dec 2021."
+  ) +
+  scale_color_manual("", breaks = c("Predicted deaths"), values = c("black")) +
+  scale_fill_manual("", breaks = c("Observed deaths"), values = c("orange")) +
+  scale_x_date(labels = date_format("%b %Y"), breaks = date_seq) + 
+  theme_bw() +
+  theme(legend.spacing.y = unit(-.3, "cm")) +
+  theme(legend.box="vertical") +
+  theme(plot.caption = element_text(hjust = 0)) +
+  facet_wrap(~ age3, scales = "free", nrow = 3)
+
+# SHA ----
+preds_by_age_SHA %>%
+  filter(covid==0) %>%
+  ggplot(data = ., aes(x = date_mo_01, y = pred_rate)) +
+  #geom_vline(xintercept = ymd("2020-02-15"),  lty=2, linewidth=.5) + 
+  geom_col(
+    inherit.aes = FALSE,
+    aes(x = date_mo_01, y = rate, fill = "Observed deaths"), alpha = 0.8
+  ) +
+  geom_point(size = 3, aes(color = "Predicted deaths")) +
+  geom_errorbar(aes(ymin=pred_rate_lwr,ymax = pred_rate_upr), color= "black", linewidth = 0.8, width = 10) +
+  labs(
+    y = "Deaths per 10,000 PHA residents", 
+    x = "", 
+    title = "Observed and predicted (with 95% CIs) deaths among PHA residents, all causes",
+    subtitle = paste0("Seattle Housing Authority"),
+    caption = "CI = confidence interval\nModel was fit using data from Jan 2017 to Dec 2019.\nValues to the left of the dashed line are from Jan 2017 to Feb 2020, and values to the right are from Mar 2020 to Dec 2021."
+  ) +
+  scale_color_manual("", breaks = c("Predicted deaths"), values = c("black")) +
+  scale_fill_manual("", breaks = c("Observed deaths"), values = c("orange")) +
+  scale_x_date(labels = date_format("%b %Y"), breaks = date_seq) + 
+  theme_bw() +
+  theme(legend.spacing.y = unit(-.3, "cm")) +
+  theme(legend.box="vertical") +
+  theme(plot.caption = element_text(hjust = 0)) +
+  facet_wrap(~ age3, scales = "free", nrow = 3)
+
+
+```
+Regarding the number of excess deaths per month (per 10,000 residents), there were differences by housing authority, age group, and time. In both KCHA and SHA, there were minimal excess deaths among those aged <45. For those aged 45-64 and 65+, the pattern of excess deaths per month is unclear. There was little evidence of a consistent pattern by both age group and PHA.
+
+
+```{r monthly excess dseaths, warning=FALSE, message=FALSE, fig.height=9}
+# vector of date labels
+date_seq <- seq(from = ymd("2020-03-01"), to = ymd("2021-12-01"), by = "2 months")
+
+# KCHA ----
+  preds_by_age_KCHA %>% filter(covid == 1) %>%
+    ggplot(data = ., aes(x = date_mo_01, y = excess_rate)) +
+    geom_col(size = 1, aes(fill = alarm)) +
+    geom_errorbar(aes(ymax = excess_upr_rate, ymin=excess_lwr_rate), linewidth = 0.5, width = 8) +
+    geom_hline(yintercept = 0, linewidth = 1) +
+    #facet_wrap(~ year, scales = "free", nrow = 2) +
+    scale_fill_manual(
+      values=c("alarm" = "orange","none" = "gray50"), 
+      labels = c("Significantly above 0","Not significantly above 0")
+    ) + 
+  scale_x_date(labels = date_format("%b %Y"), breaks = date_seq) + 
+    labs(
+        title = "Monthly excess deaths per 10,000 residents, all causes", 
+        subtitle = "King County Housing Authority",
+        x = "", y = "Excess deaths per 10,000 residents",
+        fill = ""
+    ) + theme_bw() +
+    facet_grid(age3 ~., scales = c("free")) 
+
+# SHA ----
+preds_by_age_SHA %>% filter(covid == 1) %>%
+    ggplot(data = ., aes(x = date_mo_01, y = excess_rate)) +
+    geom_col(size = 1, aes(fill = alarm)) +
+    geom_errorbar(aes(ymax = excess_upr_rate, ymin=excess_lwr_rate), linewidth = 0.5, width = 8) +
+    geom_hline(yintercept = 0, linewidth = 1) +
+    #facet_wrap(~ year, scales = "free", nrow = 2) +
+    scale_fill_manual(
+      values=c("alarm" = "orange","none" = "gray50"), 
+      labels = c("Significantly above 0","Not significantly above 0")
+    ) + 
+  scale_x_date(labels = date_format("%b %Y"), breaks = date_seq) + 
+    labs(
+        title = "Monthly excess deaths per 10,000 residents, all causes", 
+        subtitle = "King County Housing Authority",
+        x = "", y = "Excess deaths per 10,000 residents",
+        fill = ""
+    ) + theme_bw() +
+    facet_grid(age3 ~., scales = c("free")) 
+
+```
+
+```{r summary table of excess deaths, message=FALSE, warning=FALSE, echo = FALSE, eval = FALSE}
+preds %>% 
+  filter(covid == 1) %>% 
+  group_by(agency) %>%
+  summarise(
+    avg_pop = sum(pop)/22,
+    avg_observed = sum(deaths)/22,
+    avg_pred = sum(predicted)/22,
+    avg_excess = sum(excess)/22,
+    avg_excess95 = sum(excess_lwr)/22,
+    
+    avg_observed_rate = sum(rate)/22,
+    avg_pred_rate = sum(pred_rate)/22,
+    avg_excess_rate = sum(excess_rate)/22,
+    avg_excess95_rate = sum(excess_lwr_rate)/22
+
+  ) %>% ungroup()
+
+
+preds_by_age %>% 
+  filter(covid == 1) %>% 
+  group_by(agency, age3) %>%
+  summarise(
+    avg_pop = sum(pop)/22,
+    avg_observed = sum(deaths)/22,
+    avg_pred = sum(predicted)/22,
+    avg_excess = sum(excess)/22,
+    avg_excess95 = sum(excess_lwr)/22,
+    
+    avg_observed_rate = sum(rate)/22,
+    avg_pred_rate = sum(pred_rate)/22,
+    avg_excess_rate = sum(excess_rate)/22,
+    avg_excess95_rate = sum(excess_lwr_rate)/22
+
+  ) %>% arrange(agency, match(age3, c("<45", "45-64", "65+"))) %>%
+  ungroup()
+
+
+
+preds_by_age %>% 
+  filter(covid == 1) %>% 
+  group_by(agency, age3) %>%
+  summarise(
+    avg_pop = sum(pop)/22,
+    tot_observed = sum(deaths),
+    tot_pred = sum(predicted),
+    tot_excess = sum(excess),
+    tot_excess95 = sum(excess_lwr)
+  ) %>% arrange(agency, match(age3, c("<45", "45-64", "65+"))) %>%
+  ungroup() %>% filter(agency == "SHA")
+
+
+```
+
+
+```{r print data}
+preds_by_age %>% 
+  dplyr::select(
+    month_year, agency, age3, pop, deaths, predicted, conf.low, conf.high, 
+    rate, pred_rate, pred_rate_lwr, pred_rate_upr, 
+    excess, excess_lwr, excess_upr, alarm
+  ) %>%
+  rename(conf_lwr = conf.low, conf_upr = conf.high) %>%
+  mutate_if(is.numeric, ~round(.,2)) %>%
+  kableExtra::kable(table.attr='class="table-fixed-header"') %>%
+  kable_styling(full_width = FALSE) %>%
+  scroll_box(height = "300px", width = "700px")
+
+```
+
+## Appendix A: Record Linkage Process
+
+Linkage was performed using `RecordLinkage` package version 0.4-12.4. The following variables are shared between deaths and PHA data, which were used in the record linkage process:
+
+* First name
+* Last name
+* Social security number
+* Date of birth
+
+### Data pre-processing
+
+The `prep.names()` function was used to standardize first and last names. The `validate_ssn()` function was used to standardize social security numbers and remove implausible values. Date of birth followed a YYYY-MM-DD format. Deaths and PHA data were merged into a single data frame containing the following fields:
+
+* rowid = unique identifier 
+* KCMASTER_ID = PHA-specific unique identifier
+* dob
+* date_of_birth_day
+* date_of_birth_month 
+* date_of_birth_year      
+* ssn
+* ssn4 = last four digits of ssn
+* lname = last name
+* fname = first name
+* lname_phon = phonetic code of last name using `soundex()` function
+* fname_phon = phonetic code of first name using `soundex()` function
+
+
+### Blocking 
+
+There were four sets of blocking criteria involved in the matching process. Similarity values using the Jaro-Winkler method were calculated based on comparison fields.  
+
+
+| Block Set | Blocking Fields             | Comparison Fields | N Matches |
+|:----------|:----------------------------|:------------------|:----------|
+| 0         | ssn, dob, lname, fname      | None -- deterministic matching | 3206 |
+| 1         | ssn                         | dob, lname, fname     | 394 |
+| 2         | dob                         | ssn, lname, fname     | 376 |
+| 3         | dob, lname_phon, fname_phon | lname, fname | 27 |
+
+
+### Classification 
+
+Thresholds for matching were determined based on visual inspection of potential matches. 
+
+_Block 0_: Since this was a deterministic scheme, records were considered a match if they were perfect matches across blocking fields. 
+
+_Block 1_: We considered social security number to be a strong identifier, as these values are intended to be unique to each individual. We examined the distribution of scores based on possible ways administrative errors could have been made (e.g., different dob years, dob months and days switched), and these yielded fairly high similarity scores. Thus, determined matches using similarity scores alone, those above 0.70.
+
+_Block 2_: Records were considered matches if dob matched and they met at least one of the following criteria:
+
+* First and last names matched, but were switched
+* Last 4 digits of ssn matched AND first name matched 
+* Last 4 digits of ssn matched AND last name matched 
+* First and last names matched AND ssn was missing on one source
+* First and last names matched, regardless of ssn
+* Similarity score was above 0.81
+
+_Block 3_: Records were considered matches if dob matched, name phonetics across both first and last name matched, and similarity score was above 0.73.
+
