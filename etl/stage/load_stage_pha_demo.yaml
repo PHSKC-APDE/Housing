@@ -3,6 +3,7 @@ schema: pha
 table: stage_demo
 vars:
   KCMASTER_ID: NVARCHAR(24)
+  id_apde: NVARCHAR(22)
   gender_me: NVARCHAR(18)
   gender_recent: NVARCHAR(16)
   gender_female: BIT

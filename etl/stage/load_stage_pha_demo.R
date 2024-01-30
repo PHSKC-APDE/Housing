@@ -26,43 +26,103 @@ load_stage_demo <- function(conn = NULL,
                             id_schema = "pha",
                             id_table = "final_identities") {
   
+  # REMINDER ABOUT NEEED FOR UPDATED TABLES ----
+  message(paste0('\U00026A0\U00026A0 ACHTUNG! 重要! ¡Escucha bien!\n', 
+                 'The following tables MUST be up to date. If they are not, stop this code and update those tables first\n', 
+                 '   [pha].[final_identities]\n', 
+                 '   [pha].[stage_kcha]\n', 
+                 '   [pha].[stage_sha]'))
+  
   
   # BRING IN DATA AND COMBINE ----
   message("Pull in demographic data")
-  kcha <- dbGetQuery(
+  kcha <- setDT(dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.KCMASTER_ID, a.agency, a.act_date, a.admit_date, a.dob, a.gender, 
-      a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
-      FROM 
-      (SELECT id_hash, agency, act_date, admit_date, dob, gender,  
-        r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
-        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
-      LEFT JOIN
-      (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
-      ON a.id_hash = b.id_hash",
-      .con = conn))
+      "SELECT DISTINCT IDdata.KCMASTER_ID
+          ,IDdata.id_apde
+        	,KCHAdata.agency
+        	,KCHAdata.act_date
+        	,KCHAdata.admit_date
+        	,KCHAdata.dob
+        	,KCHAdata.gender
+        	,KCHAdata.r_aian
+        	,KCHAdata.r_asian
+        	,KCHAdata.r_black
+        	,KCHAdata.r_hisp
+        	,KCHAdata.r_nhpi
+        	,KCHAdata.r_white
+        FROM (
+        	SELECT id_hash
+        		,agency
+        		,act_date
+        		,admit_date
+        		,dob
+        		,gender
+        		,r_aian
+        		,r_asian
+        		,r_black
+        		,r_hisp
+        		,r_nhpi
+        		,r_white
+        	FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha')) }
+        	WHERE id_hash IS NOT NULL
+        	) KCHAdata
+        LEFT JOIN (
+        	SELECT id_hash
+        		,KCMASTER_ID
+        		,id_apde
+        	FROM {`id_schema`}.{`id_table`}
+        	) IDdata ON KCHAdata.id_hash = IDdata.id_hash",
+      .con = conn)))
   
-  sha <- dbGetQuery(
+  sha <- setDT(dbGetQuery(
     conn,
     glue_sql(
-      "SELECT DISTINCT b.KCMASTER_ID, a.agency, a.act_date, a.admit_date, 
-      a.dob, a.gender, a.r_aian, a.r_asian, a.r_black, a.r_hisp, a.r_nhpi, a.r_white
-      FROM 
-      (SELECT id_hash, agency, act_date, admit_date, dob, gender, 
-        r_aian, r_asian, r_black, r_hisp, r_nhpi, r_white  
-        FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
-      LEFT JOIN
-      (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
-      ON a.id_hash = b.id_hash",
-      .con = conn))
+      "SELECT DISTINCT IDdata.KCMASTER_ID
+        	,IDdata.id_apde
+        	,SHAdata.agency
+        	,SHAdata.act_date
+        	,SHAdata.admit_date
+        	,SHAdata.dob
+        	,SHAdata.gender
+        	,SHAdata.r_aian
+        	,SHAdata.r_asian
+        	,SHAdata.r_black
+        	,SHAdata.r_hisp
+        	,SHAdata.r_nhpi
+        	,SHAdata.r_white
+        FROM (
+        	SELECT id_hash
+        		,agency
+        		,act_date
+        		,admit_date
+        		,dob
+        		,gender
+        		,r_aian
+        		,r_asian
+        		,r_black
+        		,r_hisp
+        		,r_nhpi
+        		,r_white
+        	FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha')) } 
+        	WHERE id_hash IS NOT NULL
+        	) SHAdata
+        LEFT JOIN (
+        	SELECT id_hash
+        		,KCMASTER_ID
+        		,id_apde
+        	FROM {`id_schema`}.{`id_table`}
+        	) IDdata ON SHAdata.id_hash = IDdata.id_hash",
+      .con = conn)))
   
+  pha <- unique(setDT(rbind(kcha, sha)))
   
-  pha <- setDT(bind_rows(kcha, sha) %>% distinct) 
   # Remove the rows missing KCMASTER_ID since we won't be able to join on this
+  if(nrow(pha[is.na(KCMASTER_ID)]) > 0){message('Summary of PHA data without a KCMASTER_ID'); print(pha[is.na(KCMASTER_ID), .N, agency])}
   pha <- pha[!is.na(KCMASTER_ID)] # should not exist, but just in case!
+  pha.xwalk <- unique(pha[, .(KCMASTER_ID, id_apde)]) # keep so can easily merge on id_apde at end of this script
 
-  
   # WORK ON DOB ----
     message("Processing DOB data")
     elig_dob <- unique(copy(pha)[, c("KCMASTER_ID", "act_date", "dob", 'admit_date')][!is.na(dob)])
@@ -338,7 +398,8 @@ load_stage_demo <- function(conn = NULL,
   message("Bringing it all together")
   elig_demo_final <- Reduce(function(df1, df2) 
                               merge(df1, df2, by = "KCMASTER_ID", all.x = TRUE), 
-                              list(elig_gender_final, elig_race_final, elig_dob, elig_admit))
+                              list(elig_gender_final, elig_race_final, elig_dob, elig_admit, pha.xwalk))
+  setcolorder(elig_demo_final, c('KCMASTER_ID', 'id_apde'))
   
  
   # Add in date for last run
@@ -370,14 +431,15 @@ load_stage_demo <- function(conn = NULL,
   }
 
   # Write data
-  odbc::dbWriteTable(conn, 
-                     name = DBI::Id(schema = to_schema, table = to_table), 
-                     value = as.data.frame(elig_demo_final),
-                     overwrite = T, 
-                     append = F,
-                     field.types = unlist(yaml_config$vars),
-                     batch_rows = 10000) 
-  
+  housing::chunk_loader(DTx = as.data.frame(elig_demo_final), 
+                        connx = conn, 
+                        chunk.size = 10000, 
+                        schemax = to_schema, 
+                        tablex = to_table, 
+                        overwritex = T, 
+                        appendx = F, 
+                        field.typesx = unlist(yaml_config$vars))
+                        
   # Quick QA
   sqlcount <- odbc::dbGetQuery(conn, paste0("SELECT count(*) FROM ", to_schema, ".", to_table))
   if(sqlcount == nrow(elig_demo_final)){message("\U0001f642 It looks like all of your data loaded to SQL!")

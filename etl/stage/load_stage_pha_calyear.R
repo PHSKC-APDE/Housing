@@ -20,17 +20,30 @@ load_stage_pha_calyear <- function(conn = NULL,
                                    timevar_table = "final_timevar") {
   
   # BRING IN DATA ----
-  pha_demo <- dbGetQuery(conn, glue_sql("SELECT * FROM {`demo_schema`}.{`demo_table`}",
-                                        .con = conn))
-  pha_timevar <- dbGetQuery(conn, glue_sql("SELECT a.*, c.geo_id20_tract FROM
-                                           (SELECT * FROM {`timevar_schema`}.{`timevar_table`}) a
-                                           LEFT JOIN
-                                           (SELECT DISTINCT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
-                                           ON a.geo_hash_clean = b.geo_hash_clean
-                                           LEFT JOIN
-                                           (SELECT DISTINCT geo_hash_geocode, geo_id20_tract FROM ref.address_geocode) c
-                                           ON b.geo_hash_geocode = c.geo_hash_geocode",
-                                           .con = conn))
+  pha_demo <- setDT(dbGetQuery(conn, glue_sql("SELECT * FROM {`demo_schema`}.{`demo_table`}",
+                                              .con = conn)))
+  pha_timevar <- setDT(dbGetQuery(conn, glue_sql("SELECT TVdata.*
+                                            	,GEO.geo_id20_tract
+                                            FROM (
+                                            	SELECT *
+                                            	FROM {`timevar_schema`}.{`timevar_table`}
+                                            	) TVdata
+                                            LEFT JOIN (
+                                            	SELECT DISTINCT geo_hash_clean
+                                            		,geo_hash_geocode
+                                            	FROM ref.address_clean
+                                            	) ADDDRESS ON TVdata.geo_hash_clean = ADDDRESS.geo_hash_clean
+                                            LEFT JOIN (
+                                            	SELECT DISTINCT geo_hash_geocode
+                                            		,geo_id20_tract
+                                            	FROM ref.address_geocode
+                                            	) GEO ON ADDDRESS.geo_hash_geocode = GEO.geo_hash_geocode",
+                                                 .con = conn)))
+  
+  pha_xwalk <- unique(rbind(pha_demo[, .(KCMASTER_ID, id_apde)], pha_timevar[, .(KCMASTER_ID, id_apde)]))
+  pha_demo[, id_apde := NULL] # drop id_apde to simplify data wrangling below. Will merge back on at the end
+  pha_timevar[, id_apde := NULL] # drop id_apde to simplify data wrangling below. Will merge back on at the end
+  
   
   
   # RUN ALLOCATION FOR EACH CALENDAR YEAR ----
@@ -166,7 +179,7 @@ load_stage_pha_calyear <- function(conn = NULL,
     output <- output[!is.na(overlap_amount)]
     
     output <- merge(output, 
-                    pha_demo[, c('KCMASTER_ID', grep('^admit_date', names(pha_demo), value = T))], 
+                    pha_demo[, c('KCMASTER_ID', grep('^admit_date', names(pha_demo), value = T)), with = FALSE], 
                     by = 'KCMASTER_ID', 
                     all.x = T, 
                     all.y = F)
@@ -193,48 +206,52 @@ load_stage_pha_calyear <- function(conn = NULL,
   
   
   # JOIN TO DEMO TABLE AND ADD CALCULATED FIELDS ----
-  calyear <- merge(allocated_wide,
-                   pha_demo[, grep('_t$|last_run', names(pha_demo), invert = T)],
-                   by = "KCMASTER_ID", 
-                   all.x = T, all.y = F)
+    calyear <- merge(allocated_wide,
+                     pha_demo[, grep('_t$|last_run', names(pha_demo), invert = T), with = F],
+                     by = "KCMASTER_ID", 
+                     all.x = T, all.y = F)
+      
     
+    calyear[, age_yr := rads::calc_age(from = dob, to = paste0(year, "-12-31"))]
+    calyear[age_yr < 0, age_yr := NA] # As of 8/7/23 there are four rows where the age is -1
+    calyear[, adult := fcase(age_yr >= 18, 1L, 
+                             age_yr < 18, 0L)]
+    calyear[, senior := fcase(age_yr >= 62, 1L, 
+                              age_yr < 62, 0L)]
+    calyear[, agegrp := 
+              fcase(age_yr < 18,  "<18",
+                    data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+                    data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+                    data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+                    age_yr >= 65, "65+",
+                    is.na(age_yr), NA_character_)]
+    calyear[, agegrp_expanded := 
+              fcase(age_yr < 10, "<10",
+                    data.table::between(age_yr, 10, 17.99, NAbounds = NA), "10-17",
+                    data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
+                    data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
+                    data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
+                    data.table::between(age_yr, 65, 74.99, NAbounds = NA), "65-74",
+                    age_yr >= 75, "75+",
+                    is.na(age_yr), NA_character_)]
+    calyear[, time_housing_yr := round(interval(start = admit_date_yr, end = paste0(year, "-12-31")) / years(1), 1)]
+    calyear[, time_housing := 
+              fcase(time_housing_yr < 3, "<3 years",
+                    data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA), "3 to <6 years",
+                    time_housing_yr >= 6, "6+ years",
+                    TRUE, "Unknown")]
+    calyear[, last_run := Sys.time()]
   
-  calyear[, age_yr := rads::calc_age(from = dob, to = paste0(year, "-12-31"))]
-  calyear[age_yr < 0, age_yr := NA] # As of 8/7/23 there are four rows where the age is -1
-  calyear[, adult := fcase(age_yr >= 18, 1L, 
-                           age_yr < 18, 0L)]
-  calyear[, senior := fcase(age_yr >= 62, 1L, 
-                            age_yr < 62, 0L)]
-  calyear[, agegrp := 
-            fcase(age_yr < 18,  "<18",
-                  data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
-                  data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
-                  data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
-                  age_yr >= 65, "65+",
-                  is.na(age_yr), NA_character_)]
-  calyear[, agegrp_expanded := 
-            fcase(age_yr < 10, "<10",
-                  data.table::between(age_yr, 10, 17.99, NAbounds = NA), "10-17",
-                  data.table::between(age_yr, 18, 24.99, NAbounds = NA), "18-24",
-                  data.table::between(age_yr, 25, 44.99, NAbounds = NA), "25-44",
-                  data.table::between(age_yr, 45, 64.99, NAbounds = NA), "45-64",
-                  data.table::between(age_yr, 65, 74.99, NAbounds = NA), "65-74",
-                  age_yr >= 75, "75+",
-                  is.na(age_yr), NA_character_)]
-  calyear[, time_housing_yr := round(interval(start = admit_date_yr, end = paste0(year, "-12-31")) / years(1), 1)]
-  calyear[, time_housing := 
-            fcase(time_housing_yr < 3, "<3 years",
-                  data.table::between(time_housing_yr, 3, 5.99, NAbounds = NA), "3 to <6 years",
-                  time_housing_yr >= 6, "6+ years",
-                  TRUE, "Unknown")]
-  calyear[, last_run := Sys.time()]
+  
+  # MERGE id_apde ONTO calyear ----
+    calyear <- merge(calyear, pha_xwalk, by = 'KCMASTER_ID', all.x = T, all.y = F)
   
   
   # WRITE DATA TO SQL SERVER ----
   ## Select and arrange columns ----
   cols_select <- c(
     # Core variables
-    "year", "KCMASTER_ID", "agency", "pt_total", 
+    "year", "KCMASTER_ID", "id_apde", "agency", "pt_total", 
     "admit_date_all", "admit_date_kcha", "admit_date_sha", "time_housing_yr", "time_housing", 
     # Head of household variables
     "hh_KCMASTER_ID", "hh_KCMASTER_ID_pt",
@@ -264,25 +281,16 @@ load_stage_pha_calyear <- function(conn = NULL,
   
   ## Load to SQL ----
   # Split into smaller tables to avoid SQL connection issues
-  start <- 1L
-  max_rows <- 100000L
-  cycles <- ceiling(nrow(calyear)/max_rows)
+  housing::chunk_loader(DTx = as.data.frame(calyear), 
+                        connx = conn, 
+                        chunk.size = 10000, 
+                        schemax = to_schema, 
+                        tablex = to_table, 
+                        overwritex = T, 
+                        appendx = F)
   
-  lapply(seq(start, cycles), function(i) {
-    start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
-    end_row <- min(nrow(calyear), max_rows * i)
-    
-    message("Loading cycle ", i, " of ", cycles)
-    if (i == 1) {
-      dbWriteTable(conn,
-                   name = DBI::Id(schema = to_schema, table = to_table),
-                   value = as.data.frame(calyear[start_row:end_row]),
-                   overwrite = T, append = F)
-    } else {
-      dbWriteTable(conn,
-                   name = DBI::Id(schema = to_schema, table = to_table),
-                   value = as.data.frame(calyear[start_row:end_row]),
-                   overwrite = F, append = T)
-    }
-  })
+  # Quick QA
+  sqlcount <- odbc::dbGetQuery(conn, paste0("SELECT count(*) FROM ", to_schema, ".", to_table))
+  if(sqlcount == nrow(calyear)){message("\U0001f642 It looks like all of your data loaded to SQL!")
+  }else{warning("\n\U00026A0 The number of rows in `calyear` are not the same as those in the SQL table.")}
 }
