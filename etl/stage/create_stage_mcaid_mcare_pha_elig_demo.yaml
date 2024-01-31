@@ -3,11 +3,12 @@ table: stage_mcaid_mcare_pha_elig_demo
 index_type: ccs
 index_name: idx_ccs_final_mcaid_mcare_pha_elig_demo
 vars:
-    KCMASTER_ID: CHAR(15)
+    id_apde: NVARCHAR(22)
+    KCMASTER_ID: NVARCHAR(24)
+    mcaid_pha: BIT
     mcaid_mcare_pha: TINYINT
     apde_dual: TINYINT
     dob: DATE
-    death_dt: DATE
     start_housing: DATE
     geo_kc_ever: TINYINT
     gender_me: VARCHAR(10)
@@ -25,7 +26,6 @@ vars:
     race_latino: TINYINT
     race_nhpi: TINYINT
     race_white: TINYINT
-    race_other: TINYINT
     race_unk: TINYINT
     lang_max: VARCHAR(30)
     lang_amharic: TINYINT
