@@ -247,7 +247,10 @@
   
   
 # NORMALIZE PHA VARIABLES (if needed) ----
-  message('No variables need to be normalized')
+  message('death_dt is from Medicare, so it will be missing until Medicare is integrated into this pipeline')
+  if(!'death_dt' %in% names(elig)){
+    elig[, death_dt := NA_Date_]
+  }  
 
 # WRITE ELIG_DEMO TO SQL ----
   # Ensure columns are in same order in R & SQL & that we drop extraneous variables

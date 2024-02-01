@@ -9,6 +9,7 @@ vars:
     mcaid_mcare_pha: TINYINT
     apde_dual: TINYINT
     dob: DATE
+    death_dt: DATE
     start_housing: DATE
     geo_kc_ever: TINYINT
     gender_me: VARCHAR(10)
