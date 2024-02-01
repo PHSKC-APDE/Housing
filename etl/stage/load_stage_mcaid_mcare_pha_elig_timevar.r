@@ -31,24 +31,35 @@
   
 # LOAD DATA FROM SQL ----
   ## xwalk: Medicaid-Medicare <> KCMASTER_ID crosswalk ----
-    message('This IDH crosswalk table will be replaced by a crosswalk table created \nby the claims-data repo once Medicare data are available.')
-    xwalk <- setDT(odbc::dbGetQuery(db_idh, "SELECT DISTINCT KCMASTER_ID, id_mcaid = MEDICAID_ID, updated = [SOURCE_LAST_UPDATED] 
-                                          FROM [IDMatch].[IM_HISTORY_TABLE] WHERE MEDICAID_ID IS NOT NULL AND SOURCE_SYSTEM = 'MEDICAID'"))
-  
+    xwalk <- setDT(odbc::dbGetQuery(db_hhsaw, "SELECT DISTINCT * from [claims].[final_xwalk_apde_mcaid_mcare_pha]"))
+
   ## timevar.pha: PHA Timevar ----
     # geo_hash_geocode not currently kept in the PHA table so need to join
     # Bring in just geo_add2_clean because the other geo_add fields will come from the join
     #  to the ref geocode table
     timevar.pha <- setDT(dbGetQuery(db_hhsaw, 
-                                    "SELECT a.*, b.geo_hash_geocode 
-                                      FROM
-                                      (SELECT KCMASTER_ID, from_date, to_date, geo_add2_clean, geo_hash_clean, 
-                                      agency, operator_type, portfolio_final, subsidy_type, vouch_type_final
-                                      FROM pha.final_timevar
-                                      WHERE to_date >= '2012-01-01') a
-                                      LEFT JOIN
-                                      (SELECT DISTINCT geo_hash_clean, geo_hash_geocode FROM ref.address_clean) b
-                                      ON a.geo_hash_clean = b.geo_hash_clean"))
+                                    "SELECT TV.*
+                                      	,ADDRESS.geo_hash_geocode
+                                      FROM (
+                                      	SELECT id_apde
+                                      	  ,KCMASTER_ID
+                                      		,from_date
+                                      		,to_date
+                                      		,geo_add2_clean
+                                      		,geo_hash_clean
+                                      		,agency
+                                      		,operator_type
+                                      		,portfolio_final
+                                      		,subsidy_type
+                                      		,vouch_type_final
+                                      	FROM pha.final_timevar
+                                      	WHERE to_date >= '2012-01-01'
+                                      	) TV
+                                      LEFT JOIN (
+                                      	SELECT DISTINCT geo_hash_clean
+                                      		,geo_hash_geocode
+                                      	FROM ref.address_clean
+                                      	) ADDRESS ON TV.geo_hash_clean = ADDRESS.geo_hash_clean"))
     
   ## timevar.mm: Joint Medicaid-Medicare Timevar ----
     timevar.mm <- setDT(odbc::dbGetQuery(db_hhsaw, "SELECT * FROM [claims].[final_mcaid_elig_timevar]"))
@@ -66,24 +77,24 @@
         geo_id20_hra AS geo_hra_code, 
         geo_id20_schooldistrict AS geo_school_code 
         FROM ref.address_geocode"))
-    
-    
 
 # CLEAN / PREP IMPORTED DATA -----
   ## xwalk ----
-    xwalk[, updated := as.Date(updated, format = "%m/%d/%Y")]
-  
+    xwalk[, updated := as.Date(last_run)][, last_run := NULL]
+    
     # keep the most recent copy for each combination of ids
     setorder(xwalk, -updated)  
-    xwalk <- xwalk[, .SD[1], by = .(KCMASTER_ID, id_mcaid)]
+    xwalk <- xwalk[, .SD[1], by = .(id_apde, id_mcaid)]
+    xwalk.complete <- unique(xwalk[, .(id_apde, KCMASTER_ID)]) # keep to merge on KCMASTER_ID at the very end
     
     # keep the most recent linkage when id_mcaid occurs more than once (should not happen, but it does)  
     setorder(xwalk, id_mcaid, -updated)  
-    xwalk <- xwalk[, .SD[1], by = .(id_mcaid)] 
+    xwalk <- xwalk[!is.na(id_mcaid), .SD[1], by = .(id_mcaid)] 
     
-    # keep the most recent linkage when KCMASTER_ID occures more than once (this is not necessarily an error, but it can cause problems and is rare)
-    setorder(xwalk, KCMASTER_ID, -updated)  
-    xwalk <- xwalk[, .SD[1], by = .(KCMASTER_ID)] 
+    # keep the most recent linkage when KCMASTER_ID occurs more than once (this is not necessarily an error, but it can cause problems and is rare)
+    # setorder(xwalk, KCMASTER_ID, -updated)  
+    # xwalk <- xwalk[, .SD[1], by = .(KCMASTER_ID)] 
+    message('1/31/2024 - decided with Alastair that >1 id_mcaid that links to KCMASTER_ID is correct, so will have to collapse them in the Mcaid data')
     
     xwalk[, updated := NULL]
 
@@ -95,11 +106,11 @@
     
     if(identical(nrow(xwalk), uniqueN(xwalk$KCMASTER_ID))){
       message("\U0001f642 The number of rows in the xwalk table equals the number of unique values of KCMASTER_ID")}else{
-        warning("\U00026A0 The number of rows in the xwalk table does not equal the number of unique values of KCMASTER_ID")
+        warning("\U00026A0 The number of rows in the xwalk table does not equal the number of unique values of KCMASTER_ID, this means there are >1 id_mcaid for some KCMASTER_ID")
       }
 
   ## timevar.pha ----
-    timevar.pha <- merge(timevar.pha, xwalk, by = "KCMASTER_ID", all.x = TRUE, all.y = FALSE)
+    timevar.pha <- merge(timevar.pha, xwalk, by = c("KCMASTER_ID", "id_apde"), all.x = TRUE, all.y = FALSE)
     
     # Need to remove duplicates
     timevar.pha <- unique(timevar.pha)
@@ -135,16 +146,28 @@
     
     timevar.pha[, truncated := NULL]
     
-    
     # add in geo_ data so have their addresses at each time point
     timevar.pha <- merge(timevar.pha, ref.geo, by = "geo_hash_geocode", all.x = T, all.y = F)
     
   ## timevar.mm ----
+    # collapse demo.mm into one person when IDH identified >1 id_mcaid linked to a single KCMASTER_ID
+    mcaidDups <- setorder(xwalk[, dup := .N, .(KCMASTER_ID)][dup != 1, .(KCMASTER_ID, id_mcaid)], -KCMASTER_ID) # identify id_mcaid that link to a common KCMASTER_ID
+    timevar.mm_orig <- timevar.mm[!id_mcaid %in% mcaidDups$id_mcaid] # split off data that has a 1:1 match and leave it alone
+    timevar.mm_dups <- setorder(merge(timevar.mm[id_mcaid %in% mcaidDups$id_mcaid], # split off data that has >1 match with KCMASTER_ID
+                                   mcaidDups, 
+                                   by = 'id_mcaid', 
+                                   all = T), KCMASTER_ID, id_mcaid)
+    timevar.mm_dups[, id_mcaid := first(id_mcaid), KCMASTER_ID][, KCMASTER_ID := NULL] # ascribe most recent id_mcaid to each group defined by KCMASTER_ID
+    
+    # no need to collapse timevar.mm_dups down now, because will collapse all timevar variables below across PHA and claims anyway, so append back to rest of timevar data
+    timevar.mm <- rbind(timevar.mm_orig, timevar.mm_dups)
+    
+    # merge on xwalk columns
     timevar.mm <- merge(timevar.mm, xwalk, by.x = 'id_mcaid', by.y = 'id_mcaid', all.x = T, all.y = F)
     
     # There are a few duplicate rows in the timevar.mm table (same KCMASTER_ID, from_date, to_date).
     # This seems to be because the IDH matches a single KCMASTER_ID with multiple id_mcaid. 
-    # For now, randomly select one row since there are so few cases
+    # For now, randomly select one row since there are so few cases (less than 400 as of 1/31/2024)
     timevar.mm <- unique(timevar.mm)
     set.seed(98104)
     timevar.mm[, sorter := sample(1000, .N), by = c("KCMASTER_ID", "from_date", "to_date")]
@@ -154,20 +177,20 @@
     
 # CREATE MCAID-MCARE-PHA ELIG_TIMEVAR -----
   ## Identify IDs in both Mcaid-Mcare & PHA and split from non-linked IDs ----
-    linked.id <- intersect(timevar.mm$KCMASTER_ID, timevar.pha$KCMASTER_ID)
+    linked.id <- intersect(timevar.mm$id_apde, timevar.pha$id_apde)
     
-    timevar.pha.solo <- timevar.pha[!KCMASTER_ID %in% linked.id]
-    timevar.mm.solo <- timevar.mm[!KCMASTER_ID %in% linked.id]  
+    timevar.pha.solo <- timevar.pha[!id_apde %in% linked.id]
+    timevar.mm.solo <- timevar.mm[!id_apde %in% linked.id]  
     
-    timevar.pha.linked <- timevar.pha[KCMASTER_ID %in% linked.id]
-    timevar.mm.linked <- timevar.mm[KCMASTER_ID %in% linked.id]
+    timevar.pha.linked <- timevar.pha[id_apde %in% linked.id]
+    timevar.mm.linked <- timevar.mm[id_apde %in% linked.id]
     
     
   ## Linked IDs Part 1: Create master list of time intervals by ID ----
     ### Create all possible permutations of date interval combinations from mcaid_mcare and pha for each id ----
-      linked <- merge(timevar.pha.linked[, .(KCMASTER_ID, from_date, to_date)], 
-                      timevar.mm.linked[, .(KCMASTER_ID, from_date, to_date)], 
-                      by = "KCMASTER_ID", allow.cartesian = TRUE)
+      linked <- merge(timevar.pha.linked[, .(id_apde, from_date, to_date)], 
+                      timevar.mm.linked[, .(id_apde, from_date, to_date)], 
+                      by = "id_apde", allow.cartesian = TRUE)
       setnames(linked, names(linked), gsub("\\.x$", ".timevar.pha", names(linked))) # clean up suffixes to eliminate confusion
       setnames(linked, names(linked), gsub("\\.y$", ".timevar.mm", names(linked))) # clean up suffixes to eliminate confusion
     
@@ -215,9 +238,9 @@
         default = 1
       )]
       
-      temp <- temp[, .(KCMASTER_ID, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm, 
+      temp <- temp[, .(id_apde, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm, 
                        from_date_o, to_date_o, overlap_type, repnum)]
-      setorder(temp, KCMASTER_ID, from_date.timevar.pha, from_date.timevar.mm, from_date_o, 
+      setorder(temp, id_apde, from_date.timevar.pha, from_date.timevar.mm, from_date_o, 
                to_date.timevar.pha, to_date.timevar.mm, to_date_o)
       
       # Check no unexpected overlap types
@@ -225,13 +248,11 @@
         warning("Unexpected overlap types, check temp data table")
       }
 
-      
-    
     ### Expand out rows to separate out overlaps ----
       temp_ext <- setDT(temp[rep(seq(nrow(temp)), temp$repnum), 1:ncol(temp)]) # copies the rows in temp the number of times specified in col `repnum`
       
-      temp_ext[, rownum_temp := rowid(KCMASTER_ID, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm)]
-      setorder(temp_ext, KCMASTER_ID, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm, from_date_o, 
+      temp_ext[, rownum_temp := rowid(id_apde, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm)]
+      setorder(temp_ext, id_apde, from_date.timevar.pha, to_date.timevar.pha, from_date.timevar.mm, to_date.timevar.mm, from_date_o, 
                to_date_o, overlap_type, rownum_temp)
       # Remove non-overlapping dates
       temp_ext[, ':=' (
@@ -255,7 +276,7 @@
       # Remove third row if to_dates are the same
       temp_ext <- temp_ext[!(overlap_type %in% c(2:5) & rownum_temp == 3 & to_date.timevar.pha == to_date.timevar.mm)]
 
-    ### Calculate the finalized date columms ----
+    ### Calculate the finalized date columns ----
       # Set up combined dates
       # Start with rows with only PHA or mcaid_mcare, or when both sets of dates are identical
       temp_ext[, ':=' (
@@ -287,18 +308,18 @@
       )]
       # Deal with the last line for each person if it's part of an overlap
       temp_ext[, ':=' (
-        from_date = as.Date(ifelse((KCMASTER_ID != lead(KCMASTER_ID, 1) | is.na(lead(KCMASTER_ID, 1))) &
+        from_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
                                      overlap_type %in% c(2:5) & 
                                      to_date.timevar.pha != to_date.timevar.mm, 
                                    lag(to_date_o, 1) + 1, 
                                    from_date), origin = "1970-01-01"),
-        to_date = as.Date(ifelse((KCMASTER_ID != lead(KCMASTER_ID, 1) | is.na(lead(KCMASTER_ID, 1))) &
+        to_date = as.Date(ifelse((id_apde != lead(id_apde, 1) | is.na(lead(id_apde, 1))) &
                                    overlap_type %in% c(2:5), 
                                  pmax(to_date.timevar.pha, to_date.timevar.mm, na.rm = TRUE), 
                                  to_date), origin = "1970-01-01")
       )]
       # Reorder in preparation for next phase
-      setorder(temp_ext, KCMASTER_ID, from_date, to_date, from_date.timevar.pha, from_date.timevar.mm, 
+      setorder(temp_ext, id_apde, from_date, to_date, from_date.timevar.pha, from_date.timevar.mm, 
                to_date.timevar.pha, to_date.timevar.mm, overlap_type)
     
     
@@ -331,31 +352,31 @@
       # Drop rows from enroll_type == h/m when they are fully covered by an enroll_type == b
       temp_ext[, drop := 
                  case_when(
-                   KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) & 
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
                      from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
                      to_date >= lag(to_date, 1) & !is.na(lag(to_date, 1)) & 
                      # Fix up quirk from PHA data where two rows present for the same day
                      !(lag(enroll_type, 1) != "mcaid_mcare" & lag(to_date.timevar.pha, 1) == lag(from_date.timevar.pha, 1)) &
                      enroll_type != "both" ~ 1,
-                   KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & 
+                   id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
                      from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
                      to_date <= lead(to_date, 1) & !is.na(lead(to_date, 1)) & 
                      # Fix up quirk from PHA data where two rows present for the same day
                      !(lead(enroll_type, 1) != "mcaid_mcare" & lead(to_date.timevar.pha, 1) == lead(from_date.timevar.pha, 1)) &
                      enroll_type != "both" & lead(enroll_type, 1) == "both" ~ 1,
                    # Fix up other oddities when the date range is only one day
-                   KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) & 
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
                      from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
                      from_date == to_date & !is.na(from_date) & 
                      ((enroll_type == "mcaid_mcare" & lag(enroll_type, 1) %in% c("both", "PHA")) |
                         (enroll_type == "PHA" & lag(enroll_type, 1) %in% c("both", "mcaid_mcare"))) ~ 1,
-                   KCMASTER_ID == lag(KCMASTER_ID, 1) & !is.na(lag(KCMASTER_ID, 1)) & 
+                   id_apde == lag(id_apde, 1) & !is.na(lag(id_apde, 1)) & 
                      from_date == lag(from_date, 1) & !is.na(lag(from_date, 1)) &
                      from_date == to_date & !is.na(from_date) &
                      from_date.timevar.pha == lag(from_date.timevar.pha, 1) & to_date.timevar.pha == lag(to_date.timevar.pha, 1) &
                      !is.na(from_date.timevar.pha) & !is.na(lag(from_date.timevar.pha, 1)) &
                      enroll_type != "both" ~ 1,
-                   KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(KCMASTER_ID, 1)) & 
+                   id_apde == lead(id_apde, 1) & !is.na(lead(id_apde, 1)) & 
                      from_date == lead(from_date, 1) & !is.na(lead(from_date, 1)) &
                      from_date == to_date & !is.na(from_date) &
                      ((enroll_type == "mcaid_mcare" & lead(enroll_type, 1) %in% c("both", "PHA")) |
@@ -369,7 +390,7 @@
       temp_ext <- temp_ext[drop == 0 | is.na(drop)]
       
       # Truncate remaining overlapping end dates
-      temp_ext[, to_date := as.Date(ifelse(KCMASTER_ID == lead(KCMASTER_ID, 1) & !is.na(lead(from_date, 1)) & 
+      temp_ext[, to_date := as.Date(ifelse(id_apde == lead(id_apde, 1) & !is.na(lead(from_date, 1)) & 
                                              from_date < lead(from_date, 1) & to_date >= lead(to_date, 1),
                                            lead(from_date, 1) - 1, to_date),
                                     origin = "1970-01-01")]
@@ -379,20 +400,20 @@
       # With rows truncated, now additional rows with enroll_type == h/m that 
       # are fully covered by an enroll_type == b
       # Also catches single day rows that now have to_date < from_date
-      temp_ext[, drop := case_when(KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date == lag(from_date, 1) &
+      temp_ext[, drop := case_when(id_apde == lag(id_apde, 1) & from_date == lag(from_date, 1) &
                                      to_date == lag(to_date, 1) & lag(enroll_type, 1) == "both" & 
                                      enroll_type != "both" ~ 1,
-                                   KCMASTER_ID == lead(KCMASTER_ID, 1) & from_date == lead(from_date, 1) &
+                                   id_apde == lead(id_apde, 1) & from_date == lead(from_date, 1) &
                                      to_date <= lead(to_date, 1) & lead(enroll_type, 1) == "both" ~ 1,
-                                   KCMASTER_ID == lag(KCMASTER_ID, 1) & from_date >= lag(from_date, 1) &
+                                   id_apde == lag(id_apde, 1) & from_date >= lag(from_date, 1) &
                                      to_date <= lag(to_date, 1) & enroll_type != "both" &
                                      lag(enroll_type, 1) == "both" ~ 1,
-                                   KCMASTER_ID == lead(KCMASTER_ID, 1) & from_date >= lead(from_date, 1) &
+                                   id_apde == lead(id_apde, 1) & from_date >= lead(from_date, 1) &
                                      to_date <= lead(to_date, 1) & enroll_type != "both" &
                                      lead(enroll_type, 1) == "both" ~ 1,
                                    TRUE ~ 0)]
       temp_ext <- temp_ext[drop == 0 | is.na(drop)]
-      linked <- temp_ext[, .(KCMASTER_ID, from_date, to_date, enroll_type)]
+      linked <- temp_ext[, .(id_apde, from_date, to_date, enroll_type)]
       
       # Catch any duplicates (there are some, have not investigated why yet)
       linked <- unique(linked)
@@ -403,18 +424,18 @@
   ## Linked IDs Part 2: join mcaid_mcare & PHA data based on ID & overlapping time periods ----
     # foverlaps ... https://github.com/Rdatatable/data.table/blob/main/man/foverlaps.Rd
     ### structure data for use of foverlaps ----
-    setkey(linked, KCMASTER_ID, from_date, to_date)    
+    setkey(linked, id_apde, from_date, to_date)    
     
-    setkey(timevar.pha.linked, KCMASTER_ID, from_date, to_date)
+    setkey(timevar.pha.linked, id_apde, from_date, to_date)
     
-    setkey(timevar.mm.linked, KCMASTER_ID, from_date, to_date)
+    setkey(timevar.mm.linked, id_apde, from_date, to_date)
     
     ### join on the mcaid_mcare linked data ----
     linked <- foverlaps(linked, timevar.mm.linked, type = "any", mult = "all")
     linked[, from_date := i.from_date] # the complete set of proper from_dates are in i.from_date ... we know this because this is from the linkage that we created
     linked[, to_date := i.to_date] # the complete set of proper to_dates are in i.to_date
     linked[, c("i.from_date", "i.to_date") := NULL] # no longer needed
-    setkey(linked, KCMASTER_ID, from_date, to_date)
+    setkey(linked, id_apde, from_date, to_date)
     
     ### join on the PHA linked data ----
     linked <- foverlaps(linked, timevar.pha.linked, type = "any", mult = "all")
@@ -424,14 +445,14 @@
     
     ### Append linked and non-linked data ----
     timevar <- rbindlist(list(linked, timevar.pha.solo, timevar.mm.solo), use.names = TRUE, fill = TRUE)
-    setkey(timevar, KCMASTER_ID, from_date) # order dual data     
+    setkey(timevar, id_apde, from_date) # order dual data     
     
     ### Collapse data if dates are contiguous and all data is the same ----
     # a little complicated, but it works! Parallel processing with future package reduces time by 60-70%
     num.cores = 6 # cores for parallel processing
     plan(multisession(workers = num.cores[1])) # tell future package how many cores to use
     
-    timevar[, group := .GRP, KCMASTER_ID] # make KCMASTER_ID a numeric
+    timevar[, group := .GRP, id_apde] # make id_apde a numeric
     timevar[, group := (group - 1) %% num.cores[1] + 1] # group the IDs into one group per core, ensuring that IDs do not span across groups
     
     timevar_split <- split(timevar, by = 'group') # split data.table into a list of smaller data.tables
@@ -446,7 +467,7 @@
       } )) 
     timevar[, c('gr', 'group') := NULL]
     
-    setkey(timevar, KCMASTER_ID, from_date)
+    setkey(timevar, id_apde, from_date)
     
     
   ## Prep for pushing to SQL ----
@@ -477,7 +498,7 @@
     
     ### Create contiguous flag ----  
     # If contiguous with the PREVIOUS row, then it is marked as contiguous. This is the same as mcaid_elig_timevar
-    timevar[, prev_to_date := c(NA, to_date[-.N]), by = "KCMASTER_ID"] # MUCH faster than the shift "lag" function in data.table
+    timevar[, prev_to_date := c(NA, to_date[-.N]), by = "id_apde"] # MUCH faster than the shift "lag" function in data.table
     timevar[, contiguous := 0]
     timevar[from_date - prev_to_date == 1, contiguous := 1]
     timevar[, prev_to_date := NULL] # drop because no longer needed
@@ -527,25 +548,27 @@
       timevar[pha_agency == "Non-PHA", pha_operator := "Non-PHA"]
       timevar[pha_agency == "Non-PHA", pha_portfolio := "Non-PHA"]
     
+    #### Merge on KCMASTER_ID when possible ----
+      timevar <- merge(timevar[, KCMASTER_ID := NULL], 
+                       xwalk.complete, 
+                       by = 'id_apde', 
+                       all.x = T, 
+                       all.y = F)
+      
+      if(nrow(timevar[is.na(id_apde)]) > 0){stop('\n\U0001f47f AT least one row is missing an id_apde, which should never be the case. ')}
+      timevar[, .N, .(missing.KCMASTER_ID = is.na(KCMASTER_ID))] # OK to have missing KCMASTER_ID since IDH does not have Medicare
+      
+      
     ### CLEAN-UP ----
-      rm(kc_zip5, linked, num.cores, linked.id, myvar, ref.geo, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo, timevar_split, xwalk, yaml_timevar)
+      rm(kc_zip5, linked, num.cores, linked.id, myvar, ref.geo, timevar.mm, timevar.mm.linked, timevar.mm.solo, timevar.pha, timevar.pha.linked, timevar.pha.solo, timevar_split, xwalk, xwalk.complete, yaml_timevar)
 
       
 # WRITE ELIG_TIMEVAR TO SQL ----
-  ## Pull YAML from GitHub ----
-      # Ensure columns are in same order in R & SQL & are limited those specified in the YAML
+  ## Confirm that data.table aligns with YAML parameters ----
+      # Ensure columns are in same order in R & SQL & that we drop extraneous variables
       keep.timevar <- names(table_config_timevar$vars)
-      varmiss <- setdiff(keep.timevar, names(timevar))
-      if(length(varmiss) > 0){
-        for(varmissx in varmiss){
-          message("Your timevar table was missing ", varmissx, " and it has been added with 100% NAs to push to SQL")
-          timevar[, paste0(varmissx) := NA]
-        }
-      }
-      
       timevar <- timevar[, ..keep.timevar]
-      
-      setcolorder(timevar, names(table_config_timevar$vars))
+      rads::validate_yaml_data(DF = timevar, YML = table_config_timevar, VARS = 'vars')
       
   ## Write table to SQL ----
       message("Loading elig_timevar data to SQL")

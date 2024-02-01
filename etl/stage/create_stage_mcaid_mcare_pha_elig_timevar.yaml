@@ -3,6 +3,7 @@ table: stage_mcaid_mcare_pha_elig_timevar
 index_type: ccs
 index_name: idx_ccs_final_mcaid_mcare_pha_elig_timevar
 vars:
+    id_apde: NVARCHAR(22)
     KCMASTER_ID: CHAR(15)
     from_date: DATE
     to_date: DATE
