@@ -70,13 +70,19 @@ load_raw_sha_2020 <- function(conn = NULL,
       message(paste('\U0001f600', qa_names_note))
     }
     
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'field_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
-                            .con = conn))
-  
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'result', 
+                         qa_item = 'field_names', 
+                         qa_result = qa_names_result, 
+                         qa_date = Sys.time(), 
+                         note = qa_names_note)
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
     
     ## Action dates ----
     # Do they fall in the expected range?
@@ -107,12 +113,19 @@ load_raw_sha_2020 <- function(conn = NULL,
       message(paste('\U0001f600', qa_date_note))
     }
     
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'date_range', {qa_date_result}, {Sys.time()}, {qa_date_note})",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'result', 
+                         qa_item = 'date_range', 
+                         qa_result = qa_date_result, 
+                         qa_date = Sys.time(), 
+                         note = qa_date_note)
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
     
     ## Action codes/types ----
     # Are there any new codes/types not seen before?
@@ -142,12 +155,19 @@ load_raw_sha_2020 <- function(conn = NULL,
       message(paste('\U0001f642', qa_act_note))    
     }
     
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'action_types', {qa_act_result}, {Sys.time()}, {qa_act_note})",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'result', 
+                         qa_item = 'action_types', 
+                         qa_result = qa_act_result, 
+                         qa_date = Sys.time(), 
+                         note = qa_act_note)
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
     
     
     ## Program types ----
@@ -167,12 +187,19 @@ load_raw_sha_2020 <- function(conn = NULL,
       message(paste('\U0001f642', qa_prog_note))
     }
     
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'program_types', {qa_prog_result}, {Sys.time()}, {qa_prog_note})",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'result', 
+                         qa_item = 'program_types', 
+                         qa_result = qa_prog_result, 
+                         qa_date = Sys.time(), 
+                         note = qa_prog_note)
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
     
     
     ## Portfolios/building IDs ----
@@ -198,12 +225,19 @@ load_raw_sha_2020 <- function(conn = NULL,
       message(paste('\U0001f642', qa_portfolio_note))
     }
     
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                            'building_ids', {qa_portfolio_result}, {Sys.time()}, {qa_portfolio_note})",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'result', 
+                         qa_item = 'building_ids', 
+                         qa_result = qa_portfolio_result, 
+                         qa_date = Sys.time(), 
+                         note = qa_portfolio_note)
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
 
   # CHECK QA PASSED ----
     # Stop processing if one or more QA check failed
@@ -211,7 +245,7 @@ load_raw_sha_2020 <- function(conn = NULL,
       stop(glue("One or more QA checks failed on {to_schema}.{to_table}. See {`qa_schema`}.{`qa_table`} for more details."))
     } else {
       # Clean up QA objects if everything passed
-      rm(list = ls(pattern = "^qa_"))
+      # rm(list = ls(pattern = "^qa_"))
       rm(namez)
       rm(dates)
       rm(act_types, act_types_expected)
@@ -221,24 +255,34 @@ load_raw_sha_2020 <- function(conn = NULL,
     
   # ADD VALUES TO METADATA ----
     ## Row counts
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, 
-                              qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                    'value', 'row_count', {nrow(sha_2020)},
-                                    {Sys.time()}, 'HCV and PH both included')",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'value', 
+                         qa_item = 'row_count', 
+                         qa_result = nrow(sha_2020), 
+                         qa_date = Sys.time(), 
+                         note = 'HCV and PH both included')
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
     
     ## Distinct HH IDs
-    DBI::dbExecute(conn,
-                   glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                            (etl_batch_id, last_run, table_name, 
-                              qa_type, qa_item, qa_result, qa_date, note) 
-                            VALUES ({etl_batch_id}, NULL, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                    'value', 'household_count', {length(unique(sha_2020$HH_CERT_ID))},
-                                    {Sys.time()}, 'HCV and PH both included')",
-                            .con = conn))
+    tempQA <- data.table(etl_batch_id = etl_batch_id, 
+                         last_run = NULL, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'value', 
+                         qa_item = 'household_count', 
+                         qa_result = length(unique(sha_2020$HH_CERT_ID)), 
+                         qa_date = Sys.time(), 
+                         note = 'HCV and PH both included')
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
   
   # RENAME FIELDS ----
     # Get rid of spaces, characters, and capitals in existing names

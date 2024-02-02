@@ -49,7 +49,7 @@ options(max.print = 350, tibble.print_max = 50, warning.length = 8170, scipen = 
 qa_schema <- "pha"
 qa_table <- "metadata_qa"
 etl_table <- "metadata_etl_log"
-file_path_sha <- "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/"
+file_path_sha <- '//dphcifs/APDE-CDIP/Housing/SHA/Original_data' # formerly "//phdata01/DROF_DATA/DOH DATA/Housing/SHA/Original_data/"
 
 # Connect to HHSAW
 db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
@@ -297,8 +297,8 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   
   if(class(sql.2019) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_2019.R")
-    
+    source(file.path(here::here(), 'etl/raw/load_raw_sha_2019.R'))
+
     # Set up etl_batch_id
     etl_batch_id_2019 <- load_metadata_etl_log(conn = db_hhsaw,
                                                to_schema = qa_schema,
@@ -308,7 +308,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                date_min = "2019-01-01",
                                                date_max = "2019-12-31",
                                                date_delivery = "2023-02-24",
-                                               note = "Refresh/replace 2019 raw data, 2nd try")
+                                               note = "Refresh/replace 2019 raw data with additional addresses")
     # Run function
     load_raw_sha_2019(conn = db_hhsaw,
                       to_schema = "pha",
@@ -333,7 +333,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   
   if(class(sql.2020) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_2020.R")
+    source(file.path(here::here(), 'etl/raw/load_raw_sha_2020.R'))
     
     # Set up etl_batch_id
     etl_batch_id_2020 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -344,7 +344,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                   date_min = "2020-01-01",
                                                   date_max = "2020-12-31",
                                                   date_delivery = "2023-02-24",
-                                                  note = "Refresh/replace 2020 raw data, 2nd try")
+                                                  note = "Refresh/replace 2020 raw data, with additional addresses")
     # Run function
     load_raw_sha_2020(conn = db_hhsaw,
                          to_schema = "pha",
@@ -368,7 +368,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   
   if(class(sql.2021) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_2021.R")
+    source(file.path(here::here(), 'etl/raw/load_raw_sha_2021.R'))
     
     # Set up etl_batch_id
     etl_batch_id_2021 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -379,7 +379,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
                                                   date_min = "2021-01-01",
                                                   date_max = "2021-12-31",
                                                   date_delivery = "2023-02-24",
-                                                  note = "Refresh/replace 2021 raw data, 2nd try")
+                                                  note = "Refresh/replace 2021 raw data, with additional addresses")
     # Run function
     load_raw_sha_2021(conn = db_hhsaw,
                          to_schema = "pha",
@@ -403,7 +403,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
   
   if(class(sql.2022) != "data.frame"){
     # Bring in function
-    devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/raw/load_raw_sha_2022.R")
+    source(file.path(here::here(), 'etl/raw/load_raw_sha_2022.R'))
     
     # Set up etl_batch_id
     etl_batch_id_2022 <- load_metadata_etl_log(conn = db_hhsaw,
@@ -433,7 +433,7 @@ db_hhsaw <- create_db_connection(server = 'hhsaw', interactive = F, prod = T)
 
 # MAKE STAGE SHA TABLE ----
   # Bring in function
-  devtools::source_url("https://raw.githubusercontent.com/PHSKC-APDE/Housing/main/etl/stage/load_stage_sha.R")
+  source(file.path(here::here(), "etl/stage/load_stage_sha.R"))
   
   # Run function
   load_stage_sha(conn = db_hhsaw,

@@ -638,14 +638,20 @@ load_stage_sha <- function(conn = NULL,
         warning(paste("\U00026A0", qa_row_diff_note))
       } 
       
-      DBI::dbExecute(conn,
-                     glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                              (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                              VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                              'row_count_vs_previous', {qa_row_diff_result}, {Sys.time()}, {qa_row_diff_note})",
-                              .con = conn))
-      
-    
+      tempQA <- data.table(etl_batch_id = NULL, 
+                           last_run = last_run, 
+                           table_name = paste0(to_schema, '.', to_table), 
+                           qa_type = 'result', 
+                           qa_item = 'row_count_vs_previous', 
+                           qa_result = qa_row_diff_result, 
+                           qa_date = Sys.time(), 
+                           note = NULL)  
+      DBI::dbWriteTable(conn,
+                        name = DBI::Id(schema = qa_schema, table = qa_table),
+                        value = as.data.frame(tempQA),
+                        overwrite = F, 
+                        append = T)
+
     ## Columns match existing table ----
       cols_current <- try(dbGetQuery(conn,
                                      glue_sql("SELECT TOP 0 * FROM {`to_schema`}.{`to_table`}",
@@ -671,27 +677,36 @@ load_stage_sha <- function(conn = NULL,
         message(paste("\U0001f642", qa_names_note))
       }
     
-    
-      DBI::dbExecute(conn,
-                     glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                              (etl_batch_id, last_run, table_name, qa_type, qa_item, qa_result, qa_date, note) 
-                              VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}', 'result', 
-                              'column_names', {qa_names_result}, {Sys.time()}, {qa_names_note})",
-                              .con = conn))
-    
-    
+      tempQA <- data.table(etl_batch_id = NULL, 
+                           last_run = last_run, 
+                           table_name = paste0(to_schema, '.', to_table), 
+                           qa_type = 'result', 
+                           qa_item = 'column_names', 
+                           qa_result = qa_names_result, 
+                           qa_date = Sys.time(), 
+                           note = qa_names_note)  
+      DBI::dbWriteTable(conn,
+                        name = DBI::Id(schema = qa_schema, table = qa_table),
+                        value = as.data.frame(tempQA),
+                        overwrite = F, 
+                        append = T)
+
   # ADD VALUES TO METADATA ----
   # Row counts
-  DBI::dbExecute(conn,
-                 glue_sql("INSERT INTO {`qa_schema`}.{`qa_table`} 
-                          (etl_batch_id, last_run, table_name, 
-                            qa_type, qa_item, qa_result, qa_date, note) 
-                          VALUES (NULL, {last_run}, '{DBI::SQL(to_schema)}.{DBI::SQL(to_table)}',
-                                  'value', 'row_count', {rows_refresh},
-                                  {Sys.time()}, NULL)",
-                          .con = conn))
-  
-  
+    tempQA <- data.table(etl_batch_id = NULL, 
+                         last_run = last_run, 
+                         table_name = paste0(to_schema, '.', to_table), 
+                         qa_type = 'value', 
+                         qa_item = 'row_count', 
+                         qa_result = rows_refresh, 
+                         qa_date = Sys.time(), 
+                         note = NULL)  
+    DBI::dbWriteTable(conn,
+                      name = DBI::Id(schema = qa_schema, table = qa_table),
+                      value = as.data.frame(tempQA),
+                      overwrite = F, 
+                      append = T)
+      
   # CHECK QA PASSED ----
   # Stop processing if one or more QA check failed
   if (min(qa_row_diff_result, qa_names_result) == "FAIL") {

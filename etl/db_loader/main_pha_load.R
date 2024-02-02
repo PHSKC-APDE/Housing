@@ -94,36 +94,6 @@ db_idh  <-  DBI::dbConnect(odbc::odbc(),
       DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities FROM pha.stage_identities")
   
   
-  ## Final identity history ----
-      if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "final_identities_history"))) {
-        # First back up existing archive table
-        if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history"))) {
-          DBI::dbExecute(db_hhsaw, "EXEC sp_rename 'pha.archive_identities_history', 'archive_identities_history_bak'")
-        }
-        # Then move final table to archive
-        DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.archive_identities_history FROM pha.final_identities_history")
-        
-        # Check final table is backed up proper
-        rows_archive <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.archive_identities_history"))
-        rows_final <- as.integer(dbGetQuery(db_hhsaw, "SELECT COUNT (*) AS cnt FROM pha.final_identities_history"))
-        
-        if (rows_archive != rows_final | rows_final == 0) {
-          stop("Something went wrong backing up pha.final_identities_history")
-        } else {
-          message("pha.final_identities_history backed up, deleting archive backup (if it exists)")
-          if (dbExistsTable(db_hhsaw, DBI::Id(schema = "pha", table = "archive_identities_history_bak"))) {
-            DBI::dbExecute(db_hhsaw, "DROP TABLE pha.archive_identities_history_bak")
-          }
-          rm(rows_archive, rows_final)
-        }
-        
-        # Then truncate final in preparation for loading stage
-        DBI::dbExecute(db_hhsaw, "DROP TABLE pha.final_identities_history")
-      }
-      # Load from stage to final
-      DBI::dbExecute(db_hhsaw, "SELECT * INTO pha.final_identities_history FROM pha.stage_identities_history")
-  
-  
 # MAKE DEMO EVER TABLE ----
 # Consolidate non- and mostly non-time varying demographics
   ## Stage ----

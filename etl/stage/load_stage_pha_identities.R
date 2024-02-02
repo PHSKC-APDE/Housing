@@ -18,6 +18,10 @@
 # qa_table = name of the table that holds QA outcomes
 
   
+# REMIND THE USER THAT THE UNDERLYING XWALK MUST BE UPDATED FIRST ----
+message(paste0('\U00026A0\U00026A0 ACHTUNG! 重要! ¡Escucha bien!\n', 
+                   '[claims].[final_xwalk_apde_mcaid_mcare_pha] MUST be up to date'))
+
 # SET ARGUMENTS ----
     qa_schema <- "pha"
     qa_table <- "metadata_qa"
@@ -86,6 +90,10 @@
                                                                          stringr::str_replace_na(female, ''),
                                                                          sep = "|"))))]
         exit.ids <- unique(exit.ids[, .(exit = 'EXIT', id_hash)])
+        
+    # Pull in KCMASTER_ID <> id_apde pairs from [claims].[final_xwalk_apde_mcaid_mcare_pha] ----
+      xwalk <- setDT(DBI::dbGetQuery(conn = db_hhsaw, "SELECT DISTINCT [KCMASTER_ID],[id_apde] FROM [claims].[final_xwalk_apde_mcaid_mcare_pha]"))
+        
       
 # MERGE IMPORTED TABLES TO LINK PHA `id_hash` TO KCMASTER_ID ----    
     # Merge ID lists ----
@@ -157,9 +165,20 @@
     
     # As of 8/31/2023, there were a couple of times when a single id_hash was liked to > 1 KCMASTER_ID ... this should not be!
     linkages <- linkages[!duplicated(id_hash), ]
+    
+    # sometimes we have a both KCMASTER_ID and ssn == NA, which is useless
+    linkages <- linkages[!(is.na(KCMASTER_ID) & is.na(ssn))]
 
     setorder(linkages, lname, fname, mname, na.last = T)
         
+# MERGE ON id_apde ----
+    linkages <- merge(linkages, 
+                      xwalk, # this is always a unique 1:1 KCMASTER_ID <> id_apde table
+                      by = 'KCMASTER_ID', 
+                      all.x = T, 
+                      all.y = F)
+    setcolorder(linkages, c('KCMASTER_ID', 'id_apde'))
+    
 # UPDATE stage_identities_history TABLE ----
     # Want to keep a record of a person's ID over time
     # There are five potential components to the updated history table
@@ -232,16 +251,14 @@
     # Check that the combined pha.stage_identifies table is longer than the the previous time ----
         ident_cnt_prev <- as.integer(
           dbGetQuery(db_hhsaw,
-                     glue_sql("SELECT qa_result
-                                FROM ", {paste0(qa_schema, '.', qa_table)}, "
+                     glue_sql("SELECT qa_value
+                                FROM ", {paste0(qa_schema, '.', qa_table, '_values')}, "
                                 WHERE table_name = {paste0(to_schema, '.', to_table)} 
-                                  AND qa_type = 'value' 
                                   AND qa_item = 'row_count' 
                                   AND qa_date = (
                                     SELECT MAX(qa_date) 
-                                    FROM ", {paste0(qa_schema, '.', qa_table)}, " 
+                                    FROM ", {paste0(qa_schema, '.', qa_table, '_values')}, " 
                                     WHERE table_name = {paste0(to_schema, '.', to_table)} 
-                                      AND qa_type = 'value' 
                                       AND qa_item = 'row_count')", .con = db_hhsaw)
           ))
         
@@ -276,16 +293,14 @@
     # Check that number of unique KCMASTER_ID is greater than in the previous time ----
         pha_ID_cnt_prev <- as.integer(
           dbGetQuery(db_hhsaw,
-                     glue_sql("SELECT qa_result
-                                FROM ", {paste0(qa_schema, '.', qa_table)}, "
+                     glue_sql("SELECT qa_value
+                                FROM ", {paste0(qa_schema, '.', qa_table, '_values')}, "
                                 WHERE table_name = {paste0(to_schema, '.', to_table)} 
-                                  AND qa_type = 'value' 
                                   AND qa_item = 'id_count' 
                                   AND qa_date = (
                                     SELECT MAX(qa_date) 
-                                    FROM ", {paste0(qa_schema, '.', qa_table)}, " 
+                                    FROM ", {paste0(qa_schema, '.', qa_table, '_values')}, " 
                                     WHERE table_name = {paste0(to_schema, '.', to_table)} 
-                                      AND qa_type = 'value' 
                                       AND qa_item = 'id_count')", .con = db_hhsaw)
           ))
         
@@ -317,27 +332,21 @@
       
 # ADD VALUES TO METADATA ----
     # Row counts
-        refresh <- data.table(etl_batch_id = NA, 
-                              last_run = min(linkages$last_run), 
-                              table_name = paste0(to_schema, '.', to_table), 
-                              qa_type = 'value', 
+        refresh <- data.table(table_name = paste0(to_schema, '.', to_table), 
                               qa_item = 'row_count', 
-                              qa_result = as.integer(nrow(linkages)), 
+                              qa_value = as.integer(nrow(linkages)), 
                               qa_date = Sys.time(),
-                              note = NA)
-        update_qa(myupdate = refresh)
+                              note = 'Count after refresh')
+        update_qa(myupdate = refresh, mytable = 'metadata_qa_values')
         
 
     # Number of IDs
-        refresh <- data.table(etl_batch_id = NA, 
-                              last_run = min(linkages$last_run), 
-                              table_name = paste0(to_schema, '.', to_table), 
-                              qa_type = 'value', 
+        refresh <- data.table(table_name = paste0(to_schema, '.', to_table), 
                               qa_item = 'id_count', 
-                              qa_result = as.integer(n_distinct(linkages$KCMASTER_ID)), 
+                              qa_value = as.integer(n_distinct(linkages$KCMASTER_ID)), 
                               qa_date = Sys.time(),
-                              note = NA)
-        update_qa(myupdate = refresh)
+                              note = 'Count after refresh')
+        update_qa(myupdate = refresh, mytable = 'metadata_qa_values')
 
   
 # CHECK QA PASSED ----
@@ -350,49 +359,25 @@
 # LOAD DATA TO SQL ----
   ## Identities ----
     # Split into smaller tables to avoid SQL db_hhsaw connection issues
-    start <- 1L
-    max_rows <- 50000L
-    cycles <- ceiling(nrow(linkages)/max_rows)
-    
-    lapply(seq(start, cycles), function(i) {
-      start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
-      end_row <- min(nrow(linkages), max_rows * i)
-      
-      message("Loading cycle ", i, " of ", cycles)
-      if (i == 1) {
-        dbWriteTable(db_hhsaw,
-                     name = DBI::Id(schema = to_schema, table = to_table),
-                     value = as.data.frame(linkages[start_row:end_row, ]),
-                     overwrite = T, append = F)
-      } else {
-        dbWriteTable(db_hhsaw,
-                     name = DBI::Id(schema = to_schema, table = to_table),
-                     value = as.data.frame(linkages[start_row:end_row ,]),
-                     overwrite = F, append = T)
-      }
-    })
-  
+        housing::chunk_loader(
+          DTx = as.data.frame(linkages), 
+          connx = db_hhsaw, 
+          chunk.size = 10000,
+          schemax = to_schema, 
+          tablex = to_table, 
+          overwritex = T, 
+          appendx = F
+        )
+        
   ## Identity history ----
     # Split into smaller tables to avoid SQL db_hhsaw connection issues
-    start <- 1L
-    max_rows <- 50000L
-    cycles <- ceiling(nrow(history_updated)/max_rows)
-    
-    lapply(seq(start, cycles), function(i) {
-      start_row <- ifelse(i == 1, 1L, max_rows * (i-1) + 1)
-      end_row <- min(nrow(history_updated), max_rows * i)
-      
-      message("Loading cycle ", i, " of ", cycles)
-      if (i == 1) {
-        dbWriteTable(db_hhsaw,
-                     name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
-                     value = as.data.frame(history_updated[start_row:end_row, ]),
-                     overwrite = T, append = F)
-      } else {
-        dbWriteTable(db_hhsaw,
-                     name = DBI::Id(schema = to_schema, table = paste0(to_table, "_history")),
-                     value = as.data.frame(history_updated[start_row:end_row ,]),
-                     overwrite = F, append = T)
-      }
-    })
+        housing::chunk_loader(
+          DTx = as.data.frame(history_updated), 
+          connx = db_hhsaw, 
+          chunk.size = 10000,
+          schemax = to_schema, 
+          tablex = paste0(to_table, "_history"), 
+          overwritex = T, 
+          appendx = F
+        )
   

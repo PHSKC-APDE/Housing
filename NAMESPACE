@@ -2,6 +2,7 @@
 
 export(allocate)
 export(char_f)
+export(chunk_loader)
 export(count_acute)
 export(count_chronic)
 export(cumul_overlap)

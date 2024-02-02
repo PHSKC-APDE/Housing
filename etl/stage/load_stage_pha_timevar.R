@@ -4,7 +4,7 @@
 # 2021-06
 
 ### Run from main_pha_load script
-# https://github.com/PHSKC-APDE/Housing/blob/main/claims_db/etl/db_loader/main_pha_load.R
+# https://github.com/PHSKC-APDE/Housing/blob/main/etl/db_loader/main_pha_load.R
 # Assumes relevant libraries are already loaded
 
 # For now, sticking to the bare minimum needed to make the DASHH dashboard
@@ -32,55 +32,134 @@ load_stage_timevar <- function(conn = NULL,
                                id_table = "final_identities") {
   
   # BRING IN DATA AND COMBINE ----
-      kcha <- dbGetQuery(
+      kcha <- setDT(dbGetQuery(
         conn,
         glue_sql(
-          "SELECT DISTINCT b.KCMASTER_ID, a.*, c.dob
-          FROM 
-          (SELECT agency, act_type, act_date, pha_source, 
-          id_hash, ssn, lname, fname, relcode, disability, 
-          hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, hh_inc_vary, 
-          hh_id, subsidy_id, cert_id, vouch_num, 
-          port_in, port_out_kcha, portability, cost_pha, 
-          subs_type, major_prog, prog_type, vouch_type,
-          geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-          geo_hash_clean, geo_blank, portfolio, portfolio_type
-            FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha'))}) a
-          LEFT JOIN
-          (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
-          ON a.id_hash = b.id_hash
-          LEFT JOIN
-          (SELECT KCMASTER_ID, dob FROM {`demo_schema`}.{`demo_table`}) c
-          ON b.KCMASTER_ID = c.KCMASTER_ID",
-          .con = conn))
+          "SELECT DISTINCT LINKdata.KCMASTER_ID
+              ,LINKdata.id_apde
+            	,KCHAdata.*
+            	,DEMOdata.dob
+            FROM (
+            	SELECT agency
+            		,act_type
+            		,act_date
+            		,pha_source
+            		,id_hash
+            		,ssn
+            		,lname
+            		,fname
+            		,relcode
+            		,disability
+            		,hh_ssn
+            		,hh_lname
+            		,hh_fname
+            		,mbr_num
+            		,hh_inc_fixed
+            		,hh_inc_vary
+            		,hh_id
+            		,subsidy_id
+            		,cert_id
+            		,vouch_num
+            		,port_in
+            		,port_out_kcha
+            		,portability
+            		,cost_pha
+            		,subs_type
+            		,major_prog
+            		,prog_type
+            		,vouch_type
+            		,geo_add1_clean
+            		,geo_add2_clean
+            		,geo_city_clean
+            		,geo_state_clean
+            		,geo_zip_clean
+            		,geo_hash_clean
+            		,geo_blank
+            		,portfolio
+            		,portfolio_type
+            	FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'kcha')) }
+            	) KCHAdata
+            LEFT JOIN (
+            	SELECT id_hash
+            		,KCMASTER_ID
+            		,id_apde
+            	FROM {`id_schema`}.{`id_table`}
+            	) LINKdata ON KCHAdata.id_hash = LINKdata.id_hash
+            LEFT JOIN (
+            	SELECT KCMASTER_ID
+            		,dob
+            	FROM {`demo_schema`}.{`demo_table`}
+            	) DEMOdata ON LINKdata.KCMASTER_ID = DEMOdata.KCMASTER_ID",
+          .con = conn)))
       
       # Once upstream stage files are changed, change the following:
       # It would be good if I'd recorded which upstream changes and how to change the following,
       # but I did not
-      sha <- dbGetQuery(
+      sha <- setDT(dbGetQuery(
         conn,
         glue_sql(
-          "SELECT DISTINCT b.KCMASTER_ID, a.*, c.dob
-          FROM 
-          (SELECT agency, act_type, act_date, pha_source, 
-          id_hash, ssn, lname, fname, relcode, disability, 
-          hh_ssn, hh_lname, hh_fname, mbr_num, hh_inc_fixed, 
-          cert_id, incasset_id, 
-          port_in, port_out_sha, portability, cost_pha, 
-          recert_sched,
-          subs_type, major_prog, prog_type, vouch_type,
-          geo_add1_clean, geo_add2_clean, geo_city_clean, geo_state_clean, geo_zip_clean,
-          geo_hash_clean, geo_blank, portfolio, property_id
-            FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha'))}) a
-          LEFT JOIN
-          (SELECT id_hash, KCMASTER_ID FROM {`id_schema`}.{`id_table`}) b
-          ON a.id_hash = b.id_hash
-          LEFT JOIN
-          (SELECT KCMASTER_ID, dob FROM {`demo_schema`}.{`demo_table`}) c
-          ON b.KCMASTER_ID = c.KCMASTER_ID",
-          .con = conn))
-
-      pha <- setDT(bind_rows(kcha, sha))
+          "SELECT DISTINCT LINKdata.KCMASTER_ID
+              ,LINKdata.id_apde
+            	,SHAdata.*
+            	,DEMOdata.dob
+            FROM (
+            	SELECT agency
+            		,act_type
+            		,act_date
+            		,pha_source
+            		,id_hash
+            		,ssn
+            		,lname
+            		,fname
+            		,relcode
+            		,disability
+            		,hh_ssn
+            		,hh_lname
+            		,hh_fname
+            		,mbr_num
+            		,hh_inc_fixed
+            		,cert_id
+            		,incasset_id
+            		,port_in
+            		,port_out_sha
+            		,portability
+            		,cost_pha
+            		,recert_sched
+            		,subs_type
+            		,major_prog
+            		,prog_type
+            		,vouch_type
+            		,geo_add1_clean
+            		,geo_add2_clean
+            		,geo_city_clean
+            		,geo_state_clean
+            		,geo_zip_clean
+            		,geo_hash_clean
+            		,geo_blank
+            		,portfolio
+            		,property_id
+            	FROM {`from_schema`}.{DBI::SQL(paste0(from_table, 'sha')) }
+            	) SHAdata
+            LEFT JOIN (
+            	SELECT id_hash
+            		,KCMASTER_ID
+            		,id_apde
+            	FROM {`id_schema`}.{`id_table`}
+            	) LINKdata ON SHAdata.id_hash = LINKdata.id_hash
+            LEFT JOIN (
+            	SELECT KCMASTER_ID
+            		,dob
+            	FROM {`demo_schema`}.{`demo_table`}
+            	) DEMOdata ON LINKdata.KCMASTER_ID = DEMOdata.KCMASTER_ID",
+          .con = conn)))
+      
+      pha <- unique(setDT(rbind(kcha, sha, fill = T)))
+      
+      # Remove the rows missing KCMASTER_ID since we won't be able to join on this
+      if(nrow(pha[is.na(KCMASTER_ID)]) > 0){message('Summary of PHA data without a KCMASTER_ID'); print(pha[is.na(KCMASTER_ID), .N, agency])}
+      pha <- pha[!is.na(KCMASTER_ID)] # should not exist, but just in case!
+      pha.xwalk <- unique(pha[, .(KCMASTER_ID, id_apde)]) # keep so can easily merge on id_apde at end of this script
+      
   
   # BASIC CRITICAL CLEANING ----
     # Remove the rows with missing KCMASTER_ID since we won't be able to join on this
@@ -1667,11 +1746,10 @@ load_stage_timevar <- function(conn = NULL,
   ## Add in last_run date ----
   pha_timevar[, last_run := Sys.time()]
   
-  
   ## Select and arrange columns
   cols_select <- c(
     # ID variables
-    "KCMASTER_ID", "id_hash", "hh_id_long", "hh_KCMASTER_ID",
+    "KCMASTER_ID", "id_apde", "id_hash", "hh_id_long", "hh_KCMASTER_ID",
     # Date info
     "from_date", "to_date", "cov_time", "gap_length", "gap", "period", "period_start", "period_end",
     # Time-varying demog variables
@@ -1711,13 +1789,15 @@ load_stage_timevar <- function(conn = NULL,
     }
   
   # Write data
-  odbc::dbWriteTable(conn, 
-                     name = DBI::Id(schema = to_schema, table = to_table), 
-                     value = as.data.frame(pha_timevar),
-                     overwrite = T, append = F,
-                     field.types = unlist(yaml_config$vars),
-                     batch_rows = 10000)
-  
+    housing::chunk_loader(DTx = as.data.frame(pha_timevar), 
+                          connx = conn, 
+                          chunk.size = 10000, 
+                          schemax = to_schema, 
+                          tablex = to_table, 
+                          overwritex = T, 
+                          appendx = F, 
+                          field.typesx = unlist(yaml_config$vars))
+    
   # Quick QA
   sqlcount <- odbc::dbGetQuery(conn, paste0("SELECT count(*) FROM ", to_schema, ".", to_table))
   if(sqlcount == nrow(pha_timevar)){message("\U0001f642 It looks like all of your timevar data loaded to SQL!")

@@ -3,6 +3,7 @@ schema: pha
 table: stage_timevar
 vars: 
     KCMASTER_ID: NVARCHAR(24)
+    id_apde: NVARCHAR(22)
     id_hash: NVARCHAR(130)
     hh_id_long: INT
     hh_KCMASTER_ID: NVARCHAR(24)
