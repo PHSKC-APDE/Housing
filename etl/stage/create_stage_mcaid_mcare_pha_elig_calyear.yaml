@@ -4,6 +4,7 @@ index_type: ccs
 index_name: idx_ccs_stage_mcaid_mcare_pha_elig_calyear
 vars:
     year: INT
+    id_apde: NVARCHAR(22)
     KCMASTER_ID: CHAR(15)
     mcaid: INT
     mcare: INT

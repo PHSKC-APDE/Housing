@@ -9,17 +9,15 @@
 #
 # Alastair Matheson (PHSKC-APDE)
 # 2018-01-24
-# Tweaked by Danny Colombara (PHSKC-APE, 2023-11-09)
+# Tweaked by Danny Colombara (PHSKC-APE, 2024-02-01)
 #
 ###############################################################################
 
 # BRING IN DATA ####
   ### Main merged data
     demo <- setDT(dbGetQuery(db_hhsaw, "SELECT * FROM claims.final_mcaid_mcare_pha_elig_demo"))
-    timevar <- setDT(dbGetQuery(
-      db_hhsaw, 
-      "SELECT * FROM claims.final_mcaid_mcare_pha_elig_timevar
-      WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)"))
+    timevar <- setDT(dbGetQuery(db_hhsaw,"SELECT * FROM claims.final_mcaid_mcare_pha_elig_timevar
+                                          WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)"))
   
   
   ### Fix up formats
@@ -62,7 +60,7 @@
                        endtime = as.Date(paste0(years[x], "-12-31")), 
                        agency = pha_agency, 
                        enroll = enroll_type,
-                       unit = KCMASTER_ID,
+                       unit = id_apde,
                        from_date = from_date, 
                        to_date = to_date)
       
@@ -78,22 +76,19 @@
     # Some/most stem from duplicate rows in the PHA data where a person was recorded
     # at multiple addresses during the same time period.
     # For now, just truncate to 365/6
-    # First check that it is only a handful of rows
-    if (uniqueN(allocated$KCMASTER_ID[allocated$pt_tot > 366]) > 200) {
+    # First check that it occures less than 0.1% of the time
+    if (100*uniqueN(allocated$id_apde[allocated$pt_tot > 366])/nrow(allocated) > 0.1) {
       stop("More people than expected had pt_tot > 366 days")
     }
     
-    allocated <- allocated %>%
-      mutate(pt_tot = case_when(
-        year %in% seq(2012, 2100, 4) & pt_tot > 366 ~ 366, 
-        pt_tot >= 365 ~ 365, 
-        TRUE ~ pt_tot))
-
+    allocated[, pt_tot := ifelse(year %in% seq(2012, 2100, 4) & pt_tot > 366, 
+                                 366,
+                                 ifelse(pt_tot >= 365, 
+                                        365, 
+                                        pt_tot))]
 
 # MAKE PT AND POP_EVER FIELDS (for acute event denominator) ####
-  # Used as denominator for acute events
-
-  # Want to keep a row for any combination of groups vars that appeared
+  # Want to keep a row for any combination of groups vars that appeared ... get person-time in days
     pt_rows <- rbindlist(lapply(seq_along(years), function(x) {
       
       message(glue("Working on patient time for {years[x]}"))
@@ -110,7 +105,7 @@
       
       # Make summary data
       output <- output[, .(pt = sum(overlap_amount)),
-                       by = .(KCMASTER_ID, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
+                       by = .(id_apde, KCMASTER_ID, mcaid, mcare, pha, mcaid_mcare_pha, enroll_type,
                               apde_dual, part_a, part_b, part_c, partial, buy_in, 
                               dual, tpl, bsp_group_cid, full_benefit, full_criteria, cov_type, 
                               mco_id, pha_agency, pha_subsidy, pha_voucher, 
@@ -128,25 +123,28 @@
 
   # MAKE FLAG TO INDICATE FULL CRITERIA FOR EACH YEAR
     # Definition: 11+ months coverage with full_criteria
-    full_criteria <- pt_rows[, .(pt_tot = sum(pt)), by = .(KCMASTER_ID, year, full_criteria)]
-    full_criteria[, full_criteria_12 := case_when(
-      year %in% c(2012, 2016, 2020, 2024) & pt_tot >= 11/12 * 366 ~ 1L, 
-      pt_tot >= 11/12 * 365 ~ 1L, 
-      TRUE ~ 0L)]
-    full_criteria <- full_criteria[, .(full_criteria_12 = max(full_criteria_12)), by = .(KCMASTER_ID, year)]
+    full_criteria <- pt_rows[, .(pt_tot = sum(pt)), by = .(id_apde, year, full_criteria)]
+
+    full_criteria[, full_criteria_12 := fcase(year %in% c(2012, 2016, 2020, 2024) & pt_tot >= 11/12 * 366, 1L, 
+                                              pt_tot >= 11/12 * 365, 1L, 
+                                              default = 0L)] 
+                  
+    full_criteria <- full_criteria[, .(full_criteria_12 = max(full_criteria_12)), by = .(id_apde, year)]
   
   # Join back to main data
-    allocated <- merge(allocated, full_criteria, by = c("year", "KCMASTER_ID"), all.x = T, all.y = F)
+    allocated <- merge(allocated, full_criteria, by = c("year", "id_apde"), all.x = T, all.y = F)
 
 
 # BRING INTO A SINGLE DATA FRAME () ####
-  calyear <- rbindlist(list(allocated, pt_rows), fill = T)
+  calyear <- rbindlist(list(allocated, # for chronic disease denominators (aggregated time chunks)
+                            pt_rows # for acute event denominators (individual time chunks)
+                            ), fill = T)
 
 
 # JOIN TO ELIG_DEMO AND ADD CALCULATED FIELDS ####
     calyear <- merge(calyear, 
                       demo[, !c("mcaid_mcare_pha", "apde_dual", "last_run"), with = FALSE], 
-                      by = 'KCMASTER_ID', 
+                      by = c('id_apde', 'KCMASTER_ID'), 
                       all.x = T, all.y = F)
 
     
@@ -204,13 +202,10 @@
 
 
   # Ensure columns are in the correct order
-    # First see which columns aren't in either source (should be pt_allocate in local that will be dropped)
-      setdiff(names(calyear), names(table_config_calyear $vars))
-      setdiff(names(table_config_calyear $vars), names(calyear))
-
-  # restrict to columns only in YAML
-      calyear <- calyear[, names(table_config_calyear $vars), with = F]
-      
+  # Ensure columns are in same order in R & SQL & that we drop extraneous variables
+    keep.calyear <- names(table_config_calyear$vars)
+    calyear <- calyear[, ..keep.calyear]
+    rads::validate_yaml_data(DF = calyear, YML = table_config_calyear, VARS = 'vars')
 
   # Load to SQL
     message("Loading elig_calyear data to SQL")
@@ -400,7 +395,7 @@
       ## OVERALL ----
         # get count of unique id 
         current.unique.id <- as.numeric(odbc::dbGetQuery(
-          db_hhsaw, "SELECT COUNT (DISTINCT KCMASTER_ID) 
+          db_hhsaw, "SELECT COUNT (DISTINCT id_apde) 
                           FROM claims.stage_mcaid_mcare_pha_elig_calyear"))
         
         previous.unique.id <- as.numeric(
@@ -453,7 +448,7 @@
         
       ## BY YEAR ----
         # current rows
-        current_year_ids <- setDT(dbGetQuery(conn = db_hhsaw, "select year, qa_value = COUNT (DISTINCT KCMASTER_ID)  FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] group by year order by year desc"))
+        current_year_ids <- setDT(dbGetQuery(conn = db_hhsaw, "select year, qa_value = COUNT (DISTINCT id_apde)  FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] group by year order by year desc"))
         current_year_ids <- current_year_ids[, .(qa_item = paste0('id_count_', year), qa_value)]
         
         # count number of rows
@@ -508,11 +503,11 @@
       ## BY SOURCE ----
         # current rows
         current_source_ids <- setDT(dbGetQuery(conn = db_hhsaw,                                         
-                                               "select qa_item = 'id_count_mcaid', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcaid = 1
+                                               "select qa_item = 'id_count_mcaid', qa_value = COUNT (DISTINCT id_apde) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcaid = 1
                                               UNION ALL
-                                              select qa_item = 'id_count_mcare', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcare = 1
+                                              select qa_item = 'id_count_mcare', qa_value = COUNT (DISTINCT id_apde) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where mcare = 1
                                               UNION ALL
-                                              select qa_item = 'id_count_pha', qa_value = COUNT (DISTINCT KCMASTER_ID) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where pha = 1"))
+                                              select qa_item = 'id_count_pha', qa_value = COUNT (DISTINCT id_apde) FROM [claims].[stage_mcaid_mcare_pha_elig_calyear] where pha = 1"))
         
         # count number of rows
         previous_source_ids <- setDT(

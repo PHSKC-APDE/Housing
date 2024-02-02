@@ -40,7 +40,7 @@
 
 
 # SET UP ----
-    options(max.print = 350, tibble.print_max = 30, scipen = 999)
+    options(max.print = 350, tibble.print_max = 30, scipen = 999, error = NULL)
     
     library(openxlsx) # Used to import/export Excel files
     library(odbc) # Used to connect to SQL server
