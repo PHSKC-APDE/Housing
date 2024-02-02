@@ -27,6 +27,7 @@ vars:
     race_latino: TINYINT
     race_nhpi: TINYINT
     race_white: TINYINT
+    race_other: TINYINT
     race_unk: TINYINT
     lang_max: VARCHAR(30)
     lang_amharic: TINYINT

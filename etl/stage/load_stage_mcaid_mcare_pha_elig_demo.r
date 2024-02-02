@@ -247,10 +247,15 @@
   
   
 # NORMALIZE PHA VARIABLES (if needed) ----
-  message('death_dt is from Medicare, so it will be missing until Medicare is integrated into this pipeline')
+  message('\ndeath_dt is from Medicare, so it will be missing until Medicare is integrated into this pipeline')
   if(!'death_dt' %in% names(elig)){
     elig[, death_dt := NA_Date_]
   }  
+    
+  message('\nrace_other is from Medicare, so it will be missing until Medicare is integrated into this pipeline')
+  if(!'race_other' %in% names(elig)){
+    elig[, race_other := NA_integer_]
+  }    
 
 # WRITE ELIG_DEMO TO SQL ----
   # Ensure columns are in same order in R & SQL & that we drop extraneous variables
