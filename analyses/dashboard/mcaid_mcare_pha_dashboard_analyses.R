@@ -12,7 +12,7 @@ options(max.print = 350, tibble.print_max = 30, scipen = 999, warning.length = 8
 
 library(odbc) # Used to connect to SQL server
 library(openxlsx) # Used to import/export Excel files
-library(housing) # contains many useful functions for analyzing housing/Medicaid data
+# library(housing) # contains many useful functions for analyzing housing/Medicaid data
 library(lubridate) # Used to manipulate dates
 library(tidyverse) # Used to manipulate data
 library(data.table) # Used to manipulate data
@@ -21,8 +21,22 @@ library(glue) # Used to safely make SQL queries
 
 
 ##### Connect to the SQL servers #####
-db_claims51 <- dbConnect(odbc(), "PHClaims51")
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
+prod <- T
+if (prod) {
+  server_name <- "tcp:kcitazrhpasqlprp16.azds.kingcounty.gov,1433"
+} else{
+  server_name <- "tcp:kcitazrhpasqldev20.database.windows.net,1433"
+} 
+# HHSAW db for ...
+db_hhsaw <- DBI::dbConnect(odbc::odbc(),
+                           driver = "ODBC Driver 17 for SQL Server",
+                           server = server_name,
+                           database = "hhs_analytics_workspace",
+                           uid = keyring::key_list("hhsaw")[["username"]],
+                           pwd = keyring::key_get("hhsaw", keyring::key_list("hhsaw")[["username"]]),
+                           Encrypt = "yes",
+                           TrustServerCertificate = "yes",
+                           Authentication = "ActiveDirectoryInteractive")
 
 #### FUNCTIONS ####
 ### Standard recode/rename function
@@ -91,8 +105,12 @@ recode_f <- function(df) {
 
 
 ### Function to pull in acute data and join to demogs
-acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
-                           source = c("all", "mcaid")) {
+### Denominator is person time (can contribute time to multiple buckets of PHA type across a year)
+acute_events_f <- function(
+    type = c("ed", "hosp", "inj"),
+    summarise = T,
+    source = c("all", "mcaid")
+    ) {
   
   # NB Age taken from end of calyear table to match denom data
   # Other time-varying elements come from timevar table
@@ -101,17 +119,17 @@ acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
   source <- match.arg(source)
   
   if (type == "ed") {
-    top_vars <- glue_sql("a.ed_pophealth_id ", .con = db_claims51)
-    vars <- glue_sql("ed_pophealth_id ", .con = db_claims51)
-    where <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_claims51)
+    top_vars <- glue_sql("a.ed_pophealth_id ", .con = db_hhsaw)
+    vars <- glue_sql("ed_pophealth_id ", .con = db_hhsaw)
+    where <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_hhsaw)
   } else if (type == "hosp") {
-    top_vars <- glue_sql("a.inpatient_id ", .con = db_claims51)
-    vars <- glue_sql("inpatient_id ", .con = db_claims51)
-    where <- glue_sql("inpatient_id IS NOT NULL", .con = db_claims51)
+    top_vars <- glue_sql("a.inpatient_id ", .con = db_hhsaw)
+    vars <- glue_sql("inpatient_id ", .con = db_hhsaw)
+    where <- glue_sql("inpatient_id IS NOT NULL", .con = db_hhsaw)
   } else if (type == "inj") {
-    top_vars <- glue_sql("a.intent ", .con = db_claims51)
-    vars <- glue_sql("intent ", .con = db_claims51)
-    where <- glue_sql("intent IS NOT NULL", .con = db_claims51)
+    top_vars <- glue_sql("a.intent ", .con = db_hhsaw)
+    vars <- glue_sql("intent ", .con = db_hhsaw)
+    where <- glue_sql("intent IS NOT NULL", .con = db_hhsaw)
   }
   
   sql_query <- glue_sql(
@@ -122,7 +140,7 @@ acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
     c.dob, c.start_housing, c.gender_me, c.race_eth_me 
     FROM
     (SELECT id_apde, MIN(first_service_date) AS first_service_date, {vars}
-      FROM PHClaims.final.mcaid_mcare_claim_header
+      FROM claims.final_mcaid_claim_header
       WHERE {where}
       GROUP BY id_apde, {vars}) a
     INNER JOIN
@@ -136,17 +154,17 @@ acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
       WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
       pha_agency, dual, full_benefit, full_criteria, pha_voucher,
       pha_subsidy, pha_operator, pha_portfolio, geo_zip
-      FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
+      FROM claims.final_mcaid_mcare_pha_elig_timevar
       WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
     ON a.id_apde = b.id_apde AND
     a.first_service_date >= b.from_date AND a.first_service_date <= b.to_date
     LEFT JOIN
     (SELECT id_apde, dob, start_housing, gender_me, race_eth_me
-      FROM PH_APDEStore.final.mcaid_mcare_pha_elig_demo) c
+      FROM claims.final_mcaid_mcare_pha_elig_demo) c
     ON COALESCE(a.id_apde, b.id_apde) = c.id_apde",
-    .con = db_claims51)
+    .con = db_hhsaw)
   
-  output <- setDT(dbGetQuery(db_claims51, sql_query))
+  output <- setDT(dbGetQuery(db_hhsaw, sql_query))
   
   # Add additional recodes (do this BEFORE standard recoding because of time_housing)
   output[, `:=` (first_service_date = as.Date(first_service_date),
@@ -254,26 +272,312 @@ acute_events_f <- function(type = c("ed", "hosp", "inj"), summarise = T,
   return(output)
 }
 
+### FUnction to pull in falls data
+fall_events_f_kcmasterid <- function(
+    summarise = T,
+    source = c("all", "mcaid")
+    ) {
+  
+  # NB Age taken from end of calyear table to match denom data
+  # Other time-varying elements come from timevar table
+  
+  source <- match.arg(source)
+  
+  top_vars <- glue_sql("a.primary_diagnosis ", .con = db_hhsaw)
+  vars <- glue_sql("primary_diagnosis ", .con = db_hhsaw)
+  where <- glue_sql("primary_diagnosis LIKE 'W0%' OR primary_diagnosis LIKE 'W1%'", .con = db_hhsaw)
+  
+  sql_query <- glue_sql(
+    "SELECT DISTINCT x.*,  b.mcaid, b.mcare,
+      b.enroll_type, b.pha_agency, b.dual, b.full_benefit, b.full_criteria, 
+      b.pha_voucher, b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
+      c.dob, c.start_housing, c.gender_me, c.race_eth_me 
+      FROM
+      (SELECT a.id_mcaid, a.first_service_date, YEAR(a.first_service_date) AS year, 
+      a.icdcm_norm, d.kcmaster_id
+      FROM
+          (SELECT id_mcaid, claim_header_id, MIN(first_service_date) AS first_service_date, icdcm_norm, icdcm_number 
+          FROM claims.final_mcaid_claim_icdcm_header
+          WHERE icdcm_number IN ('01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', 'admit') AND (icdcm_norm LIKE 'W0%' OR icdcm_norm LIKE 'W1%')
+          GROUP BY id_mcaid, icdcm_number, icdcm_norm, claim_header_id
+          ) a
+          LEFT JOIN
+          (SELECT kcmaster_id, medicaid_id FROM claims.idh_client) d
+          ON a.id_mcaid = d.medicaid_id) x
+      INNER JOIN
+      (SELECT KCMASTER_ID, from_date, to_date, mcaid, mcare, 
+        CASE WHEN mcaid = 0 AND mcare = 0 AND pha = 1 THEN 'h'
+        WHEN mcaid = 1 AND mcare = 0 AND pha = 1 THEN 'hmd'
+        WHEN mcaid = 0 AND mcare = 1 AND pha = 1 THEN 'hme'
+        WHEN mcaid = 1 AND mcare = 0 AND pha = 0 THEN 'md'
+        WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
+        WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
+        WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
+        pha_agency, dual, full_benefit, full_criteria, pha_voucher,
+        pha_subsidy, pha_operator, pha_portfolio, geo_zip
+        FROM claims.stage_mcaid_mcare_pha_elig_timevar
+        WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
+      ON x.kcmaster_id = b.KCMASTER_ID AND
+      x.first_service_date >= b.from_date AND x.first_service_date <= b.to_date
+      LEFT JOIN
+      (SELECT KCMASTER_ID, dob, start_housing, gender_me, race_eth_me
+        FROM claims.stage_mcaid_mcare_pha_elig_demo) c
+      ON COALESCE(x.kcmaster_id, b.KCMASTER_ID) = c.KCMASTER_ID",
+    .con = db_hhsaw)
+  
+  output <- setDT(dbGetQuery(db_hhsaw, sql_query))
+  
+  # Add additional recodes (do this BEFORE standard recoding because of time_housing)
+  output[, `:=` (first_service_date = as.Date(first_service_date),
+                 dob = as.Date(dob))]
+  output[, age_yr := floor(interval(start = dob, 
+                                    end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
+                           / years(1))]
+  output[, `:=` (
+    adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
+    senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
+    agegrp = case_when(
+      age_yr < 18 ~ "<18",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      age_yr >= 65 ~ "65+",
+      is.na(age_yr) ~ NA_character_),
+    agegrp_expanded = case_when(
+      age_yr < 10 ~ "<10",
+      data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+      age_yr >= 75 ~ "75+",
+      is.na(age_yr) ~ NA_character_),
+    age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
+                       TRUE ~ NA_character_)
+  )]
+  output[, time_housing_yr := 
+           round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
+                 / years(1), 1)]
+  output[, time_housing := case_when(is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
+                                     time_housing_yr < 3 ~ "<3 years",
+                                     between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
+                                     time_housing_yr >= 6 ~ "6+ years",
+                                     TRUE ~ "Unknown")]
+  
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      filter(!is.na(full_criteria) & full_criteria == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      # Also restrict to people we will show data for
+      filter(!is.na(full_criteria) & full_criteria == "Met full criteria" & 
+               mcare == 0 & dual == "Not dual eligible") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+  }
+  
+  return(output)
+}
+
+
+fall_events_f <- function(
+    summarise = T,
+    source = c("all", "mcaid")
+) {
+  
+  # NB Age taken from end of calyear table to match denom data
+  # Other time-varying elements come from timevar table
+  
+  source <- match.arg(source)
+  
+  top_vars <- glue_sql("a.primary_diagnosis ", .con = db_hhsaw)
+  vars <- glue_sql("icdcm_number, icdcm_norm, claim_header_id ", .con = db_hhsaw)
+  where <- glue_sql("icdcm_number IN ('01', '02', '03', '04', '05', '06', '07',
+                    '08', '09', '10', '11', '12', 'admit') AND (icdcm_norm LIKE
+                    'W0%' OR icdcm_norm LIKE 'W1%')", con=db_hhsaw)
+  
+  sql_query <- glue_sql(
+    "SELECT DISTINCT a.id_apde, a.first_service_date, YEAR(a.first_service_date) AS year, 
+    {top_vars}, b.mcaid, b.mcare, 
+    b.enroll_type, b.pha_agency, b.dual, b.full_benefit, b.full_criteria, 
+    b.pha_voucher, b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
+    c.dob, c.start_housing, c.gender_me, c.race_eth_me 
+    FROM
+    (SELECT id_apde, MIN(first_service_date) AS first_service_date, {vars}
+      FROM claims.final_mcaid_claim_icdcm_header
+      WHERE {where}
+      GROUP BY id_apde, {vars}) a
+    INNER JOIN
+    (SELECT id_apde, from_date, to_date, mcaid, mcare, 
+      CASE WHEN mcaid = 0 AND mcare = 0 AND pha = 1 THEN 'h'
+      WHEN mcaid = 1 AND mcare = 0 AND pha = 1 THEN 'hmd'
+      WHEN mcaid = 0 AND mcare = 1 AND pha = 1 THEN 'hme'
+      WHEN mcaid = 1 AND mcare = 0 AND pha = 0 THEN 'md'
+      WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
+      WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
+      WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
+      pha_agency, dual, full_benefit, full_criteria, pha_voucher,
+      pha_subsidy, pha_operator, pha_portfolio, geo_zip
+      FROM claims.final_mcaid_mcare_pha_elig_timevar
+      WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
+    ON a.id_apde = b.id_apde AND
+    a.first_service_date >= b.from_date AND a.first_service_date <= b.to_date
+    LEFT JOIN
+    (SELECT id_apde, dob, start_housing, gender_me, race_eth_me
+      FROM claims.final_mcaid_mcare_pha_elig_demo) c
+    ON COALESCE(a.id_apde, b.id_apde) = c.id_apde",
+    .con = db_hhsaw)
+
+  sql_query <- glue_sql(
+    "SELECT DISTINCT x.*,  b.mcaid, b.mcare,
+      b.enroll_type, b.pha_agency, b.dual, b.full_benefit, b.full_criteria, 
+      b.pha_voucher, b.pha_subsidy, b.pha_operator, b.pha_portfolio, b.geo_zip, 
+      c.dob, c.start_housing, c.gender_me, c.race_eth_me 
+      FROM
+      (SELECT a.id_mcaid, a.first_service_date, YEAR(a.first_service_date) AS year, 
+      a.icdcm_norm, d.kcmaster_id
+      FROM
+          (SELECT id_mcaid, claim_header_id, MIN(first_service_date) AS first_service_date, icdcm_norm, icdcm_number 
+          FROM claims.final_mcaid_claim_icdcm_header
+          WHERE icdcm_number IN ('01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', 'admit') AND (icdcm_norm LIKE 'W0%' OR icdcm_norm LIKE 'W1%')
+          GROUP BY id_mcaid, icdcm_number, icdcm_norm, claim_header_id
+          ) a
+          LEFT JOIN
+          (SELECT kcmaster_id, medicaid_id FROM claims.idh_client) d
+          ON a.id_mcaid = d.medicaid_id) x
+      INNER JOIN
+      (SELECT KCMASTER_ID, from_date, to_date, mcaid, mcare, 
+        CASE WHEN mcaid = 0 AND mcare = 0 AND pha = 1 THEN 'h'
+        WHEN mcaid = 1 AND mcare = 0 AND pha = 1 THEN 'hmd'
+        WHEN mcaid = 0 AND mcare = 1 AND pha = 1 THEN 'hme'
+        WHEN mcaid = 1 AND mcare = 0 AND pha = 0 THEN 'md'
+        WHEN mcaid = 0 AND mcare = 1 AND pha = 0 THEN 'me'
+        WHEN mcaid = 1 AND mcare = 1 AND pha = 0 THEN 'mm'
+        WHEN mcaid = 1 AND mcare = 1 AND pha = 1 THEN 'a' END AS enroll_type, 
+        pha_agency, dual, full_benefit, full_criteria, pha_voucher,
+        pha_subsidy, pha_operator, pha_portfolio, geo_zip
+        FROM claims.stage_mcaid_mcare_pha_elig_timevar
+        WHERE mcaid = 1 OR pha = 1 OR (mcare = 1 AND geo_kc = 1)) b
+      ON x.kcmaster_id = b.KCMASTER_ID AND
+      x.first_service_date >= b.from_date AND x.first_service_date <= b.to_date
+      LEFT JOIN
+      (SELECT KCMASTER_ID, dob, start_housing, gender_me, race_eth_me
+        FROM claims.stage_mcaid_mcare_pha_elig_demo) c
+      ON COALESCE(x.kcmaster_id, b.KCMASTER_ID) = c.KCMASTER_ID",
+    .con = db_hhsaw)
+  
+  output <- setDT(dbGetQuery(db_hhsaw, sql_query))
+  
+  # Add additional recodes (do this BEFORE standard recoding because of time_housing)
+  output[, `:=` (first_service_date = as.Date(first_service_date),
+                 dob = as.Date(dob))]
+  output[, age_yr := floor(interval(start = dob, 
+                                    end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01")) 
+                           / years(1))]
+  output[, `:=` (
+    adult = case_when(age_yr >= 18 ~ 1L, age_yr < 18 ~ 0L),
+    senior = case_when(age_yr >= 62 ~ 1L, age_yr < 62 ~ 0L),
+    agegrp = case_when(
+      age_yr < 18 ~ "<18",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      age_yr >= 65 ~ "65+",
+      is.na(age_yr) ~ NA_character_),
+    agegrp_expanded = case_when(
+      age_yr < 10 ~ "<10",
+      data.table::between(age_yr, 10, 17.99, NAbounds = NA) ~ "10-17",
+      data.table::between(age_yr, 18, 24.99, NAbounds = NA) ~ "18-24",
+      data.table::between(age_yr, 25, 44.99, NAbounds = NA) ~ "25-44",
+      data.table::between(age_yr, 45, 64.99, NAbounds = NA) ~ "45-64",
+      data.table::between(age_yr, 65, 74.99, NAbounds = NA) ~ "65-74",
+      age_yr >= 75 ~ "75+",
+      is.na(age_yr) ~ NA_character_),
+    age_wc = case_when(between(age_yr, 0, 6.99) ~ "Children aged 0-6", 
+                       TRUE ~ NA_character_)
+  )]
+  output[, time_housing_yr := 
+           round(interval(start = start_housing, end = as.Date(paste0(year, "-12-31"), origin = "1970-01-01"))
+                 / years(1), 1)]
+  output[, time_housing := case_when(is.na(pha_agency) | pha_agency == "Non-PHA" ~ "Non-PHA",
+                                     time_housing_yr < 3 ~ "<3 years",
+                                     between(time_housing_yr, 3, 5.99) ~ "3 to <6 years",
+                                     time_housing_yr >= 6 ~ "6+ years",
+                                     TRUE ~ "Unknown")]
+  
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      filter(!is.na(full_criteria) & full_criteria == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      # Remove the few people who had events when they appear to not be enrolled
+      # Also restrict to people we will show data for
+      filter(!is.na(full_criteria) & full_criteria == "Met full criteria" & 
+               mcare == 0 & dual == "Not dual eligible") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count = n()) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+  }
+  
+  return(output)
+}
+
 
 ### Function to count # people with acute events based on prioritized pop
-acute_persons_f <- function(type = c("ed", "hosp", "inj", "wc"), year = 2012,
-                            summarise = T, source = c("all", "mcaid")) {
+### Denominator is population (of the people in PHA data, how many had event)
+acute_persons_f <- function(
+    type = c("ed", "hosp", "inj", "wc"),
+    year = 2012,
+    summarise = T, source = c("all", "mcaid")
+    ) {
   
   type <- match.arg(type)
   source <- match.arg(source)
   
   if (type == "ed") {
     pop_sql <- DBI::SQL("")
-    where_sql <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_claims51)
+    where_sql <- glue_sql("ed_pophealth_id IS NOT NULL", .con = db_hhsaw)
   } else if (type == "hosp") {
     pop_sql <- DBI::SQL("")
-    where_sql <- glue_sql("inpatient_id IS NOT NULL", .con = db_claims51)
+    where_sql <- glue_sql("inpatient_id IS NOT NULL", .con = db_hhsaw)
   } else if (type == "inj") {
     pop_sql <- DBI::SQL("")
-    where_sql <- glue_sql("intent IS NOT NULL", .con = db_claims51)
+    where_sql <- glue_sql("intent IS NOT NULL", .con = db_hhsaw)
   } else if (type == "wc") {
-    pop_sql <- glue_sql(" AND age_wc IS NOT NULL", .con = db_claims51)
-    where_sql <- glue_sql("claim_type_mcaid_id = 27", .con = db_claims51)
+    pop_sql <- glue_sql(" AND age_wc IS NOT NULL", .con = db_hhsaw)
+    where_sql <- glue_sql("claim_type_mcaid_id = 27", .con = db_hhsaw)
   }
   
   sql_query <- glue_sql(
@@ -283,15 +587,15 @@ acute_persons_f <- function(type = c("ed", "hosp", "inj", "wc"), year = 2012,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
+        FROM claims.final_mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1 {pop_sql}) a
     LEFT JOIN
       (SELECT DISTINCT id_apde, 1 AS event
-      FROM PHClaims.final.mcaid_mcare_claim_header
+      FROM claims.final_mcaid_mcare_claim_header
       WHERE {where_sql} AND first_service_date <= {paste0(year, '-12-31')} AND 
         first_service_date >= {paste0(year, '-01-01')}) b
     ON a.id_apde = b.id_apde",
-    .con = db_apde51)
+    .con = db_hhsaw)
   
   # Run query
   output <- dbGetQuery(db_claims51, sql_query)
@@ -324,18 +628,80 @@ acute_persons_f <- function(type = c("ed", "hosp", "inj", "wc"), year = 2012,
   return(output)
 }
 
+### Function to count # people with falls based on prioritized pop
+### Denominator is population (of the people in PHA data, how many had fall)
+fall_persons_f <- function(
+    year = 2012,
+    summarise = T,
+    source = c("all", "mcaid")
+    ) {
+  
+  source <- match.arg(source)
+  
+  sql_query <- glue_sql(
+    "SELECT DISTINCT a.*, ISNULL(b.event, 0) AS event 
+    FROM
+      (SELECT [year], id_apde, mcaid, mcare, enroll_type, pha_agency, dual,
+        full_benefit, full_criteria, full_criteria_12, 
+        agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
+        pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
+        FROM claims.final_mcaid_mcare_pha_elig_calyear
+        WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1 {pop_sql}) a
+    LEFT JOIN
+      (SELECT DISTINCT id_apde, 1 AS event
+      FROM claims.final_mcaid_claim_header
+      WHERE {where_sql} AND first_service_date <= {paste0(year, '-12-31')} AND 
+        first_service_date >= {paste0(year, '-01-01')}) b
+    ON a.id_apde = b.id_apde",
+    .con = db_hhsaw)
+  
+  # Run query
+  output <- dbGetQuery(db_hhsaw, sql_query)
+  
+  # Run through standardized recoding/renaming
+  output <- recode_f(output)
+  
+  # Summarise if desired
+  if (summarise == T & source == "all") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp_expanded, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := sum(event)) %>%
+      ungroup() %>%
+      rename(agegrp = agegrp_expanded) %>%
+      mutate(source = "Medicaid and Medicare")
+  } else if (summarise == T & source == "mcaid") {
+    output <- output %>%
+      filter(full_criteria_12 == "Met full criteria" & mcare == 0 & dual == "Not dual eligible") %>%
+      group_by(year, enroll_type, agency, dual, full_criteria_12, 
+               agegrp, gender, ethn, length, 
+               subsidy, voucher, operator, portfolio, zip) %>%
+      summarise(count := sum(event)) %>%
+      ungroup() %>%
+      mutate(source = "Medicaid only")
+  }
+  
+  return(output)
+}
 
 ### Function to pull in and summarize chronic conditions
-eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
-                                 summarise = T, source = c("all", "mcaid")) {
+eventcount_chronic_f <- function(
+    condition = NULL,
+    year = 2012,
+    cvd = F,
+    summarise = T,
+    source = c("all", "mcaid")
+    ) {
   
   source <- match.arg(source)
   
   if (cvd == F) {
-    where_sql <- glue_sql("ccw_desc = {condition}", .con = db_apde51)
+    where_sql <- glue_sql("ccw_desc = {condition}", .con = db_hhsaw)
   } else if (cvd == T) {
     where_sql <- glue_sql("ccw_desc IN ('ccw_heart_failure', 'ccw_hypertension',
-                          'ccw_ischemic_heart_dis', 'ccw_mi')", .con = db_apde51)
+                          'ccw_ischemic_heart_dis', 'ccw_mi')", .con = db_hhsaw)
   }
   
   sql_query <- glue_sql(
@@ -345,18 +711,18 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
+        FROM claims.final_mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND enroll_type <> 'h' AND pop = 1) a
     LEFT JOIN
       (SELECT id_apde, 1 AS condition 
-        FROM PHClaims.final.mcaid_mcare_claim_ccw 
+        FROM claims.final_mcaid_mcare_claim_ccw 
         WHERE {where_sql} AND from_date <= {paste0(year, '-12-31')} AND 
         to_date >= {paste0(year, '-01-01')}) b
     ON a.id_apde = b.id_apde",
-    .con = db_apde51)
+    .con = db_hhsaw)
   
   # Run query
-  output <- dbGetQuery(db_apde51, sql_query)
+  output <- dbGetQuery(db_hhsaw, sql_query)
   
   # Run through standardized recoding/renaming
   output <- recode_f(output)
@@ -386,11 +752,12 @@ eventcount_chronic_f <- function(condition = NULL, year = 2012, cvd = F,
   return(output)
 }
 
-
 # No pharm data in Medicare so need different approach
-mh_f <- function(year = 2014,
-                 summarise = T,
-                 source = c("all", "mcaid")) {
+mh_f <- function(
+    year = 2014,
+    summarise = T,
+    source = c("all", "mcaid")
+    ) {
   
   source <- match.arg(source)
   
@@ -410,20 +777,20 @@ mh_f <- function(year = 2014,
     	WHEN b.sub_group = 'Antimania Rx' THEN 'Persons with mental health concerns: Mania/Bipolar'
     	WHEN b.sub_group = 'Antipsychotic Rx' THEN 'Persons with mental health concerns: Psychotic'
     	END AS indicator
-    	FROM PHClaims.final.mcaid_claim_pharm as a
+    	FROM claims.final_mcaid_claim_pharm as a
     	INNER JOIN (
     		SELECT sub_group, code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'Psychotropic-NDC'
     	  ) as b
     	ON a.ndc = b.code
     	LEFT JOIN (
     	  SELECT id_apde, id_mcaid
-    	  FROM PHClaims.final.xwalk_apde_mcaid_mcare_pha
+    	  FROM claims.final_xwalk_apde_mcaid_mcare_pha
     	  ) AS c
     	ON a.id_mcaid = c.id_mcaid 
     	WHERE a.rx_fill_date between '{DBI::SQL(year - 1)}-01-01' AND '{DBI::SQL(year)}-12-31' ",
-                                .con = db_apde51)
+                                .con = db_hhsaw)
   }
   
   
@@ -435,7 +802,7 @@ mh_f <- function(year = 2014,
         full_benefit, full_criteria, full_criteria_12, 
         agegrp, agegrp_expanded, gender_me, race_eth_me, time_housing, 
         pha_subsidy, pha_voucher, pha_operator, pha_portfolio, geo_zip 
-        FROM PH_APDEStore.final.mcaid_mcare_pha_elig_calyear
+        FROM claims.final_mcaid_mcare_pha_elig_calyear
         WHERE [year] = {year} AND pop = 1 {enroll_sql}) x
     
     --pull people identified to have BH conditions from 2-year lookback
@@ -452,7 +819,7 @@ mh_f <- function(year = 2014,
     	WHEN b.sub_group = 'Mania/Bipolar' THEN 'Persons with mental health concerns: Mania/Bipolar'
     	WHEN b.sub_group = 'Psychotic' THEN 'Persons with mental health concerns: Psychotic'
     	END AS indicator
-    	FROM PHClaims.final.mcaid_mcare_claim_icdcm_header AS a
+    	FROM claims.final_mcaid_mcare_claim_icdcm_header AS a
     	INNER JOIN (
     		SELECT sub_group, code_set, code
     		--,
@@ -460,7 +827,7 @@ mh_f <- function(year = 2014,
     		--  WHEN code_set = 'ICD9CM' THEN 9 
     		--  WHEN code_set = 'ICD10CM' THEN 10 
     		--END AS icdcm_version
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MI-Diagnosis'
     		) AS b
     	ON a.icdcm_norm = b.code --AND a.icdcm_version = b.icdcm_version
@@ -471,15 +838,15 @@ mh_f <- function(year = 2014,
     -- DEFINITION #1: Receipt of an outpatient service with a procedure code in the MH-Proc1 value set (MCG 261) 
     UNION
     SELECT DISTINCT a.id_apde, 'Persons with mental health concerns: General MH outpatient visit' AS indicator
-      FROM PHClaims.final.mcaid_mcare_claim_header AS a
+      FROM claims.final_mcaid_mcare_claim_header AS a
       INNER JOIN (
         SELECT id_apde, claim_header_id, procedure_code
-        FROM PHClaims.final.mcaid_mcare_claim_procedure 
+        FROM claims.final_mcaid_mcare_claim_procedure 
         ) AS b
       ON a.id_apde = b.id_apde AND a.claim_header_id = b.claim_header_id
     	INNER JOIN (
     		SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MH-Proc1'
     		) AS c
     	ON b.procedure_code = c.code
@@ -511,7 +878,7 @@ mh_f <- function(year = 2014,
       ON a.billing_provider_npi = b.npi
       INNER JOIN (
         SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MH-Taxonomy' 
         ) AS c  
       ON b.primary_taxonomy = c.code OR b.secondary_taxonomy = c.code
@@ -524,7 +891,7 @@ mh_f <- function(year = 2014,
       ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
     	INNER JOIN (
     		SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name IN ('MH-Proc2', 'MH-Proc3')
     		) AS e
     	ON d.procedure_code = e.code
@@ -537,7 +904,7 @@ mh_f <- function(year = 2014,
     		--  WHEN code_set = 'ICD9CM' THEN 9 
     		--  WHEN code_set = 'ICD10CM' THEN 10 
     		--END AS icdcm_version
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MI-Diagnosis'  
     	) AS f
     	ON a.primary_diagnosis = f.code --AND a.icdcm_version = f.icdcm_version 
@@ -570,7 +937,7 @@ mh_f <- function(year = 2014,
       ON a.id_apde = b.id_apde AND a.claim_header_id = b.claim_header_id
     	INNER JOIN (
     		SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MH-Proc4'
     		) AS c
     	ON b.procedure_code = c.code
@@ -588,7 +955,7 @@ mh_f <- function(year = 2014,
     		--  WHEN code_set = 'ICD9CM' THEN 9 
     		--  WHEN code_set = 'ICD10CM' THEN 10 
     		--END AS icdcm_version
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MI-Diagnosis'  
     	) AS e
     	ON d.icdcm_norm = e.code --AND d.icdcm_version = e.icdcm_version 
@@ -622,7 +989,7 @@ mh_f <- function(year = 2014,
       ON a.billing_provider_npi = b.npi
       INNER JOIN (
         SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MH-Taxonomy' 
         ) AS c  
       ON b.primary_taxonomy = c.code OR b.secondary_taxonomy = c.code
@@ -635,7 +1002,7 @@ mh_f <- function(year = 2014,
       ON a.id_apde = d.id_apde AND a.claim_header_id = d.claim_header_id
     	INNER JOIN (
     		SELECT code_set, code
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MH-Proc5'
     		) AS e
     	ON d.procedure_code = e.code
@@ -653,7 +1020,7 @@ mh_f <- function(year = 2014,
     		--  WHEN code_set = 'ICD9CM' THEN 9 
     		--  WHEN code_set = 'ICD10CM' THEN 10 
     		--END AS icdcm_version
-    		FROM PHClaims.ref.rda_value_set_2021
+    		FROM ref.rda_value_sets_apde
     		WHERE value_set_name = 'MI-Diagnosis'  
     	) AS g
     	ON f.icdcm_norm = g.code --AND f.icdcm_version = g.icdcm_version 
@@ -668,10 +1035,10 @@ mh_f <- function(year = 2014,
     
     ) as y
     ON x.id_apde = y.id_apde;",
-    .con = db_apde51)
+    .con = db_hhsaw)
   
   # Run query
-  output <- dbGetQuery(db_apde51, sql_query)
+  output <- dbGetQuery(db_hhsaw, sql_query)
   
   # Run through standardized recoding/renaming
   message("Recoding output")
@@ -736,13 +1103,13 @@ mh_f <- function(year = 2014,
 
 #### BRING IN DATA ####
 ### Years to look over
-years <- seq(2012, 2020)
-years_mcare <- seq(2012, 2017)
+years <- seq(2014, 2022)
+years_mcare <- seq(2014, 2022)
 
 
 ### Precalculated calendar year table
 # Use stage for now
-mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_apde51, "SELECT * FROM final.mcaid_mcare_pha_elig_calyear")
+mcaid_mcare_pha_elig_calyear <- dbGetQuery(db_hhsaw, "SELECT TOP (2000) * FROM claims.final_mcaid_mcare_pha_elig_calyear")
 
 mcaid_mcare_pha_elig_calyear <- mcaid_mcare_pha_elig_calyear %>%
   mutate_at(vars(dob, death_dt, start_housing), list(~ as.Date(., origin = "1970-01-01")))
@@ -1677,31 +2044,30 @@ gc()
 
 
 #### CAUSES OF ACUTE CLAIMS (HOSPITALIZATION AND ED) ####
-db_apde51 <- dbConnect(odbc(), "PH_APDEStore51")
 
 ### Bring in timevar tables
 timevar_all <- setDT(dbGetQuery(
-  db_apde51,
+  db_hhsaw,
   glue::glue_sql("SELECT id_apde, from_date, to_date, pha_agency AS agency  
-                 FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
+                 FROM claims.final_mcaid_mcare_pha_elig_timevar
                  WHERE geo_kc = 1 AND full_criteria = 1 AND year(to_date) <= {max(years_mcare)}" ,
-                 .con = db_apde51)
+                 .con = db_hhsaw)
   ))
 timevar_all[, from_date := as.Date(from_date, origin = "1970-01-01")]
 timevar_all[, to_date := as.Date(to_date, origin = "1970-01-01")]
 
 
 timevar_mcaid <- setDT(dbGetQuery(
-  db_apde51,
+  db_hhsaw,
   glue::glue_sql("SELECT a.*, b.id_mcaid FROM
                  (SELECT id_apde, from_date, to_date, pha_agency AS agency  
-                   FROM PH_APDEStore.final.mcaid_mcare_pha_elig_timevar
+                   FROM claims.final_mcaid_mcare_pha_elig_timevar
                    WHERE geo_kc = 1 AND mcaid = 1 AND mcare = 0 AND 
                    full_criteria = 1 AND year(to_date) <= {max(years)}) a
                  LEFT JOIN
-                 (SELECT id_apde, id_mcaid FROM PHClaims.final.xwalk_apde_mcaid_mcare_pha) b
+                 (SELECT id_apde, id_mcaid FROM claims.final_xwalk_apde_mcaid_mcare_pha) b
                  ON a.id_apde = b.id_apde",
-                 .con = db_apde51)))
+                 .con = db_hhsaw)))
 timevar_mcaid[, from_date := as.Date(from_date, origin = "1970-01-01")]
 timevar_mcaid[, to_date := as.Date(to_date, origin = "1970-01-01")]
 
@@ -1714,7 +2080,7 @@ acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "Non-PHA", ],
                              cohort_id = id_apde, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1724,7 +2090,7 @@ acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "Non-PHA", ],
                              cohort_id = id_apde, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1734,7 +2100,7 @@ acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "Non-PHA", ],
                              cohort_id = id_apde, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1744,7 +2110,7 @@ acute_cause_nonpha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                                cohort = timevar_all[timevar_all$agency == "Non-PHA", ],
                                cohort_id = id_apde, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1766,7 +2132,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "Non-PHA", ],
                              cohort_id = id_mcaid, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1776,7 +2142,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                            cohort = timevar_mcaid[timevar_mcaid$agency == "Non-PHA", ],
                            cohort_id = id_mcaid, renew_ids = F,
                            from_date = year_from, to_date = year_to,
@@ -1786,7 +2152,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                                cohort = timevar_mcaid[timevar_mcaid$agency == "Non-PHA", ],
                                cohort_id = id_mcaid, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1796,7 +2162,7 @@ acute_cause_nonpha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "Non-PHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "Non-PHA", ],
                              cohort_id = id_mcaid, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1818,7 +2184,7 @@ acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "KCHA", ],
                              cohort_id = id_apde, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1828,7 +2194,7 @@ acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                            cohort = timevar_all[timevar_all$agency == "KCHA", ],
                            cohort_id = id_apde, renew_ids = F,
                            from_date = year_from, to_date = year_to,
@@ -1838,7 +2204,7 @@ acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                                cohort = timevar_all[timevar_all$agency == "KCHA", ],
                                cohort_id = id_apde, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1848,7 +2214,7 @@ acute_cause_kcha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "KCHA", ],
                              cohort_id = id_apde, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1870,7 +2236,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "KCHA", ],
                              cohort_id = id_mcaid, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1880,7 +2246,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                            cohort = timevar_mcaid[timevar_mcaid$agency == "KCHA", ],
                            cohort_id = id_mcaid, renew_ids = F,
                            from_date = year_from, to_date = year_to,
@@ -1890,7 +2256,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                                cohort = timevar_mcaid[timevar_mcaid$agency == "KCHA", ],
                                cohort_id = id_mcaid, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1900,7 +2266,7 @@ acute_cause_kcha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "KCHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "KCHA", ],
                              cohort_id = id_mcaid, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1922,7 +2288,7 @@ acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "SHA", ],
                              cohort_id = id_apde, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1932,7 +2298,7 @@ acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                            cohort = timevar_all[timevar_all$agency == "SHA", ],
                            cohort_id = id_apde, renew_ids = F,
                            from_date = year_from, to_date = year_to,
@@ -1942,7 +2308,7 @@ acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                                cohort = timevar_all[timevar_all$agency == "SHA", ],
                                cohort_id = id_apde, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -1952,7 +2318,7 @@ acute_cause_sha <- bind_rows(lapply(years_mcare, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid_mcare",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid_mcare",
                              cohort = timevar_all[timevar_all$agency == "SHA", ],
                              cohort_id = id_apde, renew_ids = F,
                              from_date = year_from, to_date = year_to,
@@ -1974,7 +2340,7 @@ acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
   year_to <- paste0(x, "-12-31")
   
   # Hospitalizations (primary dx only)
-  hosp_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "SHA", ],
                              cohort_id = id_mcaid, renew_ids = T,
                              from_date = year_from, to_date = year_to,
@@ -1984,7 +2350,7 @@ acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "Hospitalizations", dx_level = "Primary diagnosis only")
   
   # Hospitalizations (all dx fields)
-  hosp_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  hosp_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                            cohort = timevar_mcaid[timevar_mcaid$agency == "SHA", ],
                            cohort_id = id_mcaid, renew_ids = F,
                            from_date = year_from, to_date = year_to,
@@ -1994,7 +2360,7 @@ acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "Hospitalizations", dx_level = "All diagnosis fields")
   
   # All ED visits (primary dx only)
-  ed_all_primary <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_primary <- top_causes(conn = db_hhsaw, source = "mcaid",
                                cohort = timevar_mcaid[timevar_mcaid$agency == "SHA", ],
                                cohort_id = id_mcaid, renew_ids = F,
                                from_date = year_from, to_date = year_to,
@@ -2004,7 +2370,7 @@ acute_cause_sha_mcaid <- bind_rows(lapply(years, function(x) {
     mutate(year = x, agency = "SHA", cause_type = "ED visits", dx_level = "Primary diagnosis only")
   
   # All ED visits (all dx fields)
-  ed_all_alldx <- top_causes(conn = db_claims51, source = "mcaid",
+  ed_all_alldx <- top_causes(conn = db_hhsaw, source = "mcaid",
                              cohort = timevar_mcaid[timevar_mcaid$agency == "SHA", ],
                              cohort_id = id_mcaid, renew_ids = F,
                              from_date = year_from, to_date = year_to,
