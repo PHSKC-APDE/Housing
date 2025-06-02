@@ -4,7 +4,7 @@
 \alias{streets}
 \title{Standardizes street names.}
 \usage{
-streets(df)
+streets(df, ...)
 }
 \arguments{
 \item{df}{A data frame}
