@@ -1,26 +1,26 @@
-#' Count the number of events/population with condition by desired grouping
+#' Count acute health events by desired grouping
 #' 
-#' These functions count the number of acute events/people with conditions for
-#' a given grouping and calendar year. It is currently specific to the joined
-#' Medicaid/housing data sets but could be generalized to other data.
-#' Can also be made to work with other time periods, but age and other demogs
-#' would need to be recalculated in the function.
+#' This function counts the number of acute health events for a given grouping 
+#' and calendar year. It is currently specific to the joined Medicaid/housing 
+#' data sets but could be generalized to other data. Can also be made to work 
+#' with other time periods, but age and other demographics would need to be 
+#' recalculated in the function.
 #' 
-#' @param df A data frame containing health event/condition data.
+#' @param df A data frame containing acute health event data.
 #' @param year The calendar year (2 digits) of interest.
 #' @param group_var A set of variables to group counts by. Default is PH agency.
-#' Must be set as a quosure (use quos(<group1>, <group2>)). Use age_var and 
-#' len_var to add age or length of time in housing to the grouping.
+#' Must be set as a quosure (use quos(<group1>, <group2>)). Use \code{age_var} and 
+#' \code{len_var} to add age or length of time in housing to the grouping.
 #' @param age_var Denotes the suffix to use when adding pre-calculated age 
-#' fields to the grouping variables. Most likely to be '_grp'. Should be a 
-#' string. Currently hard coded to attach to ageXX where XX is the year.
+#' fields to the grouping variables. Most likely to be \code{'_grp'}. Should be 
+#' a string. Currently hard coded to attach to ageXX where XX is the year.
 #' @param len_var Denotes the suffix to use when adding pre-calculated length 
-#' fields to the grouping variables. Most likely to be '_grp'. Should be a 
+#' fields to the grouping variables. Most likely to be \code{'_grp'}. Should be a 
 #' string. Currently hard coded to attach to ageXX where XX is the year.
 #' @param event The acute health event of interest. Should match a field name in
 #' the df.
-#' @param event_year The field that identifies which calendar year the event 
-#' occurred in (acute events only).
+#' @param event_year The field that identifies the calendar year in which the 
+#' event occurred.
 #' @param unit A named variable that determines the unit to count over. 
 #' Default unit of analysis is pid2 (individuals) but pid should be used with 
 #' data not matched to Medicaid. The other option is hhold_id_new for households.
@@ -32,19 +32,23 @@
 #' if using a well-child indicator (could be extended to calculate age for a
 #' non-calendar year period though).
 #' 
+#' @return A data frame with counts of acute events grouped by the specified 
+#' variables.
 #' 
 #' @examples
 #' \dontrun{
-#' popcount(pha_longitudinal)
-#' popcount(pha_longitudinal, group_var = quos(agency_new, major_prog),
-#' agency = "kcha", unit = hhold_id_new)
-#' popcount(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
+#' count_acute(pha_longitudinal, year = 16, event = emergency_visits)
+#' count_acute(pha_longitudinal, year = 16, 
+#'             group_var = quos(agency_new, major_prog),
+#'             event = hospitalizations, unit = hhold_id_new)
+#' count_acute(pha_longitudinal, year = 15, event = emergency_visits,
+#'             age_var = "_grp", person = TRUE)
 #' }
 #' 
-#' @name condition_counts
+#' @import dplyr
+#' @import stringr
 #' 
 #' @export
-#' @rdname condition_counts
 # Need to fix up joining quosures (agex)
 
 count_acute <- function(df,
@@ -152,53 +156,3 @@ count_acute <- function(df,
 }
 
 
-
-
-
-
-#' @export
-#' @rdname condition_counts
-count_chronic <- function(df_chronic = chronic, df_pop = chronic_pop,
-                                 condition = NULL, year = 12) {
-  
-  yr_chk <- as.numeric(paste0("20", year))
-  condition_quo <- enquo(condition)
-  
-  agex_quo <- rlang::sym(paste0("age", quo_name(year), "_num"))
-  lengthx_quo <- rlang::sym(paste0("length", quo_name(year), "_num"))
-  
-  year_start = as.Date(paste0("20", year, "-01-01"), origin = "1970-01-01")
-  year_end = as.Date(paste0("20", year, "-12-31"), origin = "1970-01-01")
-  
-  # Filter to only include people with the condition in that year
-  cond <- df_chronic %>%
-    filter(!!condition_quo == 1 & from_date <= year_end & to_date >= year_start) %>%
-    distinct(id, !!condition_quo)
-  
-  df_pop <- df_pop %>% filter(year == yr_chk)
-  
-  ### Join pop and condition data to summarise
-  output <- left_join(df_pop, cond, by = c("mid" = "id")) %>%
-    mutate(condition = if_else(is.na(!!condition_quo), 0, as.numeric(!!condition_quo))) %>%
-    group_by(year, agency_num, enroll_type_num, dual_elig_num, age_group,
-             gender_num, ethn_num, voucher_num, subsidy_num, operator_num,
-             portfolio_num, length, zip_c) %>%
-    summarise(count := sum(condition)) %>%
-    ungroup() %>%
-    select(year, agency_num, enroll_type_num, dual_elig_num, age_group, 
-           gender_num, ethn_num, voucher_num, subsidy_num, operator_num, 
-           portfolio_num, length, zip_c,
-           count) %>%
-    rename(agency = agency_num,
-           enroll_type = enroll_type_num,
-           dual = dual_elig_num,
-           gender = gender_num,
-           ethn = ethn_num,
-           voucher = voucher_num,
-           subsidy = subsidy_num,
-           operator = operator_num,
-           portfolio = portfolio_num,
-           zip = zip_c)
-  
-  return(output)
-}
