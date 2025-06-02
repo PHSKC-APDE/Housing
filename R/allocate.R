@@ -44,6 +44,9 @@
 #' from_date = from_date, o_date = to_date, pha_agency, pha_subsidy)
 #' }
 #' 
+#' @importFrom data.table `:=`
+#' @import dplyr
+#' 
 #' @export
 
 
@@ -210,7 +213,7 @@ allocate <- function(df,
            agency_norm = !!agency)
   
   pop <- setDT(pop)
-  pop <- pop[pop[, .I[1], by = .(unit_norm, enroll_norm, agency_norm)]$V1]
+  pop <- pop[pop[, .I[1], by = list(unit_norm, enroll_norm, agency_norm)]$V1]
   
 
   # Number of agencies, should only be one row per possibility below

@@ -51,6 +51,8 @@
 #' yt_popcode(yt_mcaid_final, year_pre = "pt", year = 12, min = T)
 #' }
 #' 
+#' @importFrom data.table setDT `:=`
+#' @import dplyr
 #' @export
 
 

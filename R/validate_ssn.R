@@ -9,8 +9,8 @@
 #' 
 #' @name validate_ssn
 #' 
+#' @importFrom data.table `:=`
 #' @export
-#' @rdname validate_ssn
 #' 
 
 validate_ssn <- function(DTx, ssnx = NULL){

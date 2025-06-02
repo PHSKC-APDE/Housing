@@ -4,40 +4,17 @@
 \alias{chunk_loader}
 \title{Function to load big data to SQL (chunk.loader())}
 \usage{
-chunk_loader(
-  DTx,
-  connx,
-  chunk.size = 1000,
-  schemax = NULL,
-  tablex = NULL,
-  overwritex = F,
-  appendx = T,
-  field.typesx = NULL
-)
+chunk_loader(...)
 }
 \arguments{
-\item{DTx}{A data.table/data.frame}
-
-\item{connx}{The name of the relevant database connection that you have open}
-
-\item{chunk.size}{The number of rows that you desire to have per chunk}
-
-\item{schemax}{The name of the schema where you want to write the data}
-
-\item{tablex}{The name of the table where you want to write the data}
-
-\item{overwritex}{Do you want to overwrite the existing tables? Logical (T|F).}
-
-\item{appendx}{Do you want to append to an existing table? Logical (T|F). 
- 
-intentionally redundant with \code{overwritex} to ensure that tables are not 
-accidentally overwritten.}
-
-\item{field.typesx}{Optional ability to specify the fieldtype, e.g., INT, 
-VARCHAR(32), etc.}
+\item{...}{Not used.}
 }
 \description{
-\code{chunk_loader} divides a data.frame/ data.table into smaller tables
-so it can be easily loaded to SQL. Experience has shows that loading large 
-tables in 'chunks' is less likely to cause errors.
+\strong{!!!STOP!!! This function has been deprecated.} Please use
+\code{rads::tsql_chunk_loader()} instead.
 }
+\section{Deprecation}{
+
+Please use \code{rads::tsql_chunk_loader()} instead.
+}
+

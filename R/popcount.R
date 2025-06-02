@@ -53,6 +53,9 @@
 #' popcount(pha_longitudinal, yearmin = 2014, yearmax = 2016, period = "month")
 #' }
 #' 
+#' @importFrom data.table setDT `:=`
+#' @import dplyr
+#' @import stringr
 #' @export
 
 
@@ -315,7 +318,7 @@ popcount <- function(df,
              enroll_norm = !!enroll)
     
     pop <- setDT(pop)
-    pop <- pop[pop[, .I[1], by = .(unit_norm, agency_norm, enroll_norm)]$V1]
+    pop <- pop[pop[, .I[1], by = list(unit_norm, agency_norm, enroll_norm)]$V1]
     
     
     # Number of agencies, should only be one row per possibility below

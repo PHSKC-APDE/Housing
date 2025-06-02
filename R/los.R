@@ -17,6 +17,9 @@
 #' los(pha_longitudinal)
 #' }
 #' 
+#' @importFrom data.table `:=`
+#' @import dplyr
+#' 
 #' @export
 
 los <- function(df){
