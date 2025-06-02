@@ -10,8 +10,8 @@ Much of the code is specific to the Seattle Housing Authority and King County Ho
 
 
 # Intructions for installing/updating the housing package
-1) Make sure devtools is installed (type install.packages("devtools"))
-2) Type devtools::install_github("PHSKC-APDE/Housing")
+1) Make sure devtools is installed (type `install.packages("devtools")`)
+2) Type `devtools::install_github("PHSKC-APDE/Housing", auth_token = NULL)`
 
 
 
