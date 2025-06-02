@@ -14,6 +14,8 @@
 #' overlap(pha_longitudinal, pid, agency_new)
 #' }
 #' 
+#' @importFrom data.table `:=`
+#' @import dplyr
 #' @export
 
 overlap <- function(df, ...) {

@@ -27,6 +27,9 @@
 #' yt_flag(pha_elig_demogs, unit = pid)
 #' }
 #' 
+#' @import dplyr
+#' @import stringr
+#' 
 #' @export
 
 yt_flag <- function(df, unit = NULL, prop_id = NULL, prop_name = NULL, 

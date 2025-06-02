@@ -13,12 +13,13 @@
 #' los(pha_longitudinal, unit_add_new)
 #' }
 #' 
+#' @import dplyr
 #' @export
 
 
 # NOT COMPLETE< NEED TO WRITE FUNCTION BELOW (CURRENTLY LOS FUNCTION)
 
-streets <- function(df){
+streets <- function(df, ...){
   # Any time in SHA or KCHA
   df <- overlap(df, pid, period)
   df <- df %>%
